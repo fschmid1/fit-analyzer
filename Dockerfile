@@ -9,8 +9,8 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 # Copy dependency files first for better layer caching
 COPY package.json ./
 
-# Install dependencies
-RUN pnpm install
+# Install dependencies (shamefully-hoist for native binary resolution)
+RUN pnpm install --shamefully-hoist
 
 # Copy source code
 COPY . .
