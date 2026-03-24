@@ -10,13 +10,19 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { Zap, Heart, Gauge, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Zap, Heart, Gauge, X, ZoomIn, ZoomOut, Plus } from "lucide-react";
 import { formatElapsedTime } from "../lib/formatters";
 import type { ActivityRecord } from "../types/fit";
 
 interface ActivityChartProps {
   records: ActivityRecord[];
   onSelectionChange: (range: [number, number] | null) => void;
+  /** When set, chart zooms to this range. Change the reference to re-trigger. */
+  externalZoom?: [number, number] | null;
+  /** All interval ranges to highlight on the chart */
+  intervalRanges?: [number, number][];
+  /** Called when user adds the current selection as a custom interval */
+  onAddInterval?: (startSeconds: number, endSeconds: number) => void;
 }
 
 interface ChartDataPoint {
@@ -91,6 +97,9 @@ const CustomTooltip = memo(function CustomTooltip({ active, payload, label }: an
 export const ActivityChart = memo(function ActivityChart({
   records,
   onSelectionChange,
+  externalZoom,
+  intervalRanges,
+  onAddInterval,
 }: ActivityChartProps) {
   const data: ChartDataPoint[] = useMemo(
     () =>
@@ -221,6 +230,22 @@ export const ActivityChart = memo(function ActivityChart({
     setSelection(null);
     onSelectionChange(null);
   }, [onSelectionChange]);
+
+  const handleAddInterval = useCallback(() => {
+    if (!selection || !onAddInterval) return;
+    onAddInterval(selection[0], selection[1]);
+    setSelection(null);
+    onSelectionChange(null);
+  }, [selection, onAddInterval, onSelectionChange]);
+
+  // --- External zoom (e.g. from interval list click) ---
+  useEffect(() => {
+    if (externalZoom) {
+      setZoomStack([externalZoom]);
+      setSelection(null);
+      onSelectionChange(null);
+    }
+  }, [externalZoom]); // intentionally exclude onSelectionChange to avoid loops
 
   // --- Ctrl + Mouse Wheel zoom ---
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -395,6 +420,15 @@ export const ActivityChart = memo(function ActivityChart({
                   <ZoomIn className="w-3 h-3" />
                   Zoom to selection
                 </button>
+                {onAddInterval && (
+                  <button
+                    onClick={handleAddInterval}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#f59e0b] bg-[#f59e0b]/10 hover:bg-[#f59e0b]/20 border border-[#f59e0b]/30 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Add interval
+                  </button>
+                )}
                 <button
                   onClick={clearSelection}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/60 hover:bg-[#8b5cf6]/20 border border-[rgba(139,92,246,0.2)] rounded-lg transition-colors cursor-pointer"
@@ -521,6 +555,21 @@ export const ActivityChart = memo(function ActivityChart({
                   isAnimationActive={false}
                 />
               )}
+
+              {/* Interval highlight overlays */}
+              {intervalRanges && intervalRanges.map((range, i) => (
+                <ReferenceArea
+                  key={`interval-${i}`}
+                  yAxisId={hasPower ? "power" : "hrCad"}
+                  x1={range[0]}
+                  x2={range[1]}
+                  fill="#f59e0b"
+                  fillOpacity={0.1}
+                  stroke="#f59e0b"
+                  strokeOpacity={0.4}
+                  strokeDasharray="6 3"
+                />
+              ))}
 
               {/* Rubber-band selection overlay */}
               {refAreaLeft !== null && refAreaRight !== null && (

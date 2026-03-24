@@ -19,9 +19,28 @@ export interface ActivitySummary {
   peak5minPower: number | null;
 }
 
+export interface LapMarker {
+  startSeconds: number;
+  endSeconds: number;
+  avgPower: number | null;
+  avgHeartRate: number | null;
+  avgCadence: number | null;
+}
+
 export interface ParsedActivity {
   records: ActivityRecord[];
   summary: ActivitySummary;
+  laps: LapMarker[];
+}
+
+export interface Interval {
+  index: number;
+  startSeconds: number;
+  endSeconds: number;
+  avgPower: number | null;
+  avgHeartRate: number | null;
+  avgCadence: number | null;
+  duration: number;
 }
 
 export interface SelectionStats {

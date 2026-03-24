@@ -1,27 +1,95 @@
-import { useState, useCallback } from "react";
-import type { ParsedActivity } from "./types/fit";
+import { useState, useCallback, useEffect } from "react";
+import type { Interval, ParsedActivity } from "./types/fit";
 import { Header } from "./components/Header";
 import { FileDropZone } from "./components/FileDropZone";
 import { ActivityChart } from "./components/ActivityChart";
 import { StatsBar } from "./components/StatsBar";
+import { IntervalList } from "./components/IntervalList";
 import { SummaryCards } from "./components/SummaryCards";
 import { CopyBox } from "./components/CopyBox";
+import {
+  saveActivity,
+  loadActivity,
+  clearActivity,
+  saveCustomIntervals,
+  loadCustomIntervals,
+  clearCustomIntervals,
+  clearIntervalMinutes,
+} from "./lib/storage";
 
 function App() {
-  const [activity, setActivity] = useState<ParsedActivity | null>(null);
+  const [activity, setActivity] = useState<ParsedActivity | null>(() =>
+    loadActivity()
+  );
   const [selectionRange, setSelectionRange] = useState<
     [number, number] | null
   >(null);
+  const [chartZoom, setChartZoom] = useState<[number, number] | null>(null);
+  const [intervalRanges, setIntervalRanges] = useState<[number, number][]>([]);
+  const [customIntervals, setCustomIntervals] = useState<[number, number][]>(
+    () => loadCustomIntervals()
+  );
+
+  // Persist activity when it changes
+  useEffect(() => {
+    if (activity) {
+      saveActivity(activity);
+    }
+  }, [activity]);
+
+  // Persist custom intervals when they change
+  useEffect(() => {
+    saveCustomIntervals(customIntervals);
+  }, [customIntervals]);
 
   const handleFileParsed = useCallback((data: ParsedActivity) => {
     setActivity(data);
     setSelectionRange(null);
+    setChartZoom(null);
+    setIntervalRanges([]);
+    setCustomIntervals([]);
   }, []);
 
   const handleReset = useCallback(() => {
     setActivity(null);
     setSelectionRange(null);
+    setChartZoom(null);
+    setIntervalRanges([]);
+    setCustomIntervals([]);
+    clearActivity();
+    clearCustomIntervals();
+    clearIntervalMinutes();
   }, []);
+
+  const handleIntervalClick = useCallback(
+    (startSeconds: number, endSeconds: number) => {
+      setChartZoom([startSeconds, endSeconds]);
+    },
+    []
+  );
+
+  const handleIntervalsChange = useCallback(
+    (intervals: Interval[]) => {
+      setIntervalRanges(
+        intervals.map((i) => [i.startSeconds, i.endSeconds] as [number, number])
+      );
+    },
+    []
+  );
+
+  const handleAddInterval = useCallback(
+    (startSeconds: number, endSeconds: number) => {
+      setCustomIntervals((prev) => [...prev, [startSeconds, endSeconds]]);
+    },
+    []
+  );
+
+  const handleRemoveCustomInterval = useCallback(
+    (index: number) => {
+      setCustomIntervals((prev) => prev.filter((_, i) => i !== index));
+    },
+    []
+  );
 
   const handleSelectionChange = useCallback(
     (range: [number, number] | null) => {
@@ -58,6 +126,19 @@ function App() {
           <ActivityChart
             records={activity.records}
             onSelectionChange={handleSelectionChange}
+            externalZoom={chartZoom}
+            intervalRanges={[...intervalRanges, ...customIntervals]}
+            onAddInterval={handleAddInterval}
+          />
+
+          {/* Interval list */}
+          <IntervalList
+            records={activity.records}
+            laps={activity.laps}
+            onIntervalClick={handleIntervalClick}
+            onIntervalsChange={handleIntervalsChange}
+            customIntervals={customIntervals}
+            onRemoveCustomInterval={handleRemoveCustomInterval}
           />
 
           {/* Summary cards */}
