@@ -1,4 +1,4 @@
-import type { ActivitySummary } from "../types/fit";
+import type { ActivitySummary, Interval } from "../types/fit";
 
 export function formatElapsedTime(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600);
@@ -11,7 +11,10 @@ export function formatElapsedTime(totalSeconds: number): string {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-export function formatCopyBoxText(summary: ActivitySummary): string {
+export function formatCopyBoxText(
+  summary: ActivitySummary,
+  intervals: Interval[]
+): string {
   const lines: string[] = [];
 
   lines.push(`- Date: ${summary.date}`);
@@ -33,6 +36,22 @@ export function formatCopyBoxText(summary: ActivitySummary): string {
   lines.push(
     `- total_work: ${summary.totalWork ? Math.round(summary.totalWork) : "N/A"}`
   );
+
+  if (intervals.length > 0) {
+    lines.push("");
+    lines.push("Intervals:");
+    for (let i = 0; i < intervals.length; i++) {
+      const interval = intervals[i];
+      const start = formatElapsedTime(interval.startSeconds);
+      const dur = formatElapsedTime(interval.duration);
+      const power = interval.avgPower ?? "—";
+      const hr = interval.avgHeartRate ?? "—";
+      const cad = interval.avgCadence ?? "—";
+      lines.push(
+        `  ${i + 1}. ${start} | ${dur} | ${power}W ${hr}bpm ${cad}rpm`
+      );
+    }
+  }
 
   return lines.join("\n");
 }
