@@ -43,7 +43,7 @@ export function IntervalList({
     [onIntervalClick]
   );
 
-  if (laps.length === 0) return null;
+  if (laps.length < 2) return null;
 
   return (
     <div className="px-6 pb-4">
@@ -56,7 +56,7 @@ export function IntervalList({
               Intervals
             </span>
             <span className="text-xs text-[#94a3b8]">
-              ({laps.length} lap{laps.length !== 1 ? "s" : ""} detected)
+              ({laps.length - 1} lap{laps.length - 1 !== 1 ? "s" : ""} detected)
             </span>
           </div>
           <div className="flex items-center gap-2">

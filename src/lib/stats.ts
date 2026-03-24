@@ -103,13 +103,14 @@ export function computeIntervals(
   laps: LapMarker[],
   intervalSeconds: number
 ): Interval[] {
-  if (laps.length === 0 || intervalSeconds <= 0 || records.length === 0) {
+  if (laps.length < 2 || intervalSeconds <= 0 || records.length === 0) {
     return [];
   }
 
   const maxSeconds = records[records.length - 1].elapsedSeconds;
 
-  return laps.map((lap, idx) => {
+  // Skip the first lap (warmup/start) — intervals begin from lap 2
+  return laps.slice(1).map((lap, idx) => {
     const start = lap.startSeconds;
     const end = Math.min(start + intervalSeconds, maxSeconds);
 
