@@ -1,16 +1,20 @@
 import { useState, useMemo } from "react";
 import { Clipboard, Check } from "lucide-react";
-import type { ActivitySummary } from "../types/fit";
+import type { ActivitySummary, Interval } from "../types/fit";
 import { formatCopyBoxText } from "../lib/formatters";
 
 interface CopyBoxProps {
   summary: ActivitySummary;
+  intervals: Interval[];
 }
 
-export function CopyBox({ summary }: CopyBoxProps) {
+export function CopyBox({ summary, intervals }: CopyBoxProps) {
   const [copied, setCopied] = useState(false);
 
-  const text = useMemo(() => formatCopyBoxText(summary), [summary]);
+  const text = useMemo(
+    () => formatCopyBoxText(summary, intervals),
+    [summary, intervals]
+  );
 
   const handleCopy = async () => {
     try {

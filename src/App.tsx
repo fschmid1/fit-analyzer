@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import type { Interval, ParsedActivity } from "./types/fit";
+import { computeAverages } from "./lib/stats";
 import { Header } from "./components/Header";
 import { FileDropZone } from "./components/FileDropZone";
 import { ActivityChart } from "./components/ActivityChart";
@@ -26,6 +27,7 @@ function App() {
   >(null);
   const [chartZoom, setChartZoom] = useState<[number, number] | null>(null);
   const [intervalRanges, setIntervalRanges] = useState<[number, number][]>([]);
+  const [lapIntervalObjects, setLapIntervalObjects] = useState<Interval[]>([]);
   const [customIntervals, setCustomIntervals] = useState<[number, number][]>(
     () => loadCustomIntervals()
   );
@@ -47,6 +49,7 @@ function App() {
     setSelectionRange(null);
     setChartZoom(null);
     setIntervalRanges([]);
+    setLapIntervalObjects([]);
     setCustomIntervals([]);
   }, []);
 
@@ -55,6 +58,7 @@ function App() {
     setSelectionRange(null);
     setChartZoom(null);
     setIntervalRanges([]);
+    setLapIntervalObjects([]);
     setCustomIntervals([]);
     clearActivity();
     clearCustomIntervals();
@@ -73,9 +77,33 @@ function App() {
       setIntervalRanges(
         intervals.map((i) => [i.startSeconds, i.endSeconds] as [number, number])
       );
+      setLapIntervalObjects(intervals);
     },
     []
   );
+
+  const customIntervalObjects: Interval[] = useMemo(() => {
+    if (!activity || customIntervals.length === 0) return [];
+    return customIntervals.map((range, idx) => {
+      const [start, end] = range;
+      const slice = activity.records.filter(
+        (r) => r.elapsedSeconds >= start && r.elapsedSeconds <= end
+      );
+      const stats =
+        slice.length > 0
+          ? computeAverages(slice)
+          : { avgPower: null, avgHeartRate: null, avgCadence: null };
+      return {
+        index: idx,
+        startSeconds: start,
+        endSeconds: end,
+        avgPower: stats.avgPower,
+        avgHeartRate: stats.avgHeartRate,
+        avgCadence: stats.avgCadence,
+        duration: end - start,
+      };
+    });
+  }, [activity, customIntervals]);
 
   const handleAddInterval = useCallback(
     (startSeconds: number, endSeconds: number) => {
@@ -145,7 +173,10 @@ function App() {
           <SummaryCards summary={activity.summary} />
 
           {/* Copyable summary box */}
-          <CopyBox summary={activity.summary} />
+          <CopyBox
+            summary={activity.summary}
+            intervals={[...lapIntervalObjects, ...customIntervalObjects]}
+          />
         </div>
       )}
     </div>
