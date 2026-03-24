@@ -247,70 +247,107 @@ export const ActivityChart = memo(function ActivityChart({
     }
   }, [externalZoom]); // intentionally exclude onSelectionChange to avoid loops
 
-  // --- Ctrl + Mouse Wheel zoom ---
+  // --- Ctrl + Mouse Wheel zoom / scroll to pan ---
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  const zoomStackRef = useRef<[number, number][]>([]);
+
+  // Keep ref in sync with state for synchronous access in wheel handler
+  useEffect(() => {
+    zoomStackRef.current = zoomStack;
+  }, [zoomStack]);
 
   useEffect(() => {
     const container = chartContainerRef.current;
     if (!container) return;
 
     const handleWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey) return;
-      e.preventDefault();
-
-      const rect = container.getBoundingClientRect();
-      // Estimate chart plot area (account for Y-axis margins ~55px each side)
-      const plotLeft = 55;
-      const plotRight = rect.width - 55;
-      const plotWidth = plotRight - plotLeft;
-      const mouseX = e.clientX - rect.left;
-      // Clamp cursor ratio to the plot area
-      const ratio = Math.max(0, Math.min(1, (mouseX - plotLeft) / plotWidth));
-
-      // Current visible time range
       const allSeconds = data.map((d) => d.elapsedSeconds);
       const fullMin = allSeconds[0];
       const fullMax = allSeconds[allSeconds.length - 1];
 
-      setZoomStack((prev) => {
-        const current = prev.length > 0 ? prev[prev.length - 1] : [fullMin, fullMax] as [number, number];
-        const span = current[1] - current[0];
-        const center = current[0] + span * ratio;
+      if (e.ctrlKey) {
+        // Ctrl + scroll = zoom in/out
+        e.preventDefault();
 
-        const zoomFactor = e.deltaY < 0 ? 0.7 : 1.4; // scroll up = zoom in, down = zoom out
-        let newSpan = span * zoomFactor;
+        const rect = container.getBoundingClientRect();
+        // Estimate chart plot area (account for Y-axis margins ~55px each side)
+        const plotLeft = 55;
+        const plotRight = rect.width - 55;
+        const plotWidth = plotRight - plotLeft;
+        const mouseX = e.clientX - rect.left;
+        // Clamp cursor ratio to the plot area
+        const ratio = Math.max(0, Math.min(1, (mouseX - plotLeft) / plotWidth));
 
-        // Don't zoom out beyond full range
-        if (newSpan >= fullMax - fullMin) {
-          return [];
-        }
+        setZoomStack((prev) => {
+          const current = prev.length > 0 ? prev[prev.length - 1] : [fullMin, fullMax] as [number, number];
+          const span = current[1] - current[0];
+          const center = current[0] + span * ratio;
 
-        // Don't zoom in too far (minimum ~5 seconds visible)
-        if (newSpan < 5) newSpan = 5;
+          const zoomFactor = e.deltaY < 0 ? 0.7 : 1.4; // scroll up = zoom in, down = zoom out
+          let newSpan = span * zoomFactor;
 
-        let newStart = center - newSpan * ratio;
-        let newEnd = center + newSpan * (1 - ratio);
+          // Don't zoom out beyond full range
+          if (newSpan >= fullMax - fullMin) {
+            return [];
+          }
 
-        // Clamp to full data range
-        if (newStart < fullMin) {
-          newStart = fullMin;
-          newEnd = newStart + newSpan;
-        }
-        if (newEnd > fullMax) {
-          newEnd = fullMax;
-          newStart = newEnd - newSpan;
-        }
-        newStart = Math.max(fullMin, newStart);
-        newEnd = Math.min(fullMax, newEnd);
+          // Don't zoom in too far (minimum ~5 seconds visible)
+          if (newSpan < 5) newSpan = 5;
 
-        // Replace top of stack (or push new) for smooth wheel zooming
-        const newZoom: [number, number] = [newStart, newEnd];
-        if (prev.length === 0) return [newZoom];
-        return [...prev.slice(0, -1), newZoom];
-      });
+          let newStart = center - newSpan * ratio;
+          let newEnd = center + newSpan * (1 - ratio);
 
-      setSelection(null);
-      onSelectionChange(null);
+          // Clamp to full data range
+          if (newStart < fullMin) {
+            newStart = fullMin;
+            newEnd = newStart + newSpan;
+          }
+          if (newEnd > fullMax) {
+            newEnd = fullMax;
+            newStart = newEnd - newSpan;
+          }
+          newStart = Math.max(fullMin, newStart);
+          newEnd = Math.min(fullMax, newEnd);
+
+          // Replace top of stack (or push new) for smooth wheel zooming
+          const newZoom: [number, number] = [newStart, newEnd];
+          if (prev.length === 0) return [newZoom];
+          return [...prev.slice(0, -1), newZoom];
+        });
+
+        setSelection(null);
+        onSelectionChange(null);
+      } else {
+        // Regular scroll = pan left/right (only when zoomed in)
+        if (zoomStackRef.current.length === 0) return; // not zoomed in, let page scroll normally
+        e.preventDefault();
+
+        setZoomStack((prev) => {
+          if (prev.length === 0) return prev;
+
+          const current = prev[prev.length - 1];
+          const span = current[1] - current[0];
+          // Use deltaY (vertical scroll) or deltaX (horizontal scroll/trackpad) for panning
+          const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+          const panAmount = span * 0.05 * Math.sign(delta); // 5% of visible range per scroll tick
+
+          let newStart = current[0] + panAmount;
+          let newEnd = current[1] + panAmount;
+
+          // Clamp to full data range
+          if (newStart < fullMin) {
+            newStart = fullMin;
+            newEnd = fullMin + span;
+          }
+          if (newEnd > fullMax) {
+            newEnd = fullMax;
+            newStart = fullMax - span;
+          }
+
+          const newZoom: [number, number] = [newStart, newEnd];
+          return [...prev.slice(0, -1), newZoom];
+        });
+      }
     };
 
     container.addEventListener("wheel", handleWheel, { passive: false });
@@ -438,7 +475,7 @@ export const ActivityChart = memo(function ActivityChart({
               </>
             ) : (
               <span className="text-xs text-[#94a3b8]/60 mr-2 select-none">
-                Drag to select · Ctrl+scroll to zoom
+                Drag to select · Scroll to pan · Ctrl+scroll to zoom
               </span>
             )}
           </div>
