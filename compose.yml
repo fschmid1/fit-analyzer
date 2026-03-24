@@ -1,7 +1,7 @@
 services:
     fit-analyzer:
         build: .
-        image: 192.168.2.131:5000/fit-analyzer:latest
+        image: registry.schmid-felix.de/fit-analyzer:latest
         ports:
             - "3000:80"
         restart: unless-stopped
