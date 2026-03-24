@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useRef, useEffect } from "react";
+import { memo, useCallback, useMemo, useState, useRef, useEffect } from "react";
 import {
   ComposedChart,
   Area,
@@ -26,8 +26,29 @@ interface ChartDataPoint {
   cadence: number | null;
 }
 
+// Stable config objects (hoisted outside component to avoid re-creation)
+const CHART_MARGIN = { top: 5, right: 10, left: 10, bottom: 5 };
+const AXIS_TICK = { fontSize: 11, fill: "#94a3b8" };
+const AXIS_LINE = { stroke: "rgba(139, 92, 246, 0.1)" };
+const TICK_LINE = { stroke: "rgba(139, 92, 246, 0.1)" };
+const POWER_LABEL = {
+  value: "W",
+  position: "insideTopLeft" as const,
+  offset: -5,
+  style: { fontSize: 10, fill: "#8b5cf6" },
+};
+const HR_CAD_LABEL = {
+  value: "bpm / rpm",
+  position: "insideTopRight" as const,
+  offset: -5,
+  style: { fontSize: 10, fill: "#94a3b8" },
+};
+const POWER_ACTIVE_DOT = { r: 4, fill: "#8b5cf6", stroke: "#1a1533", strokeWidth: 2 };
+const HR_ACTIVE_DOT = { r: 4, fill: "#ef4444", stroke: "#1a1533", strokeWidth: 2 };
+const CAD_ACTIVE_DOT = { r: 4, fill: "#06b6d4", stroke: "#1a1533", strokeWidth: 2 };
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function CustomTooltip({ active, payload, label }: any) {
+const CustomTooltip = memo(function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload || payload.length === 0) return null;
 
   return (
@@ -65,9 +86,9 @@ function CustomTooltip({ active, payload, label }: any) {
       )}
     </div>
   );
-}
+});
 
-export function ActivityChart({
+export const ActivityChart = memo(function ActivityChart({
   records,
   onSelectionChange,
 }: ActivityChartProps) {
@@ -397,7 +418,7 @@ export function ActivityChart({
           <ResponsiveContainer width="100%" height={420}>
             <ComposedChart
               data={visibleData}
-              margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
+              margin={CHART_MARGIN}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
@@ -421,9 +442,9 @@ export function ActivityChart({
                 dataKey="elapsedSeconds"
                 tickFormatter={formatElapsedTime}
                 stroke="#94a3b8"
-                tick={{ fontSize: 11, fill: "#94a3b8" }}
-                axisLine={{ stroke: "rgba(139, 92, 246, 0.1)" }}
-                tickLine={{ stroke: "rgba(139, 92, 246, 0.1)" }}
+                tick={AXIS_TICK}
+                axisLine={AXIS_LINE}
+                tickLine={TICK_LINE}
                 interval="preserveStartEnd"
                 minTickGap={60}
               />
@@ -434,16 +455,11 @@ export function ActivityChart({
                   orientation="left"
                   domain={powerDomain}
                   stroke="#94a3b8"
-                  tick={{ fontSize: 11, fill: "#94a3b8" }}
-                  axisLine={{ stroke: "rgba(139, 92, 246, 0.1)" }}
+                  tick={AXIS_TICK}
+                  axisLine={AXIS_LINE}
                   tickLine={false}
                   width={45}
-                  label={{
-                    value: "W",
-                    position: "insideTopLeft",
-                    offset: -5,
-                    style: { fontSize: 10, fill: "#8b5cf6" },
-                  }}
+                  label={POWER_LABEL}
                 />
               )}
 
@@ -453,16 +469,11 @@ export function ActivityChart({
                   orientation="right"
                   domain={hrCadDomain}
                   stroke="#94a3b8"
-                  tick={{ fontSize: 11, fill: "#94a3b8" }}
-                  axisLine={{ stroke: "rgba(139, 92, 246, 0.1)" }}
+                  tick={AXIS_TICK}
+                  axisLine={AXIS_LINE}
                   tickLine={false}
                   width={45}
-                  label={{
-                    value: "bpm / rpm",
-                    position: "insideTopRight",
-                    offset: -5,
-                    style: { fontSize: 10, fill: "#94a3b8" },
-                  }}
+                  label={HR_CAD_LABEL}
                 />
               )}
 
@@ -477,12 +488,7 @@ export function ActivityChart({
                   strokeWidth={1.5}
                   fill="url(#powerGradient)"
                   dot={false}
-                  activeDot={{
-                    r: 4,
-                    fill: "#8b5cf6",
-                    stroke: "#1a1533",
-                    strokeWidth: 2,
-                  }}
+                  activeDot={POWER_ACTIVE_DOT}
                   connectNulls
                   isAnimationActive={false}
                 />
@@ -496,12 +502,7 @@ export function ActivityChart({
                   stroke="#ef4444"
                   strokeWidth={1.5}
                   dot={false}
-                  activeDot={{
-                    r: 4,
-                    fill: "#ef4444",
-                    stroke: "#1a1533",
-                    strokeWidth: 2,
-                  }}
+                  activeDot={HR_ACTIVE_DOT}
                   connectNulls
                   isAnimationActive={false}
                 />
@@ -515,12 +516,7 @@ export function ActivityChart({
                   stroke="#06b6d4"
                   strokeWidth={1.5}
                   dot={false}
-                  activeDot={{
-                    r: 4,
-                    fill: "#06b6d4",
-                    stroke: "#1a1533",
-                    strokeWidth: 2,
-                  }}
+                  activeDot={CAD_ACTIVE_DOT}
                   connectNulls
                   isAnimationActive={false}
                 />
@@ -545,4 +541,4 @@ export function ActivityChart({
       </div>
     </div>
   );
-}
+});
