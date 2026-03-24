@@ -15,12 +15,14 @@ function App() {
   >(null);
   const [chartZoom, setChartZoom] = useState<[number, number] | null>(null);
   const [intervalRanges, setIntervalRanges] = useState<[number, number][]>([]);
+  const [customIntervals, setCustomIntervals] = useState<[number, number][]>([]);
 
   const handleFileParsed = useCallback((data: ParsedActivity) => {
     setActivity(data);
     setSelectionRange(null);
     setChartZoom(null);
     setIntervalRanges([]);
+    setCustomIntervals([]);
   }, []);
 
   const handleReset = useCallback(() => {
@@ -28,6 +30,7 @@ function App() {
     setSelectionRange(null);
     setChartZoom(null);
     setIntervalRanges([]);
+    setCustomIntervals([]);
   }, []);
 
   const handleIntervalClick = useCallback(
@@ -42,6 +45,20 @@ function App() {
       setIntervalRanges(
         intervals.map((i) => [i.startSeconds, i.endSeconds] as [number, number])
       );
+    },
+    []
+  );
+
+  const handleAddInterval = useCallback(
+    (startSeconds: number, endSeconds: number) => {
+      setCustomIntervals((prev) => [...prev, [startSeconds, endSeconds]]);
+    },
+    []
+  );
+
+  const handleRemoveCustomInterval = useCallback(
+    (index: number) => {
+      setCustomIntervals((prev) => prev.filter((_, i) => i !== index));
     },
     []
   );
@@ -82,7 +99,8 @@ function App() {
             records={activity.records}
             onSelectionChange={handleSelectionChange}
             externalZoom={chartZoom}
-            intervalRanges={intervalRanges}
+            intervalRanges={[...intervalRanges, ...customIntervals]}
+            onAddInterval={handleAddInterval}
           />
 
           {/* Interval list */}
@@ -91,6 +109,8 @@ function App() {
             laps={activity.laps}
             onIntervalClick={handleIntervalClick}
             onIntervalsChange={handleIntervalsChange}
+            customIntervals={customIntervals}
+            onRemoveCustomInterval={handleRemoveCustomInterval}
           />
 
           {/* Summary cards */}
