@@ -3,6 +3,7 @@ import { Timer, Zap, Heart, Gauge, ChevronRight, X } from "lucide-react";
 import type { ActivityRecord, LapMarker, Interval } from "../types/fit";
 import { computeIntervals, computeAverages } from "../lib/stats";
 import { formatElapsedTime } from "../lib/formatters";
+import { saveIntervalMinutes, loadIntervalMinutes } from "../lib/storage";
 
 interface IntervalListProps {
   records: ActivityRecord[];
@@ -21,7 +22,9 @@ export function IntervalList({
   customIntervals,
   onRemoveCustomInterval,
 }: IntervalListProps) {
-  const [intervalMinutes, setIntervalMinutes] = useState<string>("");
+  const [intervalMinutes, setIntervalMinutes] = useState<string>(() =>
+    loadIntervalMinutes()
+  );
   const [activeKey, setActiveKey] = useState<string | null>(null);
 
   const intervalSeconds = useMemo(() => {
@@ -176,6 +179,7 @@ export function IntervalList({
                 value={intervalMinutes}
                 onChange={(e) => {
                   setIntervalMinutes(e.target.value);
+                  saveIntervalMinutes(e.target.value);
                   setActiveKey(null);
                 }}
                 className="w-20 px-2.5 py-1.5 text-xs font-medium text-[#f1f5f9] bg-[#1a1533]/80 border border-[rgba(139,92,246,0.25)] rounded-lg placeholder-[#94a3b8]/50 focus:outline-none focus:border-[#8b5cf6]/60 focus:ring-1 focus:ring-[#8b5cf6]/30 transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
