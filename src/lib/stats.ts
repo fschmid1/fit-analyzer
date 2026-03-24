@@ -1,4 +1,4 @@
-import type { ActivityRecord, SelectionStats } from "../types/fit";
+import type { ActivityRecord, Interval, LapMarker, SelectionStats } from "../types/fit";
 
 export function computeAverages(records: ActivityRecord[]): SelectionStats {
   if (records.length === 0) {
@@ -92,4 +92,41 @@ export function computePeakPower(
   }
 
   return best > 0 ? Math.round(best) : null;
+}
+
+/**
+ * Generate one interval per lap marker, each starting at the lap's start
+ * and lasting `intervalSeconds` (capped at activity end).
+ */
+export function computeIntervals(
+  records: ActivityRecord[],
+  laps: LapMarker[],
+  intervalSeconds: number
+): Interval[] {
+  if (laps.length === 0 || intervalSeconds <= 0 || records.length === 0) {
+    return [];
+  }
+
+  const maxSeconds = records[records.length - 1].elapsedSeconds;
+
+  return laps.map((lap, idx) => {
+    const start = lap.startSeconds;
+    const end = Math.min(start + intervalSeconds, maxSeconds);
+
+    const slice = records.filter(
+      (r) => r.elapsedSeconds >= start && r.elapsedSeconds <= end
+    );
+
+    const stats = slice.length > 0 ? computeAverages(slice) : { avgPower: null, avgHeartRate: null, avgCadence: null };
+
+    return {
+      index: idx,
+      startSeconds: start,
+      endSeconds: end,
+      avgPower: stats.avgPower,
+      avgHeartRate: stats.avgHeartRate,
+      avgCadence: stats.avgCadence,
+      duration: end - start,
+    };
+  });
 }

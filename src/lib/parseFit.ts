@@ -1,5 +1,5 @@
 import { Decoder, Stream } from "@garmin/fitsdk";
-import type { ActivityRecord, ActivitySummary, ParsedActivity } from "../types/fit";
+import type { ActivityRecord, ActivitySummary, LapMarker, ParsedActivity } from "../types/fit";
 import { computePeakPower } from "./stats";
 
 export function parseFit(arrayBuffer: ArrayBuffer): ParsedActivity {
@@ -30,6 +30,8 @@ export function parseFit(arrayBuffer: ArrayBuffer): ParsedActivity {
   const recordMesgs: any[] = messages.recordMesgs ?? [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sessionMesgs: any[] = messages.sessionMesgs ?? [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const lapMesgs: any[] = messages.lapMesgs ?? [];
 
   if (recordMesgs.length === 0) {
     throw new Error("FIT file contains no record data");
@@ -73,5 +75,18 @@ export function parseFit(arrayBuffer: ArrayBuffer): ParsedActivity {
     peak5minPower: peak5min,
   };
 
-  return { records, summary };
+  // Extract lap markers
+  const laps: LapMarker[] = lapMesgs.map((lap) => {
+    const lapStart = lap.startTime as Date;
+    const lapTimestamp = lap.timestamp as Date;
+    return {
+      startSeconds: (lapStart.getTime() - startTime.getTime()) / 1000,
+      endSeconds: (lapTimestamp.getTime() - startTime.getTime()) / 1000,
+      avgPower: lap.avgPower ? Math.round(lap.avgPower) : null,
+      avgHeartRate: lap.avgHeartRate ? Math.round(lap.avgHeartRate) : null,
+      avgCadence: lap.avgCadence ? Math.round(lap.avgCadence) : null,
+    };
+  });
+
+  return { records, summary, laps };
 }

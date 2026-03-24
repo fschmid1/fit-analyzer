@@ -1,9 +1,10 @@
 import { useState, useCallback } from "react";
-import type { ParsedActivity } from "./types/fit";
+import type { Interval, ParsedActivity } from "./types/fit";
 import { Header } from "./components/Header";
 import { FileDropZone } from "./components/FileDropZone";
 import { ActivityChart } from "./components/ActivityChart";
 import { StatsBar } from "./components/StatsBar";
+import { IntervalList } from "./components/IntervalList";
 import { SummaryCards } from "./components/SummaryCards";
 import { CopyBox } from "./components/CopyBox";
 
@@ -12,16 +13,38 @@ function App() {
   const [selectionRange, setSelectionRange] = useState<
     [number, number] | null
   >(null);
+  const [chartZoom, setChartZoom] = useState<[number, number] | null>(null);
+  const [intervalRanges, setIntervalRanges] = useState<[number, number][]>([]);
 
   const handleFileParsed = useCallback((data: ParsedActivity) => {
     setActivity(data);
     setSelectionRange(null);
+    setChartZoom(null);
+    setIntervalRanges([]);
   }, []);
 
   const handleReset = useCallback(() => {
     setActivity(null);
     setSelectionRange(null);
+    setChartZoom(null);
+    setIntervalRanges([]);
   }, []);
+
+  const handleIntervalClick = useCallback(
+    (startSeconds: number, endSeconds: number) => {
+      setChartZoom([startSeconds, endSeconds]);
+    },
+    []
+  );
+
+  const handleIntervalsChange = useCallback(
+    (intervals: Interval[]) => {
+      setIntervalRanges(
+        intervals.map((i) => [i.startSeconds, i.endSeconds] as [number, number])
+      );
+    },
+    []
+  );
 
   const handleSelectionChange = useCallback(
     (range: [number, number] | null) => {
@@ -58,6 +81,16 @@ function App() {
           <ActivityChart
             records={activity.records}
             onSelectionChange={handleSelectionChange}
+            externalZoom={chartZoom}
+            intervalRanges={intervalRanges}
+          />
+
+          {/* Interval list */}
+          <IntervalList
+            records={activity.records}
+            laps={activity.laps}
+            onIntervalClick={handleIntervalClick}
+            onIntervalsChange={handleIntervalsChange}
           />
 
           {/* Summary cards */}

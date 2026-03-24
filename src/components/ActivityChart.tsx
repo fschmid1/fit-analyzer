@@ -17,6 +17,10 @@ import type { ActivityRecord } from "../types/fit";
 interface ActivityChartProps {
   records: ActivityRecord[];
   onSelectionChange: (range: [number, number] | null) => void;
+  /** When set, chart zooms to this range. Change the reference to re-trigger. */
+  externalZoom?: [number, number] | null;
+  /** All interval ranges to highlight on the chart */
+  intervalRanges?: [number, number][];
 }
 
 interface ChartDataPoint {
@@ -91,6 +95,8 @@ const CustomTooltip = memo(function CustomTooltip({ active, payload, label }: an
 export const ActivityChart = memo(function ActivityChart({
   records,
   onSelectionChange,
+  externalZoom,
+  intervalRanges,
 }: ActivityChartProps) {
   const data: ChartDataPoint[] = useMemo(
     () =>
@@ -221,6 +227,15 @@ export const ActivityChart = memo(function ActivityChart({
     setSelection(null);
     onSelectionChange(null);
   }, [onSelectionChange]);
+
+  // --- External zoom (e.g. from interval list click) ---
+  useEffect(() => {
+    if (externalZoom) {
+      setZoomStack([externalZoom]);
+      setSelection(null);
+      onSelectionChange(null);
+    }
+  }, [externalZoom]); // intentionally exclude onSelectionChange to avoid loops
 
   // --- Ctrl + Mouse Wheel zoom ---
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -521,6 +536,21 @@ export const ActivityChart = memo(function ActivityChart({
                   isAnimationActive={false}
                 />
               )}
+
+              {/* Interval highlight overlays */}
+              {intervalRanges && intervalRanges.map((range, i) => (
+                <ReferenceArea
+                  key={`interval-${i}`}
+                  yAxisId={hasPower ? "power" : "hrCad"}
+                  x1={range[0]}
+                  x2={range[1]}
+                  fill="#f59e0b"
+                  fillOpacity={0.1}
+                  stroke="#f59e0b"
+                  strokeOpacity={0.4}
+                  strokeDasharray="6 3"
+                />
+              ))}
 
               {/* Rubber-band selection overlay */}
               {refAreaLeft !== null && refAreaRight !== null && (
