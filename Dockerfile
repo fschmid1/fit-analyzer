@@ -1,19 +1,22 @@
 # Stage 1: Install dependencies and build
-FROM oven/bun:1 AS build
+FROM node:22-alpine AS build
 
 WORKDIR /app
 
+# Enable pnpm via corepack
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 # Copy dependency files first for better layer caching
-COPY package.json bun.lock ./
+COPY package.json ./
 
 # Install dependencies
-RUN bun install --frozen-lockfile
+RUN pnpm install
 
 # Copy source code
 COPY . .
 
 # Build the application
-RUN bun run build
+RUN pnpm run build
 
 # Stage 2: Serve with nginx
 FROM nginx:alpine
