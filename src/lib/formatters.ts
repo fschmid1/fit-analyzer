@@ -17,7 +17,8 @@ export function formatCopyBoxText(
 ): string {
   const lines: string[] = [];
 
-  lines.push(`- Date: ${summary.date}`);
+  const weekday = new Date(summary.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
+  lines.push(`- Date: ${summary.date} (${weekday})`);
   lines.push(
     `- Peak 1min Power: ${summary.peak1minPower ?? "N/A"}`
   );
