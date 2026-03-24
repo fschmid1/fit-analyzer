@@ -1,5 +1,5 @@
 # Stage 1: Install dependencies and build
-FROM node:22-alpine AS build
+FROM node:22-slim AS build
 
 WORKDIR /app
 
@@ -9,7 +9,7 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 # Copy dependency files first for better layer caching
 COPY package.json ./
 
-# Install dependencies (shamefully-hoist for native binary resolution)
+# Install dependencies
 RUN pnpm install --shamefully-hoist
 
 # Copy source code
