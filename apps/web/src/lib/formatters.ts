@@ -1,4 +1,4 @@
-import type { ActivitySummary, Interval } from "../types/fit";
+import type { ActivitySummary, Interval } from "@fit-analyzer/shared";
 
 export function formatElapsedTime(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600);

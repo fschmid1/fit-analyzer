@@ -1,5 +1,5 @@
 import { Decoder, Stream } from "@garmin/fitsdk";
-import type { ActivityRecord, ActivitySummary, LapMarker, ParsedActivity } from "../types/fit";
+import type { ActivityRecord, ActivitySummary, LapMarker, ParsedActivity } from "@fit-analyzer/shared";
 import { computePeakPower } from "./stats";
 
 export function parseFit(arrayBuffer: ArrayBuffer): ParsedActivity {

@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Turborepo
+.turbo
+
+# SQLite data
+data/
+*.db
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

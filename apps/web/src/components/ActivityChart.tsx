@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { Zap, Heart, Gauge, X, ZoomIn, ZoomOut, Plus } from "lucide-react";
 import { formatElapsedTime } from "../lib/formatters";
-import type { ActivityRecord } from "../types/fit";
+import type { ActivityRecord } from "@fit-analyzer/shared";
 
 interface ActivityChartProps {
   records: ActivityRecord[];
