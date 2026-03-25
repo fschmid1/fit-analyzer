@@ -4,7 +4,7 @@ FROM oven/bun:1-debian AS build
 WORKDIR /app
 
 # Copy workspace config files first for better layer caching
-COPY package.json bun.lock pnpm-workspace.yaml turbo.json ./
+COPY package.json bun.lock turbo.json ./
 
 # Copy all package.json files for dependency resolution
 COPY packages/shared/package.json packages/shared/
