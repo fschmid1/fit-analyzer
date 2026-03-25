@@ -8,15 +8,34 @@ import type {
 
 const activities = new Hono();
 
+// Prepared statements for performance
+const listStmt = db.prepare(
+  `SELECT id, date, summary, created_at as createdAt
+   FROM activities
+   ORDER BY date DESC, created_at DESC`
+);
+
+const getStmt = db.prepare(
+  `SELECT id, date, summary, records, laps, created_at as createdAt
+   FROM activities
+   WHERE id = ?`
+);
+
+const insertStmt = db.prepare(
+  `INSERT INTO activities (id, date, summary, records, laps)
+   VALUES (?, ?, ?, ?, ?)`
+);
+
+const deleteStmt = db.prepare("DELETE FROM activities WHERE id = ?");
+
 // GET /activities — list all activities (summary only, no records)
 activities.get("/", (c) => {
-  const rows = db
-    .prepare(
-      `SELECT id, date, summary, created_at as createdAt
-       FROM activities
-       ORDER BY date DESC, created_at DESC`
-    )
-    .all() as { id: string; date: string; summary: string; createdAt: string }[];
+  const rows = listStmt.all() as {
+    id: string;
+    date: string;
+    summary: string;
+    createdAt: string;
+  }[];
 
   const items: ActivityListItem[] = rows.map((row) => ({
     id: row.id,
@@ -32,13 +51,7 @@ activities.get("/", (c) => {
 activities.get("/:id", (c) => {
   const { id } = c.req.param();
 
-  const row = db
-    .prepare(
-      `SELECT id, date, summary, records, laps, created_at as createdAt
-       FROM activities
-       WHERE id = ?`
-    )
-    .get(id) as
+  const row = getStmt.get(id) as
     | {
         id: string;
         date: string;
@@ -47,7 +60,7 @@ activities.get("/:id", (c) => {
         laps: string;
         createdAt: string;
       }
-    | undefined;
+    | null;
 
   if (!row) {
     return c.json({ error: "Activity not found" }, 404);
@@ -70,16 +83,16 @@ activities.post("/", async (c) => {
   const body = await c.req.json<CreateActivityBody>();
 
   if (!body.summary || !body.records || !body.laps) {
-    return c.json({ error: "Missing required fields: summary, records, laps" }, 400);
+    return c.json(
+      { error: "Missing required fields: summary, records, laps" },
+      400
+    );
   }
 
   const id = crypto.randomUUID();
   const date = body.summary.date;
 
-  db.prepare(
-    `INSERT INTO activities (id, date, summary, records, laps)
-     VALUES (?, ?, ?, ?, ?)`
-  ).run(
+  insertStmt.run(
     id,
     date,
     JSON.stringify(body.summary),
@@ -94,7 +107,7 @@ activities.post("/", async (c) => {
 activities.delete("/:id", (c) => {
   const { id } = c.req.param();
 
-  const result = db.prepare("DELETE FROM activities WHERE id = ?").run(id);
+  const result = deleteStmt.run(id);
 
   if (result.changes === 0) {
     return c.json({ error: "Activity not found" }, 404);
