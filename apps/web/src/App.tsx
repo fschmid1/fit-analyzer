@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import type { ActivityListItem, Interval, ParsedActivity } from "@fit-analyzer/shared";
 import { computeAverages } from "./lib/stats";
 import { Header } from "./components/Header";
@@ -14,12 +14,14 @@ import {
   loadCustomIntervals,
   clearCustomIntervals,
   clearIntervalMinutes,
+  saveIntervalMinutes,
 } from "./lib/storage";
 import {
   fetchActivities,
   fetchActivity,
   saveActivityToServer,
   deleteActivity,
+  updateIntervals,
 } from "./lib/api";
 
 type View = "history" | "upload" | "analysis";
@@ -40,6 +42,12 @@ function App() {
   const [customIntervals, setCustomIntervals] = useState<[number, number][]>(
     () => loadCustomIntervals()
   );
+  const [intervalMinutes, setIntervalMinutes] = useState<string>("");
+  // Track the initial interval minutes to pass to IntervalList on mount
+  const [savedIntervalMinutes, setSavedIntervalMinutes] = useState<string>("");
+
+  // Ref to prevent saving intervals back to DB right after loading them
+  const skipNextSave = useRef(false);
 
   // Fetch activity list on mount
   useEffect(() => {
@@ -58,7 +66,7 @@ function App() {
     }
   };
 
-  // Persist custom intervals when they change
+  // Persist custom intervals to localStorage
   useEffect(() => {
     saveCustomIntervals(customIntervals);
   }, [customIntervals]);
@@ -69,6 +77,8 @@ function App() {
     setIntervalRanges([]);
     setLapIntervalObjects([]);
     setCustomIntervals([]);
+    setIntervalMinutes("");
+    setSavedIntervalMinutes("");
     clearCustomIntervals();
     clearIntervalMinutes();
   }, []);
@@ -99,13 +109,40 @@ function App() {
         const data = await fetchActivity(id);
         setActivity(data);
         setActivityId(data.id);
-        resetAnalysisState();
+
+        // Reset selection/zoom state
+        setSelectionRange(null);
+        setChartZoom(null);
+
+        // Restore saved interval config from DB
+        const mins = data.intervalMinutes || "";
+        setSavedIntervalMinutes(mins);
+        setIntervalMinutes(mins);
+        if (mins) {
+          saveIntervalMinutes(mins);
+        }
+
+        // Restore custom intervals from DB
+        if (data.customRanges && data.customRanges.length > 0) {
+          setCustomIntervals(data.customRanges);
+        } else {
+          setCustomIntervals([]);
+          clearCustomIntervals();
+        }
+
+        // Skip saving intervals back to DB when IntervalList recomputes on mount
+        skipNextSave.current = true;
+
+        // The lap intervals will be recomputed by IntervalList from laps + intervalMinutes
+        setLapIntervalObjects([]);
+        setIntervalRanges([]);
+
         setView("analysis");
       } catch (err) {
         console.error("Failed to load activity:", err);
       }
     },
-    [resetAnalysisState]
+    []
   );
 
   const handleDeleteActivity = useCallback(async (id: string) => {
@@ -145,6 +182,10 @@ function App() {
     setLapIntervalObjects(intervals);
   }, []);
 
+  const handleIntervalMinutesChange = useCallback((minutes: string) => {
+    setIntervalMinutes(minutes);
+  }, []);
+
   const customIntervalObjects: Interval[] = useMemo(() => {
     if (!activity || customIntervals.length === 0) return [];
     return customIntervals.map((range, idx) => {
@@ -178,6 +219,31 @@ function App() {
   const handleRemoveCustomInterval = useCallback((index: number) => {
     setCustomIntervals((prev) => prev.filter((_, i) => i !== index));
   }, []);
+
+  // Persist all intervals to DB when they change
+  const allIntervals = useMemo(
+    () => [...lapIntervalObjects, ...customIntervalObjects],
+    [lapIntervalObjects, customIntervalObjects]
+  );
+
+  useEffect(() => {
+    if (!activityId) return;
+
+    // Skip the first save after loading from DB (IntervalList recomputes on mount)
+    if (skipNextSave.current) {
+      skipNextSave.current = false;
+      return;
+    }
+
+    if (allIntervals.length > 0 || customIntervals.length > 0) {
+      updateIntervals(
+        activityId,
+        allIntervals,
+        intervalMinutes,
+        customIntervals
+      ).catch((err) => console.error("Failed to save intervals:", err));
+    }
+  }, [activityId, allIntervals, intervalMinutes, customIntervals]);
 
   const handleSelectionChange = useCallback(
     (range: [number, number] | null) => {
@@ -241,8 +307,10 @@ function App() {
             laps={activity.laps}
             onIntervalClick={handleIntervalClick}
             onIntervalsChange={handleIntervalsChange}
+            onIntervalMinutesChange={handleIntervalMinutesChange}
             customIntervals={customIntervals}
             onRemoveCustomInterval={handleRemoveCustomInterval}
+            initialIntervalMinutes={savedIntervalMinutes}
           />
 
           {/* Summary cards */}

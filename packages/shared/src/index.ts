@@ -9,4 +9,6 @@ export type {
   ActivityListItem,
   StoredActivity,
   CreateActivityBody,
+  IntervalConfig,
+  UpdateIntervalsBody,
 } from "./types.js";

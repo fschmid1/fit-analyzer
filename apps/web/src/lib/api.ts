@@ -1,5 +1,6 @@
 import type {
   ActivityListItem,
+  Interval,
   ParsedActivity,
   StoredRecord,
 } from "@fit-analyzer/shared";
@@ -17,7 +18,14 @@ export async function fetchActivities(): Promise<ActivityListItem[]> {
 /** Fetch a single activity with full records */
 export async function fetchActivity(
   id: string
-): Promise<ParsedActivity & { id: string }> {
+): Promise<
+  ParsedActivity & {
+    id: string;
+    intervals: Interval[];
+    intervalMinutes: string;
+    customRanges: [number, number][];
+  }
+> {
   const res = await fetch(`${API_BASE}/activities/${id}`);
   if (!res.ok) throw new Error("Failed to fetch activity");
   const data = await res.json();
@@ -31,6 +39,9 @@ export async function fetchActivity(
     })),
     summary: data.summary,
     laps: data.laps,
+    intervals: data.intervals ?? [],
+    intervalMinutes: data.intervalMinutes ?? "",
+    customRanges: data.customRanges ?? [],
   };
 }
 
@@ -56,6 +67,21 @@ export async function saveActivityToServer(
   if (!res.ok) throw new Error("Failed to save activity");
   const data = await res.json();
   return data.id;
+}
+
+/** Update intervals for an activity */
+export async function updateIntervals(
+  id: string,
+  intervals: Interval[],
+  intervalMinutes: string,
+  customRanges: [number, number][]
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/activities/${id}/intervals`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ intervals, intervalMinutes, customRanges }),
+  });
+  if (!res.ok) throw new Error("Failed to update intervals");
 }
 
 /** Delete an activity by ID */

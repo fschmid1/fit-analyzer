@@ -78,6 +78,9 @@ export interface StoredActivity {
   summary: ActivitySummary;
   records: StoredRecord[];
   laps: LapMarker[];
+  intervals: Interval[];
+  intervalMinutes: string;
+  customRanges: [number, number][];
   createdAt: string;
 }
 
@@ -86,4 +89,19 @@ export interface CreateActivityBody {
   summary: ActivitySummary;
   records: StoredRecord[];
   laps: LapMarker[];
+  intervals?: Interval[];
+}
+
+/** Stored interval configuration for an activity */
+export interface IntervalConfig {
+  intervals: Interval[];
+  intervalMinutes: string;
+  customRanges: [number, number][];
+}
+
+/** PATCH body for updating activity intervals */
+export interface UpdateIntervalsBody {
+  intervals: Interval[];
+  intervalMinutes: string;
+  customRanges: [number, number][];
 }

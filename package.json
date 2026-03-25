@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "bun@1.3.10",
   "scripts": {
+    "postinstall": "find apps/*/node_modules packages/*/node_modules -type l ! -exec test -e {} \\; -delete 2>/dev/null || true",
     "dev": "turbo dev",
     "build": "turbo build",
     "preview": "turbo preview"

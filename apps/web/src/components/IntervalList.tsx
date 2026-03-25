@@ -10,8 +10,10 @@ interface IntervalListProps {
   laps: LapMarker[];
   onIntervalClick: (startSeconds: number, endSeconds: number) => void;
   onIntervalsChange: (intervals: Interval[]) => void;
+  onIntervalMinutesChange: (minutes: string) => void;
   customIntervals: [number, number][];
   onRemoveCustomInterval: (index: number) => void;
+  initialIntervalMinutes?: string;
 }
 
 export function IntervalList({
@@ -19,11 +21,13 @@ export function IntervalList({
   laps,
   onIntervalClick,
   onIntervalsChange,
+  onIntervalMinutesChange,
   customIntervals,
   onRemoveCustomInterval,
+  initialIntervalMinutes,
 }: IntervalListProps) {
-  const [intervalMinutes, setIntervalMinutes] = useState<string>(() =>
-    loadIntervalMinutes()
+  const [intervalMinutes, setIntervalMinutes] = useState<string>(
+    () => initialIntervalMinutes || loadIntervalMinutes()
   );
   const [activeKey, setActiveKey] = useState<string | null>(null);
 
@@ -180,6 +184,7 @@ export function IntervalList({
                 onChange={(e) => {
                   setIntervalMinutes(e.target.value);
                   saveIntervalMinutes(e.target.value);
+                  onIntervalMinutesChange(e.target.value);
                   setActiveKey(null);
                 }}
                 className="w-20 px-2.5 py-1.5 text-xs font-medium text-[#f1f5f9] bg-[#1a1533]/80 border border-[rgba(139,92,246,0.25)] rounded-lg placeholder-[#94a3b8]/50 focus:outline-none focus:border-[#8b5cf6]/60 focus:ring-1 focus:ring-[#8b5cf6]/30 transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"

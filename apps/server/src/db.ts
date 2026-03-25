@@ -20,9 +20,27 @@ db.exec(`
     summary TEXT NOT NULL,
     records TEXT NOT NULL,
     laps TEXT NOT NULL,
+    intervals TEXT NOT NULL DEFAULT '[]',
+    interval_minutes TEXT NOT NULL DEFAULT '',
+    custom_ranges TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_activities_date ON activities(date);
 `);
+
+// Migrations: add columns for existing databases
+const migrations = [
+  `ALTER TABLE activities ADD COLUMN intervals TEXT NOT NULL DEFAULT '[]'`,
+  `ALTER TABLE activities ADD COLUMN interval_minutes TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE activities ADD COLUMN custom_ranges TEXT NOT NULL DEFAULT '[]'`,
+];
+
+for (const migration of migrations) {
+  try {
+    db.exec(migration);
+  } catch {
+    // Column already exists — ignore
+  }
+}
 
 export { db };

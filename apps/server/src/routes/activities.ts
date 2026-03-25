@@ -4,6 +4,7 @@ import type {
   ActivityListItem,
   StoredActivity,
   CreateActivityBody,
+  UpdateIntervalsBody,
 } from "@fit-analyzer/shared";
 
 const activities = new Hono();
@@ -16,14 +17,18 @@ const listStmt = db.prepare(
 );
 
 const getStmt = db.prepare(
-  `SELECT id, date, summary, records, laps, created_at as createdAt
+  `SELECT id, date, summary, records, laps, intervals, interval_minutes, custom_ranges, created_at as createdAt
    FROM activities
    WHERE id = ?`
 );
 
 const insertStmt = db.prepare(
-  `INSERT INTO activities (id, date, summary, records, laps)
-   VALUES (?, ?, ?, ?, ?)`
+  `INSERT INTO activities (id, date, summary, records, laps, intervals)
+   VALUES (?, ?, ?, ?, ?, ?)`
+);
+
+const updateIntervalsStmt = db.prepare(
+  `UPDATE activities SET intervals = ?, interval_minutes = ?, custom_ranges = ? WHERE id = ?`
 );
 
 const deleteStmt = db.prepare("DELETE FROM activities WHERE id = ?");
@@ -58,6 +63,9 @@ activities.get("/:id", (c) => {
         summary: string;
         records: string;
         laps: string;
+        intervals: string;
+        interval_minutes: string;
+        custom_ranges: string;
         createdAt: string;
       }
     | null;
@@ -72,6 +80,9 @@ activities.get("/:id", (c) => {
     summary: JSON.parse(row.summary),
     records: JSON.parse(row.records),
     laps: JSON.parse(row.laps),
+    intervals: JSON.parse(row.intervals || "[]"),
+    intervalMinutes: row.interval_minutes || "",
+    customRanges: JSON.parse(row.custom_ranges || "[]"),
     createdAt: row.createdAt,
   };
 
@@ -97,10 +108,34 @@ activities.post("/", async (c) => {
     date,
     JSON.stringify(body.summary),
     JSON.stringify(body.records),
-    JSON.stringify(body.laps)
+    JSON.stringify(body.laps),
+    JSON.stringify(body.intervals ?? [])
   );
 
   return c.json({ id }, 201);
+});
+
+// PATCH /activities/:id/intervals — update intervals for an activity
+activities.patch("/:id/intervals", async (c) => {
+  const { id } = c.req.param();
+  const body = await c.req.json<UpdateIntervalsBody>();
+
+  if (!Array.isArray(body.intervals)) {
+    return c.json({ error: "Missing required field: intervals" }, 400);
+  }
+
+  const result = updateIntervalsStmt.run(
+    JSON.stringify(body.intervals),
+    body.intervalMinutes ?? "",
+    JSON.stringify(body.customRanges ?? []),
+    id
+  );
+
+  if (result.changes === 0) {
+    return c.json({ error: "Activity not found" }, 404);
+  }
+
+  return c.json({ ok: true });
 });
 
 // DELETE /activities/:id — delete an activity
