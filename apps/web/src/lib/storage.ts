@@ -1,4 +1,4 @@
-import type { ParsedActivity } from "@fit-analyzer/shared";
+import type { ParsedActivity, ActivityRecord } from "@fit-analyzer/shared";
 
 const ACTIVITY_KEY = "fit-analyzer:activity";
 const CUSTOM_INTERVALS_KEY = "fit-analyzer:customIntervals";
@@ -21,7 +21,7 @@ interface StoredActivity {
 export function saveActivity(activity: ParsedActivity): void {
   try {
     const stored: StoredActivity = {
-      records: activity.records.map((r) => ({
+      records: activity.records.map((r: ActivityRecord) => ({
         ...r,
         timestamp: r.timestamp.toISOString(),
       })),
