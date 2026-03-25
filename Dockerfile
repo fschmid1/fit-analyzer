@@ -1,22 +1,19 @@
 # Stage 1: Install dependencies and build
-FROM node:22-slim AS build
+FROM oven/bun:1-debian AS build
 
 WORKDIR /app
 
-# Enable pnpm via corepack
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
 # Copy dependency files first for better layer caching
-COPY package.json ./
+COPY package.json bun.lock ./
 
 # Install dependencies
-RUN pnpm install --shamefully-hoist
+RUN bun install --frozen-lockfile
 
 # Copy source code
 COPY . .
 
 # Build the application
-RUN pnpm run build
+RUN bun run build
 
 # Stage 2: Serve with nginx
 FROM nginx:alpine
