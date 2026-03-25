@@ -2,5 +2,10 @@ services:
     fit-analyzer:
         build: .
         ports:
-            - "3000:80"
+            - "3000:3001"
+        volumes:
+            - fit-data:/app/data
         restart: unless-stopped
+
+volumes:
+    fit-data:

@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { Timer, Zap, Heart, Gauge, ChevronRight, X } from "lucide-react";
-import type { ActivityRecord, LapMarker, Interval } from "../types/fit";
+import type { ActivityRecord, LapMarker, Interval } from "@fit-analyzer/shared";
 import { computeIntervals, computeAverages } from "../lib/stats";
 import { formatElapsedTime } from "../lib/formatters";
 import { saveIntervalMinutes, loadIntervalMinutes } from "../lib/storage";

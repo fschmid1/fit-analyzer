@@ -1,4 +1,4 @@
-import type { ParsedActivity } from "../types/fit";
+import type { ParsedActivity } from "@fit-analyzer/shared";
 
 const ACTIVITY_KEY = "fit-analyzer:activity";
 const CUSTOM_INTERVALS_KEY = "fit-analyzer:customIntervals";

@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { Upload, FileWarning, Loader2 } from "lucide-react";
 import { parseFit } from "../lib/parseFit";
-import type { ParsedActivity } from "../types/fit";
+import type { ParsedActivity } from "@fit-analyzer/shared";
 
 interface FileDropZoneProps {
   onFileParsed: (data: ParsedActivity) => void;

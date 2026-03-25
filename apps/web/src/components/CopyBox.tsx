@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Clipboard, Check } from "lucide-react";
-import type { ActivitySummary, Interval } from "../types/fit";
+import type { ActivitySummary, Interval } from "@fit-analyzer/shared";
 import { formatCopyBoxText } from "../lib/formatters";
 
 interface CopyBoxProps {

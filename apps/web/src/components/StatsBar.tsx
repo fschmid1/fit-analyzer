@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Zap, Heart, Gauge, Clock } from "lucide-react";
-import type { ActivityRecord } from "../types/fit";
+import type { ActivityRecord } from "@fit-analyzer/shared";
 import { computeAverages } from "../lib/stats";
 import { formatElapsedTime } from "../lib/formatters";
 

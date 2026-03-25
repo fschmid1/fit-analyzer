@@ -1,4 +1,4 @@
-import type { ActivityRecord, Interval, LapMarker, SelectionStats } from "../types/fit";
+import type { ActivityRecord, Interval, LapMarker, SelectionStats } from "@fit-analyzer/shared";
 
 export function computeAverages(records: ActivityRecord[]): SelectionStats {
   if (records.length === 0) {

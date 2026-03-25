@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { MetricCard } from "./MetricCard";
 import { formatElapsedTime } from "../lib/formatters";
-import type { ActivitySummary } from "../types/fit";
+import type { ActivitySummary } from "@fit-analyzer/shared";
 
 interface SummaryCardsProps {
   summary: ActivitySummary;
