@@ -7,4 +7,5 @@ dist
 .idea
 .DS_Store
 .turbo
+**/*.tsbuildinfo
 data

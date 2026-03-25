@@ -11,12 +11,10 @@ app.use("*", logger());
 // API routes
 app.route("/api/activities", activities);
 
-// In production, serve the built frontend static files
-if (process.env.NODE_ENV === "production") {
-  app.use("/*", serveStatic({ root: "./public" }));
-  // SPA fallback — serve index.html for any unmatched route
-  app.use("*", serveStatic({ path: "./public/index.html" }));
-}
+// Serve the built frontend static files (in production, ./public contains the web build)
+app.use("/*", serveStatic({ root: "./public" }));
+// SPA fallback — serve index.html for any unmatched route
+app.get("*", serveStatic({ root: "./public", path: "index.html" }));
 
 const port = parseInt(process.env.PORT || "3001", 10);
 

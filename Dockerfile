@@ -4,7 +4,7 @@ FROM oven/bun:1-debian AS build
 WORKDIR /app
 
 # Copy workspace config files first for better layer caching
-COPY package.json bun.lock turbo.json ./
+COPY package.json bun.lock turbo.json bunfig.toml ./
 
 # Copy all package.json files for dependency resolution
 COPY packages/shared/package.json packages/shared/
@@ -16,6 +16,9 @@ RUN bun install --frozen-lockfile
 
 # Copy source code
 COPY . .
+
+# Fix broken symlinks left by bun's hoisted linker in sub-package node_modules
+RUN find apps/*/node_modules -xtype l -delete 2>/dev/null || true
 
 # Build all packages (shared -> web + server)
 RUN bun run build
