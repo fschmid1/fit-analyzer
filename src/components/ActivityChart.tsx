@@ -125,6 +125,11 @@ export const ActivityChart = memo(function ActivityChart({
     [records]
   );
 
+  // --- Series visibility toggles ---
+  const [showPower, setShowPower] = useState(true);
+  const [showHeartRate, setShowHeartRate] = useState(true);
+  const [showCadence, setShowCadence] = useState(true);
+
   // --- Zoom state (stack of [startSeconds, endSeconds] ranges) ---
   const [zoomStack, setZoomStack] = useState<[number, number][]>([]);
 
@@ -356,19 +361,19 @@ export const ActivityChart = memo(function ActivityChart({
 
   // Compute Y-axis domains based on VISIBLE data
   const powerDomain = useMemo(() => {
-    if (!hasPower) return [0, 400];
+    if (!hasPower || !showPower) return [0, 400];
     const powers = visibleData.filter((r) => r.power !== null).map((r) => r.power!);
     if (powers.length === 0) return [0, 400];
     return [0, Math.ceil(Math.max(...powers) * 1.1 / 50) * 50];
-  }, [visibleData, hasPower]);
+  }, [visibleData, hasPower, showPower]);
 
   const hrCadDomain = useMemo(() => {
     const values: number[] = [];
-    if (hasHeartRate)
+    if (hasHeartRate && showHeartRate)
       values.push(
         ...visibleData.filter((r) => r.heartRate !== null).map((r) => r.heartRate!)
       );
-    if (hasCadence)
+    if (hasCadence && showCadence)
       values.push(
         ...visibleData.filter((r) => r.cadence !== null).map((r) => r.cadence!)
       );
@@ -377,7 +382,7 @@ export const ActivityChart = memo(function ActivityChart({
       Math.floor(Math.min(...values) * 0.9 / 10) * 10,
       Math.ceil(Math.max(...values) * 1.1 / 10) * 10,
     ];
-  }, [visibleData, hasHeartRate, hasCadence]);
+  }, [visibleData, hasHeartRate, hasCadence, showHeartRate, showCadence]);
 
   // Determine which ReferenceArea to show: active drag or committed selection
   const refAreaLeft =
@@ -400,28 +405,37 @@ export const ActivityChart = memo(function ActivityChart({
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-6 ml-12">
             {hasPower && (
-              <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setShowPower((v) => !v)}
+                className={`flex items-center gap-1.5 cursor-pointer transition-opacity ${showPower ? "opacity-100" : "opacity-40"}`}
+              >
                 <Zap className="w-3.5 h-3.5 text-[#8b5cf6]" />
-                <span className="text-xs font-medium text-[#94a3b8]">
+                <span className={`text-xs font-medium text-[#94a3b8] ${!showPower ? "line-through" : ""}`}>
                   Power (W)
                 </span>
-              </div>
+              </button>
             )}
             {hasHeartRate && (
-              <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setShowHeartRate((v) => !v)}
+                className={`flex items-center gap-1.5 cursor-pointer transition-opacity ${showHeartRate ? "opacity-100" : "opacity-40"}`}
+              >
                 <Heart className="w-3.5 h-3.5 text-[#ef4444]" />
-                <span className="text-xs font-medium text-[#94a3b8]">
+                <span className={`text-xs font-medium text-[#94a3b8] ${!showHeartRate ? "line-through" : ""}`}>
                   Heart Rate (bpm)
                 </span>
-              </div>
+              </button>
             )}
             {hasCadence && (
-              <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setShowCadence((v) => !v)}
+                className={`flex items-center gap-1.5 cursor-pointer transition-opacity ${showCadence ? "opacity-100" : "opacity-40"}`}
+              >
                 <Gauge className="w-3.5 h-3.5 text-[#06b6d4]" />
-                <span className="text-xs font-medium text-[#94a3b8]">
+                <span className={`text-xs font-medium text-[#94a3b8] ${!showCadence ? "line-through" : ""}`}>
                   Cadence (rpm)
                 </span>
-              </div>
+              </button>
             )}
           </div>
 
@@ -520,7 +534,7 @@ export const ActivityChart = memo(function ActivityChart({
                 minTickGap={60}
               />
 
-              {hasPower && (
+              {hasPower && showPower && (
                 <YAxis
                   yAxisId="power"
                   orientation="left"
@@ -534,7 +548,7 @@ export const ActivityChart = memo(function ActivityChart({
                 />
               )}
 
-              {(hasHeartRate || hasCadence) && (
+              {((hasHeartRate && showHeartRate) || (hasCadence && showCadence)) && (
                 <YAxis
                   yAxisId="hrCad"
                   orientation="right"
@@ -550,7 +564,7 @@ export const ActivityChart = memo(function ActivityChart({
 
               <Tooltip content={<CustomTooltip />} />
 
-              {hasPower && (
+              {hasPower && showPower && (
                 <Area
                   yAxisId="power"
                   type="monotone"
@@ -565,7 +579,7 @@ export const ActivityChart = memo(function ActivityChart({
                 />
               )}
 
-              {hasHeartRate && (
+              {hasHeartRate && showHeartRate && (
                 <Line
                   yAxisId="hrCad"
                   type="monotone"
@@ -579,9 +593,9 @@ export const ActivityChart = memo(function ActivityChart({
                 />
               )}
 
-              {hasCadence && (
+              {hasCadence && showCadence && (
                 <Line
-                  yAxisId={hasHeartRate || hasCadence ? "hrCad" : "power"}
+                  yAxisId={(hasHeartRate && showHeartRate) || (hasCadence && showCadence) ? "hrCad" : "power"}
                   type="monotone"
                   dataKey="cadence"
                   stroke="#06b6d4"
@@ -597,7 +611,7 @@ export const ActivityChart = memo(function ActivityChart({
               {intervalRanges && intervalRanges.map((range, i) => (
                 <ReferenceArea
                   key={`interval-${i}`}
-                  yAxisId={hasPower ? "power" : "hrCad"}
+                  yAxisId={hasPower && showPower ? "power" : "hrCad"}
                   x1={range[0]}
                   x2={range[1]}
                   fill="#f59e0b"
@@ -611,7 +625,7 @@ export const ActivityChart = memo(function ActivityChart({
               {/* Rubber-band selection overlay */}
               {refAreaLeft !== null && refAreaRight !== null && (
                 <ReferenceArea
-                  yAxisId={hasPower ? "power" : "hrCad"}
+                  yAxisId={hasPower && showPower ? "power" : "hrCad"}
                   x1={refAreaLeft}
                   x2={refAreaRight}
                   fill="#8b5cf6"
