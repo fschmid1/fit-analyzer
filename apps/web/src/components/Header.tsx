@@ -86,9 +86,9 @@ export function Header({ view, onBackToHistory, onUploadNew, user }: HeaderProps
               <p className="text-sm font-medium text-[#f1f5f9] leading-tight">
                 {user.name || user.username}
               </p>
-              {user.name && user.username && (
+              {user.name && user.username && user.name !== user.username && (
                 <p className="text-xs text-[#94a3b8] leading-tight">
-                  @{user.username}
+                  {user.username}
                 </p>
               )}
             </div>
