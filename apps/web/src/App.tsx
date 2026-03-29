@@ -26,10 +26,36 @@ import {
 
 type View = "history" | "upload" | "analysis";
 
+/** Parse the URL hash to determine the initial view and activity ID */
+function parseHash(): { view: View; activityId: string | null } {
+  const hash = window.location.hash;
+  if (hash.startsWith("#/activity/")) {
+    const id = hash.slice("#/activity/".length);
+    if (id) return { view: "analysis", activityId: id };
+  }
+  if (hash === "#/upload") {
+    return { view: "upload", activityId: null };
+  }
+  return { view: "history", activityId: null };
+}
+
+/** Update the URL hash without triggering a page reload */
+function setHash(view: View, activityId?: string | null) {
+  if (view === "analysis" && activityId) {
+    window.location.hash = `/activity/${activityId}`;
+  } else if (view === "upload") {
+    window.location.hash = "/upload";
+  } else {
+    // Use replaceState to clear hash cleanly (avoids scroll-to-top)
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+  }
+}
+
 function App() {
-  const [view, setView] = useState<View>("history");
+  const initialRoute = useRef(parseHash());
+  const [view, setView] = useState<View>(initialRoute.current.view);
   const [activity, setActivity] = useState<ParsedActivity | null>(null);
-  const [activityId, setActivityId] = useState<string | null>(null);
+  const [activityId, setActivityId] = useState<string | null>(initialRoute.current.activityId);
   const [activities, setActivities] = useState<ActivityListItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
 
@@ -49,9 +75,41 @@ function App() {
   // Ref to prevent saving intervals back to DB right after loading them
   const skipNextSave = useRef(false);
 
-  // Fetch activity list on mount
+  // Fetch activity list on mount + restore activity from URL hash
   useEffect(() => {
     loadActivities();
+
+    const { activityId: hashId } = initialRoute.current;
+    if (hashId) {
+      // Restore the activity that was in the URL
+      fetchActivity(hashId)
+        .then((data) => {
+          setActivity(data);
+          setActivityId(data.id);
+
+          const mins = data.intervalMinutes || "";
+          setSavedIntervalMinutes(mins);
+          setIntervalMinutes(mins);
+          if (mins) saveIntervalMinutes(mins);
+
+          if (data.customRanges && data.customRanges.length > 0) {
+            setCustomIntervals(data.customRanges);
+          } else {
+            setCustomIntervals([]);
+            clearCustomIntervals();
+          }
+
+          skipNextSave.current = true;
+          setLapIntervalObjects([]);
+          setIntervalRanges([]);
+          setView("analysis");
+        })
+        .catch((err) => {
+          console.error("Failed to restore activity from URL:", err);
+          setView("history");
+          setHash("history");
+        });
+    }
   }, []);
 
   const loadActivities = async () => {
@@ -93,6 +151,7 @@ function App() {
       try {
         const id = await saveActivityToServer(data);
         setActivityId(id);
+        setHash("analysis", id);
         // Refresh the list
         const list = await fetchActivities();
         setActivities(list);
@@ -138,12 +197,36 @@ function App() {
         setIntervalRanges([]);
 
         setView("analysis");
+        setHash("analysis", data.id);
       } catch (err) {
         console.error("Failed to load activity:", err);
       }
     },
     []
   );
+
+  // Handle browser back/forward navigation
+  useEffect(() => {
+    const handleHashChange = () => {
+      const { view: newView, activityId: newId } = parseHash();
+      if (newView === "analysis" && newId) {
+        handleSelectActivity(newId);
+      } else if (newView === "upload") {
+        setView("upload");
+        setActivity(null);
+        setActivityId(null);
+      } else {
+        setActivity(null);
+        setActivityId(null);
+        resetAnalysisState();
+        setView("history");
+        loadActivities();
+      }
+    };
+
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, [handleSelectActivity, resetAnalysisState]);
 
   const handleDeleteActivity = useCallback(async (id: string) => {
     try {
@@ -159,11 +242,13 @@ function App() {
     setActivityId(null);
     resetAnalysisState();
     setView("history");
+    setHash("history");
     loadActivities();
   }, [resetAnalysisState]);
 
   const handleUploadNew = useCallback(() => {
     setView("upload");
+    setHash("upload");
   }, []);
 
   const handleIntervalClick = useCallback(

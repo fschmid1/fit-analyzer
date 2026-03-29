@@ -9,33 +9,50 @@ import type {
 
 const activities = new Hono();
 
-// Prepared statements for performance
+/** Extract the authenticated user ID from Authentik proxy headers */
+function getUserId(c: { req: { header: (name: string) => string | undefined } }): string {
+  const userId = c.req.header("x-authentik-username");
+  if (!userId) {
+    throw new Error("Missing X-authentik-username header");
+  }
+  return userId;
+}
+
+// Prepared statements for performance — now scoped by user_id
 const listStmt = db.prepare(
   `SELECT id, date, summary, created_at as createdAt
    FROM activities
+   WHERE user_id = ?
    ORDER BY date DESC, created_at DESC`
 );
 
 const getStmt = db.prepare(
   `SELECT id, date, summary, records, laps, intervals, interval_minutes, custom_ranges, created_at as createdAt
    FROM activities
-   WHERE id = ?`
+   WHERE id = ? AND user_id = ?`
 );
 
 const insertStmt = db.prepare(
-  `INSERT INTO activities (id, date, summary, records, laps, intervals)
-   VALUES (?, ?, ?, ?, ?, ?)`
+  `INSERT INTO activities (id, date, summary, records, laps, intervals, user_id)
+   VALUES (?, ?, ?, ?, ?, ?, ?)`
 );
 
 const updateIntervalsStmt = db.prepare(
-  `UPDATE activities SET intervals = ?, interval_minutes = ?, custom_ranges = ? WHERE id = ?`
+  `UPDATE activities SET intervals = ?, interval_minutes = ?, custom_ranges = ? WHERE id = ? AND user_id = ?`
 );
 
-const deleteStmt = db.prepare("DELETE FROM activities WHERE id = ?");
+const deleteStmt = db.prepare("DELETE FROM activities WHERE id = ? AND user_id = ?");
 
-// GET /activities — list all activities (summary only, no records)
+// GET /activities — list all activities for the current user (summary only, no records)
 activities.get("/", (c) => {
-  const rows = listStmt.all() as {
+  let userId: string;
+  try {
+    userId = getUserId(c);
+  } catch {
+    return c.json({ error: "Unauthorized: missing X-authentik-username header" }, 401);
+  }
+
+  const rows = listStmt.all(userId) as {
     id: string;
     date: string;
     summary: string;
@@ -52,11 +69,18 @@ activities.get("/", (c) => {
   return c.json({ activities: items });
 });
 
-// GET /activities/:id — full activity with records + laps
+// GET /activities/:id — full activity with records + laps (scoped to current user)
 activities.get("/:id", (c) => {
+  let userId: string;
+  try {
+    userId = getUserId(c);
+  } catch {
+    return c.json({ error: "Unauthorized: missing X-authentik-username header" }, 401);
+  }
+
   const { id } = c.req.param();
 
-  const row = getStmt.get(id) as
+  const row = getStmt.get(id, userId) as
     | {
         id: string;
         date: string;
@@ -89,8 +113,15 @@ activities.get("/:id", (c) => {
   return c.json(activity);
 });
 
-// POST /activities — save a new activity
+// POST /activities — save a new activity for the current user
 activities.post("/", async (c) => {
+  let userId: string;
+  try {
+    userId = getUserId(c);
+  } catch {
+    return c.json({ error: "Unauthorized: missing X-authentik-username header" }, 401);
+  }
+
   const body = await c.req.json<CreateActivityBody>();
 
   if (!body.summary || !body.records || !body.laps) {
@@ -109,14 +140,22 @@ activities.post("/", async (c) => {
     JSON.stringify(body.summary),
     JSON.stringify(body.records),
     JSON.stringify(body.laps),
-    JSON.stringify(body.intervals ?? [])
+    JSON.stringify(body.intervals ?? []),
+    userId
   );
 
   return c.json({ id }, 201);
 });
 
-// PATCH /activities/:id/intervals — update intervals for an activity
+// PATCH /activities/:id/intervals — update intervals for an activity (scoped to current user)
 activities.patch("/:id/intervals", async (c) => {
+  let userId: string;
+  try {
+    userId = getUserId(c);
+  } catch {
+    return c.json({ error: "Unauthorized: missing X-authentik-username header" }, 401);
+  }
+
   const { id } = c.req.param();
   const body = await c.req.json<UpdateIntervalsBody>();
 
@@ -128,7 +167,8 @@ activities.patch("/:id/intervals", async (c) => {
     JSON.stringify(body.intervals),
     body.intervalMinutes ?? "",
     JSON.stringify(body.customRanges ?? []),
-    id
+    id,
+    userId
   );
 
   if (result.changes === 0) {
@@ -138,11 +178,18 @@ activities.patch("/:id/intervals", async (c) => {
   return c.json({ ok: true });
 });
 
-// DELETE /activities/:id — delete an activity
+// DELETE /activities/:id — delete an activity (scoped to current user)
 activities.delete("/:id", (c) => {
+  let userId: string;
+  try {
+    userId = getUserId(c);
+  } catch {
+    return c.json({ error: "Unauthorized: missing X-authentik-username header" }, 401);
+  }
+
   const { id } = c.req.param();
 
-  const result = deleteStmt.run(id);
+  const result = deleteStmt.run(id, userId);
 
   if (result.changes === 0) {
     return c.json({ error: "Activity not found" }, 404);
