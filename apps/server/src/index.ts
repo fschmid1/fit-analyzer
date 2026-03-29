@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { logger } from "hono/logger";
 import { activities } from "./routes/activities.js";
+import { me } from "./routes/me.js";
 
 const app = new Hono();
 
@@ -10,6 +11,7 @@ app.use("*", logger());
 
 // API routes
 app.route("/api/activities", activities);
+app.route("/api/me", me);
 
 // Serve the built frontend static files (in production, ./public contains the web build)
 app.use("/*", serveStatic({ root: "./public" }));

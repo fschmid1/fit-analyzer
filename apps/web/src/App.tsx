@@ -22,7 +22,9 @@ import {
   saveActivityToServer,
   deleteActivity,
   updateIntervals,
+  fetchCurrentUser,
 } from "./lib/api";
+import type { UserInfo } from "./lib/api";
 
 type View = "history" | "upload" | "analysis";
 
@@ -58,6 +60,7 @@ function App() {
   const [activityId, setActivityId] = useState<string | null>(initialRoute.current.activityId);
   const [activities, setActivities] = useState<ActivityListItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [user, setUser] = useState<UserInfo | null>(null);
 
   const [selectionRange, setSelectionRange] = useState<
     [number, number] | null
@@ -74,6 +77,11 @@ function App() {
 
   // Ref to prevent saving intervals back to DB right after loading them
   const skipNextSave = useRef(false);
+
+  // Fetch current user on mount
+  useEffect(() => {
+    fetchCurrentUser().then(setUser);
+  }, []);
 
   // Fetch activity list on mount + restore activity from URL hash
   useEffect(() => {
@@ -343,6 +351,7 @@ function App() {
         view={view}
         onBackToHistory={handleBackToHistory}
         onUploadNew={handleUploadNew}
+        user={user}
       />
 
       {view === "history" && (

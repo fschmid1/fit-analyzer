@@ -7,6 +7,23 @@ import type {
 
 const API_BASE = "/api";
 
+export interface UserInfo {
+  username: string;
+  email: string;
+  name: string;
+}
+
+/** Fetch the current authenticated user info */
+export async function fetchCurrentUser(): Promise<UserInfo | null> {
+  try {
+    const res = await fetch(`${API_BASE}/me`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 /** Fetch all activities (summary only, no records) */
 export async function fetchActivities(): Promise<ActivityListItem[]> {
   const res = await fetch(`${API_BASE}/activities`);
