@@ -28,8 +28,6 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_activities_date ON activities(date);
-  CREATE INDEX IF NOT EXISTS idx_activities_user_id ON activities(user_id);
-  CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date);
 `);
 
 // Migrations: add columns for existing databases
@@ -40,10 +38,6 @@ const migrations = [
   `ALTER TABLE activities ADD COLUMN user_id TEXT NOT NULL DEFAULT ''`,
 ];
 
-// Create index for user_id after migrations (idempotent)
-db.exec(`CREATE INDEX IF NOT EXISTS idx_activities_user_id ON activities(user_id)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date)`);
-
 for (const migration of migrations) {
   try {
     db.exec(migration);
@@ -51,5 +45,9 @@ for (const migration of migrations) {
     // Column already exists — ignore
   }
 }
+
+// Create index for user_id after migrations (idempotent)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_activities_user_id ON activities(user_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date)`);
 
 export { db };

@@ -1,10 +1,8 @@
 import { Activity, ArrowLeft, Upload } from "lucide-react";
+import { useMatch } from "react-router-dom";
 import type { UserInfo } from "../lib/api";
 
-type View = "history" | "upload" | "analysis";
-
 interface HeaderProps {
-  view: View;
   onBackToHistory: () => void;
   onUploadNew: () => void;
   user?: UserInfo | null;
@@ -41,7 +39,15 @@ function getAvatarColor(username: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-export function Header({ view, onBackToHistory, onUploadNew, user }: HeaderProps) {
+export function Header({ onBackToHistory, onUploadNew, user }: HeaderProps) {
+  const isHistory = useMatch("/");
+  const isAnalysis = useMatch("/activity/:id");
+
+  // Show back button everywhere except the history page
+  const showBack = !isHistory;
+  // Show "Load New File" only on the analysis page
+  const showUpload = !!isAnalysis;
+
   return (
     <header className="flex items-center justify-between px-6 py-4 border-b border-[rgba(139,92,246,0.1)]">
       <div className="flex items-center gap-3">
@@ -57,8 +63,8 @@ export function Header({ view, onBackToHistory, onUploadNew, user }: HeaderProps
       </div>
 
       <div className="flex items-center gap-3">
-        {/* Back to History button — shown in analysis & upload views */}
-        {view !== "history" && (
+        {/* Back to History button — shown on all pages except history */}
+        {showBack && (
           <button
             onClick={onBackToHistory}
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-xl transition-all duration-200 cursor-pointer"
@@ -69,7 +75,7 @@ export function Header({ view, onBackToHistory, onUploadNew, user }: HeaderProps
         )}
 
         {/* Upload button — shown in analysis view */}
-        {view === "analysis" && (
+        {showUpload && (
           <button
             onClick={onUploadNew}
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-xl transition-all duration-200 cursor-pointer"

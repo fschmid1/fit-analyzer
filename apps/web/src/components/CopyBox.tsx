@@ -1,14 +1,15 @@
 import { useState, useMemo } from "react";
-import { Clipboard, Check } from "lucide-react";
+import { Clipboard, Check, BotMessageSquare } from "lucide-react";
 import type { ActivitySummary, Interval } from "@fit-analyzer/shared";
 import { formatCopyBoxText } from "../lib/formatters";
 
 interface CopyBoxProps {
   summary: ActivitySummary;
   intervals: Interval[];
+  onSendToTrainer: (text: string) => void;
 }
 
-export function CopyBox({ summary, intervals }: CopyBoxProps) {
+export function CopyBox({ summary, intervals, onSendToTrainer }: CopyBoxProps) {
   const [copied, setCopied] = useState(false);
 
   const text = useMemo(
@@ -41,26 +42,35 @@ export function CopyBox({ summary, intervals }: CopyBoxProps) {
           <p className="text-xs font-medium text-[#94a3b8] uppercase tracking-wider">
             Activity Summary
           </p>
-          <button
-            onClick={handleCopy}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 cursor-pointer ${
-              copied
-                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                : "bg-[#8b5cf6]/10 text-[#8b5cf6] hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
-            }`}
-          >
-            {copied ? (
-              <>
-                <Check className="w-3.5 h-3.5" />
-                Copied!
-              </>
-            ) : (
-              <>
-                <Clipboard className="w-3.5 h-3.5" />
-                Copy
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onSendToTrainer(text)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 cursor-pointer bg-[#8b5cf6]/10 text-[#8b5cf6] hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
+            >
+              <BotMessageSquare className="w-3.5 h-3.5" />
+              Send to Trainer
+            </button>
+            <button
+              onClick={handleCopy}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 cursor-pointer ${
+                copied
+                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                  : "bg-[#8b5cf6]/10 text-[#8b5cf6] hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
+              }`}
+            >
+              {copied ? (
+                <>
+                  <Check className="w-3.5 h-3.5" />
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <Clipboard className="w-3.5 h-3.5" />
+                  Copy
+                </>
+              )}
+            </button>
+          </div>
         </div>
         <pre className="p-4 text-sm font-mono text-[#c4b5fd] leading-relaxed overflow-x-auto select-all">
           {text}
