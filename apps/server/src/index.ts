@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { logger } from "hono/logger";
+import { env } from "./env.js";
 import { activities } from "./routes/activities.js";
 import { me } from "./routes/me.js";
 
@@ -18,7 +19,7 @@ app.use("/*", serveStatic({ root: "./public" }));
 // SPA fallback — serve index.html for any unmatched route
 app.get("*", serveStatic({ root: "./public", path: "index.html" }));
 
-const port = parseInt(process.env.PORT || "3001", 10);
+const port = env.PORT;
 
 console.log(`Server starting on http://localhost:${port}`);
 

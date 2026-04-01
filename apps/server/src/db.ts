@@ -1,8 +1,9 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "fs";
 import { dirname } from "path";
+import { env } from "./env.js";
 
-const DB_PATH = process.env.DB_PATH || "./data/fit-analyzer.db";
+const DB_PATH = env.DB_PATH;
 
 // Ensure the data directory exists
 mkdirSync(dirname(DB_PATH), { recursive: true });

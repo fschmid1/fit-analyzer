@@ -28,4 +28,5 @@ data/
 *.ntvs*
 *.njsproj
 *.sln
+.env
 *.sw?

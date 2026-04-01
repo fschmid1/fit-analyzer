@@ -10,7 +10,9 @@
   },
   "dependencies": {
     "@fit-analyzer/shared": "workspace:*",
-    "hono": "^4.7.0"
+    "@t3-oss/env-core": "^0.13.11",
+    "hono": "^4.7.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",
