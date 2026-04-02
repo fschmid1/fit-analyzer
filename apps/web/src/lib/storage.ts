@@ -13,6 +13,8 @@ interface StoredActivity {
     power: number | null;
     heartRate: number | null;
     cadence: number | null;
+    speed: number | null;
+    gradient: number | null;
   }[];
   summary: ParsedActivity["summary"];
   laps: ParsedActivity["laps"];

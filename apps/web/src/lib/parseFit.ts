@@ -39,14 +39,19 @@ export function parseFit(arrayBuffer: ArrayBuffer): ParsedActivity {
 
   const startTime = recordMesgs[0].timestamp as Date;
 
-  const records: ActivityRecord[] = recordMesgs.map((msg) => ({
-    timestamp: msg.timestamp as Date,
-    elapsedSeconds:
-      ((msg.timestamp as Date).getTime() - startTime.getTime()) / 1000,
-    power: msg.power ?? null,
-    heartRate: msg.heartRate ?? null,
-    cadence: msg.cadence ?? null,
-  }));
+  const records: ActivityRecord[] = recordMesgs.map((msg) => {
+    const rawSpeed = msg.enhancedSpeed ?? msg.speed ?? null;
+    return {
+      timestamp: msg.timestamp as Date,
+      elapsedSeconds:
+        ((msg.timestamp as Date).getTime() - startTime.getTime()) / 1000,
+      power: msg.power ?? null,
+      heartRate: msg.heartRate ?? null,
+      cadence: msg.cadence ?? null,
+      speed: rawSpeed != null ? Math.round(rawSpeed * 3.6 * 10) / 10 : null,
+      gradient: msg.grade != null ? Math.round(msg.grade * 10) / 10 : null,
+    };
+  });
 
   // Extract session data (use first session)
   const session = sessionMesgs[0];
