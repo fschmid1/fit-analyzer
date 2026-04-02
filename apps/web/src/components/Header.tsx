@@ -53,7 +53,7 @@ export function Header({ onBackToHistory, onUploadNew, onOpenTrainer, user }: He
   const showTrainer = !isTrainer;
 
   return (
-    <header className="flex items-center justify-between px-6 py-4 border-b border-[rgba(139,92,246,0.1)]">
+    <header className="sticky top-0 z-50 flex items-center justify-between px-6 py-4 border-b border-[rgba(139,92,246,0.1)] bg-[#0f0b1a]">
       <div className="flex items-center gap-3">
         <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#8b5cf6]/20">
           <Activity className="w-5 h-5 text-[#8b5cf6]" />

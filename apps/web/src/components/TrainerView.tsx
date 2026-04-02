@@ -5,6 +5,8 @@ import { ArrowLeft, Send, Square } from "lucide-react";
 import type { UIMessage } from "@tanstack/ai-react";
 import type { TrainerMessage } from "@fit-analyzer/shared";
 import { fetchTrainerHistory, saveTrainerHistory } from "../lib/api";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface TrainerViewProps {
   initialMessage: string;
@@ -74,9 +76,12 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack }: Trai
 
   useEffect(() => { adjustHeight(); }, [input, adjustHeight]);
 
-  // Auto-scroll to bottom on new messages
+  // Scroll to bottom — instant on first render, smooth for new messages
+  const isFirstRender = useRef(true);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const behavior = isFirstRender.current ? "instant" : "smooth";
+    isFirstRender.current = false;
+    bottomRef.current?.scrollIntoView({ behavior });
   }, [messages]);
 
   // Persist history whenever a response completes (isLoading: true → false)
@@ -150,18 +155,58 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack }: Trai
           return (
             <div key={msg.id} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
               <div
-                className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words ${
+                className={`max-w-[80%] rounded-2xl px-4 py-3 text-base leading-relaxed break-words ${
                   isUser
-                    ? "bg-[#8b5cf6]/20 border border-[#8b5cf6]/30 text-[#e2d9f3]"
+                    ? "bg-[#8b5cf6]/20 border border-[#8b5cf6]/30 text-[#e2d9f3] whitespace-pre-wrap"
                     : "bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] text-[#c4b5fd]"
                 }`}
               >
-                {text || (
+                {!text ? (
                   <span className="flex gap-1 items-center h-4">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:0ms]" />
                     <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:150ms]" />
                     <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:300ms]" />
                   </span>
+                ) : isUser ? (
+                  text
+                ) : (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                      h1: ({ children }) => <h1 className="text-lg font-bold text-[#e2d9f3] mt-3 mb-1 first:mt-0">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-base font-bold text-[#e2d9f3] mt-3 mb-1 first:mt-0">{children}</h2>,
+                      h3: ({ children }) => <h3 className="text-base font-semibold text-[#e2d9f3] mt-2 mb-1 first:mt-0">{children}</h3>,
+                      ul: ({ children }) => <ul className="list-disc list-outside pl-4 mb-2 space-y-0.5">{children}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal list-outside pl-4 mb-2 space-y-0.5">{children}</ol>,
+                      li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                      strong: ({ children }) => <strong className="font-semibold text-[#e2d9f3]">{children}</strong>,
+                      em: ({ children }) => <em className="italic text-[#d4b8fd]">{children}</em>,
+                      code: ({ children, className }) => {
+                        const isBlock = className?.includes("language-");
+                        return isBlock ? (
+                          <code className="block bg-[#0f0b1a] border border-[rgba(139,92,246,0.15)] rounded-lg px-3 py-2 my-2 text-sm font-mono text-[#a78bfa] overflow-x-auto whitespace-pre">{children}</code>
+                        ) : (
+                          <code className="bg-[#0f0b1a] border border-[rgba(139,92,246,0.15)] rounded px-1.5 py-0.5 text-sm font-mono text-[#a78bfa]">{children}</code>
+                        );
+                      },
+                      pre: ({ children }) => <pre className="my-2">{children}</pre>,
+                      blockquote: ({ children }) => <blockquote className="border-l-2 border-[#8b5cf6]/50 pl-3 my-2 text-[#a78bfa] italic">{children}</blockquote>,
+                      a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#a78bfa] underline underline-offset-2 hover:text-[#c4b5fd] transition-colors">{children}</a>,
+                      hr: () => <hr className="border-[rgba(139,92,246,0.2)] my-3" />,
+                      table: ({ children }) => (
+                        <div className="overflow-x-auto my-2">
+                          <table className="w-full text-sm border-collapse">{children}</table>
+                        </div>
+                      ),
+                      thead: ({ children }) => <thead className="bg-[#8b5cf6]/10">{children}</thead>,
+                      th: ({ children }) => <th className="border border-[rgba(139,92,246,0.2)] px-2 py-1.5 text-left font-semibold text-[#e2d9f3]">{children}</th>,
+                      td: ({ children }) => <td className="border border-[rgba(139,92,246,0.15)] px-2 py-1.5 text-[#c4b5fd]">{children}</td>,
+                      tr: ({ children }) => <tr className="even:bg-[#8b5cf6]/5">{children}</tr>,
+                    }}
+                  >
+                    {text}
+                  </ReactMarkdown>
                 )}
               </div>
             </div>
