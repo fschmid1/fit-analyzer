@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { Zap, Heart, Gauge, X, ZoomIn, ZoomOut, Plus } from "lucide-react";
+import { Zap, Heart, Gauge, Wind, TrendingUp, X, ZoomIn, ZoomOut, Plus } from "lucide-react";
 import { formatElapsedTime } from "../lib/formatters";
 import type { ActivityRecord } from "@fit-analyzer/shared";
 
@@ -30,6 +30,8 @@ interface ChartDataPoint {
   power: number | null;
   heartRate: number | null;
   cadence: number | null;
+  speed: number | null;
+  gradient: number | null;
 }
 
 // Stable config objects (hoisted outside component to avoid re-creation)
@@ -44,14 +46,22 @@ const POWER_LABEL = {
   style: { fontSize: 10, fill: "#8b5cf6" },
 };
 const HR_CAD_LABEL = {
-  value: "bpm / rpm",
+  value: "bpm / rpm / km/h",
   position: "insideTopRight" as const,
   offset: -5,
   style: { fontSize: 10, fill: "#94a3b8" },
 };
+const GRADIENT_LABEL = {
+  value: "%",
+  position: "insideTopRight" as const,
+  offset: -5,
+  style: { fontSize: 10, fill: "#10b981" },
+};
 const POWER_ACTIVE_DOT = { r: 4, fill: "#8b5cf6", stroke: "#1a1533", strokeWidth: 2 };
 const HR_ACTIVE_DOT = { r: 4, fill: "#ef4444", stroke: "#1a1533", strokeWidth: 2 };
 const CAD_ACTIVE_DOT = { r: 4, fill: "#06b6d4", stroke: "#1a1533", strokeWidth: 2 };
+const SPEED_ACTIVE_DOT = { r: 4, fill: "#f59e0b", stroke: "#1a1533", strokeWidth: 2 };
+const GRADIENT_ACTIVE_DOT = { r: 4, fill: "#10b981", stroke: "#1a1533", strokeWidth: 2 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const CustomTooltip = memo(function CustomTooltip({ active, payload, label }: any) {
@@ -75,16 +85,26 @@ const CustomTooltip = memo(function CustomTooltip({ active, payload, label }: an
                 style={{ backgroundColor: entry.color }}
               />
               <span className="text-[#94a3b8] capitalize">
-                {entry.dataKey === "heartRate" ? "Heart Rate" : entry.dataKey}:
+                {entry.dataKey === "heartRate"
+                  ? "Heart Rate"
+                  : entry.dataKey === "gradient"
+                    ? "Steigung"
+                    : entry.dataKey}:
               </span>
               <span className="font-semibold text-[#f1f5f9]">
-                {Math.round(entry.value)}
+                {entry.dataKey === "speed" || entry.dataKey === "gradient"
+                  ? (Math.round(entry.value * 10) / 10).toFixed(1)
+                  : Math.round(entry.value)}
                 <span className="text-xs text-[#94a3b8] ml-1">
                   {entry.dataKey === "power"
                     ? "W"
                     : entry.dataKey === "heartRate"
                       ? "bpm"
-                      : "rpm"}
+                      : entry.dataKey === "speed"
+                        ? "km/h"
+                        : entry.dataKey === "gradient"
+                          ? "%"
+                          : "rpm"}
                 </span>
               </span>
             </div>
@@ -108,6 +128,8 @@ export const ActivityChart = memo(function ActivityChart({
         power: r.power,
         heartRate: r.heartRate,
         cadence: r.cadence,
+        speed: r.speed ?? null,
+        gradient: r.gradient ?? null,
       })),
     [records]
   );
@@ -124,11 +146,21 @@ export const ActivityChart = memo(function ActivityChart({
     () => records.some((r) => r.cadence !== null),
     [records]
   );
+  const hasSpeed = useMemo(
+    () => records.some((r) => (r.speed ?? null) !== null),
+    [records]
+  );
+  const hasGradient = useMemo(
+    () => records.some((r) => (r.gradient ?? null) !== null),
+    [records]
+  );
 
   // --- Series visibility toggles ---
   const [showPower, setShowPower] = useState(true);
   const [showHeartRate, setShowHeartRate] = useState(true);
   const [showCadence, setShowCadence] = useState(true);
+  const [showSpeed, setShowSpeed] = useState(true);
+  const [showGradient, setShowGradient] = useState(true);
 
   // --- Zoom state (stack of [startSeconds, endSeconds] ranges) ---
   const [zoomStack, setZoomStack] = useState<[number, number][]>([]);
@@ -377,12 +409,25 @@ export const ActivityChart = memo(function ActivityChart({
       values.push(
         ...visibleData.filter((r) => r.cadence !== null).map((r) => r.cadence!)
       );
+    if (hasSpeed && showSpeed)
+      values.push(
+        ...visibleData.filter((r) => r.speed !== null).map((r) => r.speed!)
+      );
     if (values.length === 0) return [0, 200];
     return [
       Math.floor(Math.min(...values) * 0.9 / 10) * 10,
       Math.ceil(Math.max(...values) * 1.1 / 10) * 10,
     ];
-  }, [visibleData, hasHeartRate, hasCadence, showHeartRate, showCadence]);
+  }, [visibleData, hasHeartRate, hasCadence, hasSpeed, showHeartRate, showCadence, showSpeed]);
+
+  const gradientDomain = useMemo(() => {
+    if (!hasGradient || !showGradient) return [-20, 20];
+    const vals = visibleData.filter((r) => r.gradient !== null).map((r) => r.gradient!);
+    if (vals.length === 0) return [-20, 20];
+    const min = Math.floor(Math.min(...vals, 0) * 1.2 / 5) * 5;
+    const max = Math.ceil(Math.max(...vals, 0) * 1.2 / 5) * 5;
+    return [Math.min(min, -5), Math.max(max, 5)];
+  }, [visibleData, hasGradient, showGradient]);
 
   // Determine which ReferenceArea to show: active drag or committed selection
   const refAreaLeft =
@@ -434,6 +479,28 @@ export const ActivityChart = memo(function ActivityChart({
                 <Gauge className="w-3.5 h-3.5 text-[#06b6d4]" />
                 <span className={`text-xs font-medium text-[#94a3b8] ${!showCadence ? "line-through" : ""}`}>
                   Cadence (rpm)
+                </span>
+              </button>
+            )}
+            {hasSpeed && (
+              <button
+                onClick={() => setShowSpeed((v) => !v)}
+                className={`flex items-center gap-1.5 cursor-pointer transition-opacity ${showSpeed ? "opacity-100" : "opacity-40"}`}
+              >
+                <Wind className="w-3.5 h-3.5 text-[#f59e0b]" />
+                <span className={`text-xs font-medium text-[#94a3b8] ${!showSpeed ? "line-through" : ""}`}>
+                  Speed (km/h)
+                </span>
+              </button>
+            )}
+            {hasGradient && (
+              <button
+                onClick={() => setShowGradient((v) => !v)}
+                className={`flex items-center gap-1.5 cursor-pointer transition-opacity ${showGradient ? "opacity-100" : "opacity-40"}`}
+              >
+                <TrendingUp className="w-3.5 h-3.5 text-[#10b981]" />
+                <span className={`text-xs font-medium text-[#94a3b8] ${!showGradient ? "line-through" : ""}`}>
+                  Steigung (%)
                 </span>
               </button>
             )}
@@ -515,6 +582,10 @@ export const ActivityChart = memo(function ActivityChart({
                   <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.35} />
                   <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0.02} />
                 </linearGradient>
+                <linearGradient id="gradientGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10b981" stopOpacity={0.4} />
+                  <stop offset="100%" stopColor="#10b981" stopOpacity={0.05} />
+                </linearGradient>
               </defs>
 
               <CartesianGrid
@@ -548,7 +619,7 @@ export const ActivityChart = memo(function ActivityChart({
                 />
               )}
 
-              {((hasHeartRate && showHeartRate) || (hasCadence && showCadence)) && (
+              {((hasHeartRate && showHeartRate) || (hasCadence && showCadence) || (hasSpeed && showSpeed)) && (
                 <YAxis
                   yAxisId="hrCad"
                   orientation="right"
@@ -557,8 +628,23 @@ export const ActivityChart = memo(function ActivityChart({
                   tick={AXIS_TICK}
                   axisLine={AXIS_LINE}
                   tickLine={false}
-                  width={45}
+                  width={55}
                   label={HR_CAD_LABEL}
+                />
+              )}
+
+              {hasGradient && showGradient && (
+                <YAxis
+                  yAxisId="gradient"
+                  orientation="right"
+                  domain={gradientDomain}
+                  stroke="#10b981"
+                  tick={{ ...AXIS_TICK, fill: "#10b981" }}
+                  axisLine={{ stroke: "rgba(16, 185, 129, 0.2)" }}
+                  tickLine={false}
+                  width={40}
+                  label={GRADIENT_LABEL}
+                  tickFormatter={(v) => `${v}%`}
                 />
               )}
 
@@ -607,11 +693,44 @@ export const ActivityChart = memo(function ActivityChart({
                 />
               )}
 
+              {hasSpeed && showSpeed && (
+                <Line
+                  yAxisId="hrCad"
+                  type="monotone"
+                  dataKey="speed"
+                  stroke="#f59e0b"
+                  strokeWidth={1.5}
+                  dot={false}
+                  activeDot={SPEED_ACTIVE_DOT}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              )}
+
+              {hasGradient && showGradient && (
+                <Area
+                  yAxisId="gradient"
+                  type="monotone"
+                  dataKey="gradient"
+                  stroke="#10b981"
+                  strokeWidth={1.5}
+                  fill="url(#gradientGradient)"
+                  dot={false}
+                  activeDot={GRADIENT_ACTIVE_DOT}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              )}
+
               {/* Interval highlight overlays */}
               {intervalRanges && intervalRanges.map((range, i) => (
                 <ReferenceArea
                   key={`interval-${i}`}
-                  yAxisId={hasPower && showPower ? "power" : "hrCad"}
+                  yAxisId={
+                    hasPower && showPower ? "power"
+                    : ((hasHeartRate && showHeartRate) || (hasCadence && showCadence) || (hasSpeed && showSpeed)) ? "hrCad"
+                    : "gradient"
+                  }
                   x1={range[0]}
                   x2={range[1]}
                   fill="#f59e0b"
@@ -625,7 +744,11 @@ export const ActivityChart = memo(function ActivityChart({
               {/* Rubber-band selection overlay */}
               {refAreaLeft !== null && refAreaRight !== null && (
                 <ReferenceArea
-                  yAxisId={hasPower && showPower ? "power" : "hrCad"}
+                  yAxisId={
+                    hasPower && showPower ? "power"
+                    : ((hasHeartRate && showHeartRate) || (hasCadence && showCadence) || (hasSpeed && showSpeed)) ? "hrCad"
+                    : "gradient"
+                  }
                   x1={refAreaLeft}
                   x2={refAreaRight}
                   fill="#8b5cf6"

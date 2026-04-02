@@ -6,6 +6,8 @@ export interface ActivityRecord {
   power: number | null;
   heartRate: number | null;
   cadence: number | null;
+  speed: number | null;
+  gradient: number | null;
 }
 
 export interface ActivitySummary {
@@ -61,6 +63,8 @@ export interface StoredRecord {
   power: number | null;
   heartRate: number | null;
   cadence: number | null;
+  speed: number | null;
+  gradient: number | null;
 }
 
 /** Activity list item returned by GET /api/activities */

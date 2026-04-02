@@ -149,7 +149,8 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
     initialMessages,
   });
 
-  const [input, setInput] = useState(initialInput);
+  const inputRef = useRef(initialInput);
+  const [hasInput, setHasInput] = useState(!!initialInput.trim());
   const [importState, setImportState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -182,7 +183,8 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, []);
-  useEffect(() => { adjustHeight(); }, [input, adjustHeight]);
+  // Run once on mount to size the textarea for any pre-filled initialInput
+  useEffect(() => { adjustHeight(); }, [adjustHeight]);
 
   // Scroll to bottom — instant on first render, smooth for new content
   const isFirstRender = useRef(true);
@@ -208,11 +210,14 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
   }, [status, messages, activityId]);
 
   const handleSend = useCallback(async () => {
-    const text = input.trim();
+    const text = inputRef.current.trim();
     if (!text || isLoading) return;
-    setInput("");
+    inputRef.current = "";
+    if (textareaRef.current) textareaRef.current.value = "";
+    setHasInput(false);
+    adjustHeight();
     await sendMessage(text);
-  }, [input, isLoading, sendMessage]);
+  }, [isLoading, sendMessage, adjustHeight]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -372,8 +377,13 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
         <div className="flex gap-3 items-end bg-[#1a1533]/60 border border-[rgba(139,92,246,0.15)] rounded-2xl px-4 py-3">
           <textarea
             ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
+            defaultValue={initialInput}
+            onChange={(e) => {
+              inputRef.current = e.target.value;
+              const next = !!e.target.value.trim();
+              if (next !== hasInput) setHasInput(next);
+              adjustHeight();
+            }}
             onKeyDown={handleKeyDown}
             placeholder="Ask your trainer about this activity… (Enter to send, Shift+Enter for newline)"
             rows={1}
@@ -391,7 +401,7 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
           ) : (
             <button
               onClick={handleSend}
-              disabled={!input.trim()}
+              disabled={!hasInput}
               title="Send message"
               className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#8b5cf6]/20 hover:bg-[#8b5cf6]/30 border border-[#8b5cf6]/30 text-[#8b5cf6] transition-all duration-200 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
             >
