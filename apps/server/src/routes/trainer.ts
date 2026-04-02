@@ -24,17 +24,32 @@ function getUserId(c: { req: { header: (name: string) => string | undefined } })
 
 // Prepared statements
 const getChatStmt = db.prepare(
-    `SELECT messages, updated_at as updatedAt
+    `SELECT id, updated_at as updatedAt
      FROM trainer_chats
      WHERE user_id = ? AND activity_id = ?`
 );
 
+const getMessagesStmt = db.prepare(
+    `SELECT id, role, content, created_at as createdAt
+     FROM trainer_messages
+     WHERE chat_id = ?
+     ORDER BY created_at ASC`
+);
+
 const upsertChatStmt = db.prepare(
-    `INSERT INTO trainer_chats (id, activity_id, user_id, messages, updated_at)
-     VALUES (?, ?, ?, ?, datetime('now'))
+    `INSERT INTO trainer_chats (id, activity_id, user_id, updated_at)
+     VALUES (?, ?, ?, datetime('now'))
      ON CONFLICT(user_id, activity_id) DO UPDATE SET
-       messages = excluded.messages,
        updated_at = datetime('now')`
+);
+
+const deleteMessagesStmt = db.prepare(
+    `DELETE FROM trainer_messages WHERE chat_id = ?`
+);
+
+const insertMessageStmt = db.prepare(
+    `INSERT INTO trainer_messages (id, chat_id, role, content, created_at)
+     VALUES (?, ?, ?, ?, ?)`
 );
 
 const trainer = new Hono();
@@ -66,26 +81,34 @@ trainer.get("/history/:activityId", (c) => {
     const userId = getUserId(c);
     const { activityId } = c.req.param();
 
-    const row = getChatStmt.get(userId, activityId) as
-        | { messages: string; updatedAt: string }
+    const chat = getChatStmt.get(userId, activityId) as
+        | { id: string; updatedAt: string }
         | undefined;
 
-    if (!row) {
+    if (!chat) {
         return c.json({ activityId, messages: [], updatedAt: new Date().toISOString() });
     }
 
-    const messages: TrainerMessage[] = JSON.parse(row.messages);
-    return c.json({ activityId, messages, updatedAt: row.updatedAt });
+    const messages = getMessagesStmt.all(chat.id) as TrainerMessage[];
+    return c.json({ activityId, messages, updatedAt: chat.updatedAt });
 });
 
-/** PUT /history/:activityId — upsert chat history for an activity */
+/** PUT /history/:activityId — replace chat history for an activity */
 trainer.put("/history/:activityId", async (c) => {
     const userId = getUserId(c);
     const { activityId } = c.req.param();
     const body: SaveTrainerHistoryBody = await c.req.json();
 
-    const id = `${userId}:${activityId}`;
-    upsertChatStmt.run(id, activityId, userId, JSON.stringify(body.messages ?? []));
+    const chatId = `${userId}:${activityId}`;
+    const messages: TrainerMessage[] = body.messages ?? [];
+
+    db.transaction(() => {
+        upsertChatStmt.run(chatId, activityId, userId);
+        deleteMessagesStmt.run(chatId);
+        for (const m of messages) {
+            insertMessageStmt.run(m.id, chatId, m.role, m.content, m.createdAt);
+        }
+    })();
 
     return c.json({ ok: true });
 });

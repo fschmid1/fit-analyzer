@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useChat } from "@tanstack/ai-react";
 import { fetchServerSentEvents } from "@tanstack/ai-client";
-import { ArrowLeft, Send, Square } from "lucide-react";
+import { ArrowLeft, Brain, ChevronDown, ChevronRight, Send, Square } from "lucide-react";
 import type { UIMessage } from "@tanstack/ai-react";
 import type { TrainerMessage } from "@fit-analyzer/shared";
 import { fetchTrainerHistory, saveTrainerHistory } from "../lib/api";
@@ -16,15 +16,20 @@ interface TrainerViewProps {
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-/** Extract plain text from a UIMessage's parts */
-function getMessageText(msg: UIMessage): string {
+function getTextContent(msg: UIMessage): string {
   return msg.parts
     .filter((p): p is Extract<typeof p, { type: "text" }> => p.type === "text")
     .map((p) => p.content)
     .join("");
 }
 
-/** Convert a stored TrainerMessage → TanStack UIMessage */
+function getThinkingContent(msg: UIMessage): string {
+  return msg.parts
+    .filter((p): p is Extract<typeof p, { type: "thinking" }> => p.type === "thinking")
+    .map((p) => p.content)
+    .join("");
+}
+
 function toUIMessage(m: TrainerMessage): UIMessage {
   return {
     id: m.id,
@@ -34,20 +39,101 @@ function toUIMessage(m: TrainerMessage): UIMessage {
   };
 }
 
-/** Convert a TanStack UIMessage → stored TrainerMessage */
 function toTrainerMessage(m: UIMessage): TrainerMessage {
   return {
     id: m.id,
     role: m.role as "user" | "assistant",
-    content: getMessageText(m),
+    content: getTextContent(m),
     createdAt: (m.createdAt ?? new Date()).toISOString(),
   };
 }
 
-// Stable connection instance (module-level so it doesn't recreate on re-render)
+// ─── sub-components ──────────────────────────────────────────────────────────
+
+const mdComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
+  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+  h1: ({ children }) => <h1 className="text-lg font-bold text-[#e2d9f3] mt-3 mb-1 first:mt-0">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-base font-bold text-[#e2d9f3] mt-3 mb-1 first:mt-0">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-base font-semibold text-[#e2d9f3] mt-2 mb-1 first:mt-0">{children}</h3>,
+  ul: ({ children }) => <ul className="list-disc list-outside pl-4 mb-2 space-y-0.5">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal list-outside pl-4 mb-2 space-y-0.5">{children}</ol>,
+  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+  strong: ({ children }) => <strong className="font-semibold text-[#e2d9f3]">{children}</strong>,
+  em: ({ children }) => <em className="italic text-[#d4b8fd]">{children}</em>,
+  code: ({ children, className }) => {
+    const isBlock = className?.includes("language-");
+    return isBlock ? (
+      <code className="block bg-[#0f0b1a] border border-[rgba(139,92,246,0.15)] rounded-lg px-3 py-2 my-2 text-sm font-mono text-[#a78bfa] overflow-x-auto whitespace-pre">{children}</code>
+    ) : (
+      <code className="bg-[#0f0b1a] border border-[rgba(139,92,246,0.15)] rounded px-1.5 py-0.5 text-sm font-mono text-[#a78bfa]">{children}</code>
+    );
+  },
+  pre: ({ children }) => <pre className="my-2">{children}</pre>,
+  blockquote: ({ children }) => <blockquote className="border-l-2 border-[#8b5cf6]/50 pl-3 my-2 text-[#a78bfa] italic">{children}</blockquote>,
+  a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#a78bfa] underline underline-offset-2 hover:text-[#c4b5fd] transition-colors">{children}</a>,
+  hr: () => <hr className="border-[rgba(139,92,246,0.2)] my-3" />,
+  table: ({ children }) => (
+    <div className="overflow-x-auto my-2">
+      <table className="w-full text-sm border-collapse">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="bg-[#8b5cf6]/10">{children}</thead>,
+  th: ({ children }) => <th className="border border-[rgba(139,92,246,0.2)] px-2 py-1.5 text-left font-semibold text-[#e2d9f3]">{children}</th>,
+  td: ({ children }) => <td className="border border-[rgba(139,92,246,0.15)] px-2 py-1.5 text-[#c4b5fd]">{children}</td>,
+  tr: ({ children }) => <tr className="even:bg-[#8b5cf6]/5">{children}</tr>,
+};
+
+function DotsLoader() {
+  return (
+    <span className="flex gap-1 items-center h-5">
+      <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:0ms]" />
+      <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:150ms]" />
+      <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:300ms]" />
+    </span>
+  );
+}
+
+function ThinkingBlock({ content, isStreaming }: { content: string; isStreaming: boolean }) {
+  const [open, setOpen] = useState(false);
+
+  // Auto-open while streaming, collapse when done
+  useEffect(() => {
+    if (isStreaming) setOpen(true);
+    else setOpen(false);
+  }, [isStreaming]);
+
+  return (
+    <div className="mb-3 rounded-xl border border-[rgba(139,92,246,0.15)] bg-[#0f0b1a]/60 overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#7c6fa0] hover:text-[#a78bfa] transition-colors cursor-pointer"
+      >
+        <Brain className="w-3.5 h-3.5 shrink-0" />
+        {isStreaming ? (
+          <span className="flex items-center gap-2">
+            Thinking
+            <DotsLoader />
+          </span>
+        ) : (
+          <span>Reasoning</span>
+        )}
+        <span className="ml-auto">
+          {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+        </span>
+      </button>
+      {open && content && (
+        <div className="px-3 pb-3 text-xs text-[#6b5e8a] font-mono leading-relaxed whitespace-pre-wrap border-t border-[rgba(139,92,246,0.1)] pt-2 max-h-64 overflow-y-auto">
+          {content}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Stable module-level connection — recreating on every render would cancel in-flight streams
 const connection = fetchServerSentEvents("/api/trainer/chat");
 
-// ─── inner chat component (initialised once history is loaded) ───────────────
+// ─── inner chat ──────────────────────────────────────────────────────────────
 
 interface TrainerChatProps {
   initialMessages: UIMessage[];
@@ -57,7 +143,7 @@ interface TrainerChatProps {
 }
 
 function TrainerChat({ initialMessages, initialInput, activityId, onBack }: TrainerChatProps) {
-  const { messages, sendMessage, isLoading, stop } = useChat({
+  const { messages, sendMessage, status, isLoading, stop, error } = useChat({
     connection,
     initialMessages,
   });
@@ -73,10 +159,9 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack }: Trai
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, []);
-
   useEffect(() => { adjustHeight(); }, [input, adjustHeight]);
 
-  // Scroll to bottom — instant on first render, smooth for new messages
+  // Scroll to bottom — instant on first render, smooth for new content
   const isFirstRender = useRef(true);
   useEffect(() => {
     const behavior = isFirstRender.current ? "instant" : "smooth";
@@ -84,17 +169,20 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack }: Trai
     bottomRef.current?.scrollIntoView({ behavior });
   }, [messages]);
 
-  // Persist history whenever a response completes (isLoading: true → false)
-  const prevLoadingRef = useRef(false);
+  // Save to DB when a response finishes (status: streaming → ready)
+  const prevStatus = useRef(status);
   useEffect(() => {
-    if (prevLoadingRef.current && !isLoading && messages.length > 0) {
+    const wasStreaming = prevStatus.current === "streaming";
+    const nowReady = status === "ready";
+    if (wasStreaming && nowReady && messages.length > 0) {
       const toSave = messages
         .filter((m) => m.role === "user" || m.role === "assistant")
-        .map(toTrainerMessage);
-      saveTrainerHistory(activityId, toSave).catch(console.error);
+        .map(toTrainerMessage)
+        .filter((m) => m.content); // skip empty assistant placeholders
+      if (toSave.length > 0) saveTrainerHistory(activityId, toSave).catch(console.error);
     }
-    prevLoadingRef.current = isLoading;
-  }, [isLoading, messages, activityId]);
+    prevStatus.current = status;
+  }, [status, messages, activityId]);
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
@@ -114,6 +202,7 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack }: Trai
   );
 
   const isGeneralChat = activityId === "general";
+  const lastMsgId = messages[messages.length - 1]?.id;
 
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-73px)]">
@@ -130,7 +219,11 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack }: Trai
           <span className="text-sm font-semibold text-[#f1f5f9]">
             {isGeneralChat ? "Cycling Coach" : "AI Trainer"}
           </span>
-          <span className="text-xs text-[#94a3b8]">Kimi 2.5 via OpenRouter</span>
+          <span className="text-xs text-[#94a3b8]">
+            {status === "submitted" && "Sending…"}
+            {status === "streaming" && "Responding…"}
+            {(status === "ready" || status === "error") && "Kimi 2.5 via OpenRouter"}
+          </span>
         </div>
       </div>
 
@@ -148,79 +241,71 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack }: Trai
         )}
 
         {messages.map((msg) => {
-          const text = getMessageText(msg);
-          if (!text && msg.role !== "assistant") return null;
           const isUser = msg.role === "user";
+          const isLastMsg = msg.id === lastMsgId;
+          const isCurrentlyStreaming = isLastMsg && status === "streaming";
+
+          if (isUser) {
+            const text = getTextContent(msg);
+            if (!text) return null;
+            return (
+              <div key={msg.id} className="flex justify-end">
+                <div className="max-w-[80%] rounded-2xl px-4 py-3 text-base leading-relaxed break-words bg-[#8b5cf6]/20 border border-[#8b5cf6]/30 text-[#e2d9f3] whitespace-pre-wrap">
+                  {text}
+                </div>
+              </div>
+            );
+          }
+
+          // Assistant message
+          const thinkingContent = getThinkingContent(msg);
+          const textContent = getTextContent(msg);
+          const isThinkingPhase = isCurrentlyStreaming && !!thinkingContent && !textContent;
 
           return (
-            <div key={msg.id} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-              <div
-                className={`max-w-[80%] rounded-2xl px-4 py-3 text-base leading-relaxed break-words ${
-                  isUser
-                    ? "bg-[#8b5cf6]/20 border border-[#8b5cf6]/30 text-[#e2d9f3] whitespace-pre-wrap"
-                    : "bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] text-[#c4b5fd]"
-                }`}
-              >
-                {!text ? (
-                  <span className="flex gap-1 items-center h-4">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:0ms]" />
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:150ms]" />
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:300ms]" />
-                  </span>
-                ) : isUser ? (
-                  text
-                ) : (
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                      h1: ({ children }) => <h1 className="text-lg font-bold text-[#e2d9f3] mt-3 mb-1 first:mt-0">{children}</h1>,
-                      h2: ({ children }) => <h2 className="text-base font-bold text-[#e2d9f3] mt-3 mb-1 first:mt-0">{children}</h2>,
-                      h3: ({ children }) => <h3 className="text-base font-semibold text-[#e2d9f3] mt-2 mb-1 first:mt-0">{children}</h3>,
-                      ul: ({ children }) => <ul className="list-disc list-outside pl-4 mb-2 space-y-0.5">{children}</ul>,
-                      ol: ({ children }) => <ol className="list-decimal list-outside pl-4 mb-2 space-y-0.5">{children}</ol>,
-                      li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-                      strong: ({ children }) => <strong className="font-semibold text-[#e2d9f3]">{children}</strong>,
-                      em: ({ children }) => <em className="italic text-[#d4b8fd]">{children}</em>,
-                      code: ({ children, className }) => {
-                        const isBlock = className?.includes("language-");
-                        return isBlock ? (
-                          <code className="block bg-[#0f0b1a] border border-[rgba(139,92,246,0.15)] rounded-lg px-3 py-2 my-2 text-sm font-mono text-[#a78bfa] overflow-x-auto whitespace-pre">{children}</code>
-                        ) : (
-                          <code className="bg-[#0f0b1a] border border-[rgba(139,92,246,0.15)] rounded px-1.5 py-0.5 text-sm font-mono text-[#a78bfa]">{children}</code>
-                        );
-                      },
-                      pre: ({ children }) => <pre className="my-2">{children}</pre>,
-                      blockquote: ({ children }) => <blockquote className="border-l-2 border-[#8b5cf6]/50 pl-3 my-2 text-[#a78bfa] italic">{children}</blockquote>,
-                      a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#a78bfa] underline underline-offset-2 hover:text-[#c4b5fd] transition-colors">{children}</a>,
-                      hr: () => <hr className="border-[rgba(139,92,246,0.2)] my-3" />,
-                      table: ({ children }) => (
-                        <div className="overflow-x-auto my-2">
-                          <table className="w-full text-sm border-collapse">{children}</table>
-                        </div>
-                      ),
-                      thead: ({ children }) => <thead className="bg-[#8b5cf6]/10">{children}</thead>,
-                      th: ({ children }) => <th className="border border-[rgba(139,92,246,0.2)] px-2 py-1.5 text-left font-semibold text-[#e2d9f3]">{children}</th>,
-                      td: ({ children }) => <td className="border border-[rgba(139,92,246,0.15)] px-2 py-1.5 text-[#c4b5fd]">{children}</td>,
-                      tr: ({ children }) => <tr className="even:bg-[#8b5cf6]/5">{children}</tr>,
-                    }}
-                  >
-                    {text}
+            <div key={msg.id} className="flex justify-start">
+              <div className="max-w-[80%] rounded-2xl px-4 py-3 text-base leading-relaxed break-words bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] text-[#c4b5fd]">
+                {/* Thinking block */}
+                {thinkingContent && (
+                  <ThinkingBlock
+                    content={thinkingContent}
+                    isStreaming={isThinkingPhase}
+                  />
+                )}
+
+                {/* Response text */}
+                {textContent ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                    {textContent}
                   </ReactMarkdown>
+                ) : isCurrentlyStreaming && !thinkingContent ? (
+                  // Waiting for first tokens and no thinking yet
+                  <DotsLoader />
+                ) : null}
+
+                {/* Streaming cursor on last token */}
+                {isCurrentlyStreaming && textContent && (
+                  <span className="inline-block w-0.5 h-4 bg-[#8b5cf6] animate-pulse ml-0.5 align-middle" />
                 )}
               </div>
             </div>
           );
         })}
 
-        {isLoading && !messages.some((m) => m.role === "assistant" && getMessageText(m) === "") && (
+        {/* Submitted but no assistant message started yet */}
+        {status === "submitted" && (
           <div className="flex justify-start">
             <div className="bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] rounded-2xl px-4 py-3">
-              <span className="flex gap-1 items-center h-4">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:0ms]" />
-                <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:150ms]" />
-                <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:300ms]" />
-              </span>
+              <DotsLoader />
+            </div>
+          </div>
+        )}
+
+        {/* Error state */}
+        {error && (
+          <div className="flex justify-start">
+            <div className="max-w-[80%] rounded-2xl px-4 py-3 text-sm bg-rose-500/10 border border-rose-500/20 text-rose-400">
+              Error: {error.message}
             </div>
           </div>
         )}
@@ -265,18 +350,17 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack }: Trai
   );
 }
 
-// ─── outer wrapper — loads history then hands off to TrainerChat ─────────────
+// ─── outer wrapper — loads history then mounts TrainerChat ───────────────────
 
 export function TrainerView({ initialMessage, activityId, onBack }: TrainerViewProps) {
   const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
 
   useEffect(() => {
     fetchTrainerHistory(activityId)
-      .then((history) => setInitialMessages(history.messages.map(toUIMessage)))
+      .then((h) => setInitialMessages(h.messages.map(toUIMessage)))
       .catch(() => setInitialMessages([]));
   }, [activityId]);
 
-  // Show a subtle loading state while fetching history
   if (initialMessages === null) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -291,7 +375,7 @@ export function TrainerView({ initialMessage, activityId, onBack }: TrainerViewP
 
   return (
     <TrainerChat
-      key={activityId ?? "no-activity"}
+      key={activityId}
       initialMessages={initialMessages}
       initialInput={initialMessage}
       activityId={activityId}

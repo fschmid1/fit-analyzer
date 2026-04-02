@@ -1,55 +1,63 @@
 /**
- * Parses "Cycling coach.md" and imports the conversation into the
- * trainer_chats table as a general (non-activity) coaching chat.
+ * Parses a ChatGPT-style markdown export and imports the conversation into
+ * the trainer_messages table as a named coaching chat.
  *
- * Run with:
- *   bun run scripts/import-coaching-chat.ts
+ * Usage:
+ *   bun run scripts/import-coaching-chat.ts [file] [options]
+ *
+ * Arguments:
+ *   file              Path to the markdown file (default: "Cycling coach.md")
+ *
+ * Options:
+ *   --user=<id>       user_id to store under        (default: "dev")
+ *   --name=<id>       activity_id / chat name       (default: "general")
+ *   --db=<path>       path to SQLite database file  (default: apps/server/data/fit-analyzer.db)
+ *   --dry-run         Parse and print stats without writing to the DB
  */
 
 import { Database } from "bun:sqlite";
 import { readFileSync } from "fs";
 import { randomUUID } from "crypto";
 import { resolve } from "path";
+import type { TrainerMessage } from "@fit-analyzer/shared";
 
-// ── Config ──────────────────────────────────────────────────────────────────
-const MD_FILE = resolve(import.meta.dir, "../Cycling coach.md");
-const DB_FILE = resolve(import.meta.dir, "../apps/server/data/fit-analyzer.db");
-const USER_ID = "dev";
-const ACTIVITY_ID = "general"; // sentinel — not tied to a FIT file
+// ── CLI args ─────────────────────────────────────────────────────────────────
 
-// ── Types ────────────────────────────────────────────────────────────────────
-interface TrainerMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  createdAt: string; // ISO-8601
+const args = process.argv.slice(2);
+
+function getFlag(name: string, fallback: string): string {
+  const flag = args.find((a) => a.startsWith(`--${name}=`));
+  return flag ? flag.slice(`--${name}=`.length) : fallback;
 }
+
+const ROOT = resolve(import.meta.dir, "..");
+const mdFile  = args.find((a) => !a.startsWith("--")) ?? "Cycling coach.md";
+const MD_FILE = resolve(ROOT, mdFile);
+const DB_FILE = resolve(ROOT, getFlag("db", "apps/server/data/fit-analyzer.db"));
+const USER_ID = getFlag("user", "dev");
+const CHAT_NAME = getFlag("name", "general");
+const DRY_RUN  = args.includes("--dry-run");
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Remove <details>…</details> blocks (reasoning) from assistant text */
+/** Strip <details>…</details> reasoning blocks from assistant messages */
 function stripDetails(text: string): string {
-  // Non-greedy match across newlines
   return text.replace(/<details[\s\S]*?<\/details>/gi, "").trim();
 }
 
-/** Parse the markdown file into an ordered list of TrainerMessages */
+/** Parse a ChatGPT markdown export into TrainerMessages */
 function parseMarkdown(raw: string): TrainerMessage[] {
-  // Split on the horizontal rule separators that divide messages
   const sections = raw.split(/\n---\n/);
 
-  // Extract the file creation timestamp from the header section
-  const headerSection = sections[0] ?? "";
-  const createdMatch = headerSection.match(/Created:\s*(\d{2})\/(\d{2})\/(\d{4}),\s*(\d{2}):(\d{2}):(\d{2})/);
-  let baseTime = createdMatch
-    ? new Date(
-        `${createdMatch[3]}-${createdMatch[2]}-${createdMatch[1]}T${createdMatch[4]}:${createdMatch[5]}:${createdMatch[6]}`
-      ).getTime()
+  // Derive a base timestamp from the file header ("Created: DD/MM/YYYY, HH:MM:SS")
+  const header = sections[0] ?? "";
+  const m = header.match(/Created:\s*(\d{2})\/(\d{2})\/(\d{4}),\s*(\d{2}):(\d{2}):(\d{2})/);
+  const baseTime = m
+    ? new Date(`${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:${m[6]}`).getTime()
     : Date.now();
 
   const messages: TrainerMessage[] = [];
-  // Each message gets a synthetic timestamp 30 s apart
-  let msgIndex = 0;
+  let idx = 0;
 
   for (const section of sections) {
     const trimmed = section.trim();
@@ -59,31 +67,25 @@ function parseMarkdown(raw: string): TrainerMessage[] {
 
     if (/^###\s+User/.test(trimmed)) {
       role = "user";
-      // Content starts after the heading line
       contentStart = trimmed.indexOf("\n") + 1;
     } else if (/^###\s+Assistant/.test(trimmed)) {
       role = "assistant";
       contentStart = trimmed.indexOf("\n") + 1;
     } else {
-      // Header or other non-message section — skip
-      continue;
+      continue; // preamble / separators
     }
 
     let content = trimmed.slice(contentStart).trim();
-
-    if (role === "assistant") {
-      content = stripDetails(content);
-    }
-
+    if (role === "assistant") content = stripDetails(content);
     if (!content) continue;
 
     messages.push({
       id: randomUUID(),
       role,
       content,
-      createdAt: new Date(baseTime + msgIndex * 30_000).toISOString(),
+      createdAt: new Date(baseTime + idx * 30_000).toISOString(),
     });
-    msgIndex++;
+    idx++;
   }
 
   return messages;
@@ -91,44 +93,76 @@ function parseMarkdown(raw: string): TrainerMessage[] {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
+console.log(`File   : ${MD_FILE}`);
+console.log(`DB     : ${DB_FILE}`);
+console.log(`user   : ${USER_ID}`);
+console.log(`name   : ${CHAT_NAME}`);
+if (DRY_RUN) console.log("Mode   : dry-run (no writes)\n");
+
 const raw = readFileSync(MD_FILE, "utf-8");
 const messages = parseMarkdown(raw);
 
-console.log(`Parsed ${messages.length} messages (${messages.filter((m) => m.role === "user").length} user, ${messages.filter((m) => m.role === "assistant").length} assistant)`);
+const userCount = messages.filter((m) => m.role === "user").length;
+const assistantCount = messages.filter((m) => m.role === "assistant").length;
+console.log(`Parsed : ${messages.length} messages (${userCount} user, ${assistantCount} assistant)`);
+
+if (DRY_RUN) {
+  console.log("\nSample messages:");
+  for (const msg of messages.slice(0, 3)) {
+    console.log(`  [${msg.role}] ${msg.content.slice(0, 80).replace(/\n/g, " ")}…`);
+  }
+  process.exit(0);
+}
 
 const db = new Database(DB_FILE);
 
-// Ensure the trainer_chats table exists (it should already)
+// Ensure tables exist (idempotent — safe to run against an already-initialised DB)
 db.exec(`
+  PRAGMA journal_mode = WAL;
+
   CREATE TABLE IF NOT EXISTS trainer_chats (
     id TEXT PRIMARY KEY,
     activity_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
-    messages TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE UNIQUE INDEX IF NOT EXISTS idx_trainer_chats_user_activity
     ON trainer_chats(user_id, activity_id);
+
+  CREATE TABLE IF NOT EXISTS trainer_messages (
+    id TEXT PRIMARY KEY,
+    chat_id TEXT NOT NULL REFERENCES trainer_chats(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_trainer_messages_chat_id
+    ON trainer_messages(chat_id);
 `);
 
-const chatId = `${USER_ID}:${ACTIVITY_ID}`;
-const messagesJson = JSON.stringify(messages);
+const chatId = `${USER_ID}:${CHAT_NAME}`;
 
-const upsert = db.prepare(`
-  INSERT INTO trainer_chats (id, activity_id, user_id, messages, updated_at)
-  VALUES (?, ?, ?, ?, datetime('now'))
-  ON CONFLICT(user_id, activity_id) DO UPDATE SET
-    messages = excluded.messages,
-    updated_at = datetime('now')
-`);
+db.transaction(() => {
+  db.prepare(
+    `INSERT INTO trainer_chats (id, activity_id, user_id, updated_at)
+     VALUES (?, ?, ?, datetime('now'))
+     ON CONFLICT(user_id, activity_id) DO UPDATE SET updated_at = datetime('now')`
+  ).run(chatId, CHAT_NAME, USER_ID);
 
-upsert.run(chatId, ACTIVITY_ID, USER_ID, messagesJson);
+  db.prepare(`DELETE FROM trainer_messages WHERE chat_id = ?`).run(chatId);
 
-console.log(`✓ Upserted coaching chat into trainer_chats`);
-console.log(`  id          = ${chatId}`);
-console.log(`  activity_id = ${ACTIVITY_ID}`);
-console.log(`  user_id     = ${USER_ID}`);
-console.log(`  messages    = ${messages.length}`);
+  const insert = db.prepare(
+    `INSERT INTO trainer_messages (id, chat_id, role, content, created_at)
+     VALUES (?, ?, ?, ?, ?)`
+  );
+  for (const msg of messages) {
+    insert.run(msg.id, chatId, msg.role, msg.content, msg.createdAt);
+  }
+})();
 
 db.close();
+
+console.log(`\n✓ Imported ${messages.length} messages`);
+console.log(`  chat_id     = ${chatId}`);
+console.log(`  activity_id = ${CHAT_NAME}`);

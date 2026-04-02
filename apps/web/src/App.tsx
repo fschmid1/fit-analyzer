@@ -395,7 +395,7 @@ function App() {
           element={
             <TrainerView
               initialMessage={trainerInitialMessage}
-              activityId={activityId ?? "general"}
+              activityId="general"
               onBack={() => navigate(-1)}
             />
           }
