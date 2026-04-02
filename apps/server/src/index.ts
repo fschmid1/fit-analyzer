@@ -4,6 +4,7 @@ import { logger } from "hono/logger";
 import { env } from "./env.js";
 import { activities } from "./routes/activities.js";
 import { me } from "./routes/me.js";
+import { trainer } from "./routes/trainer.js";
 
 const app = new Hono();
 
@@ -13,6 +14,7 @@ app.use("*", logger());
 // API routes
 app.route("/api/activities", activities);
 app.route("/api/me", me);
+app.route("/api/trainer", trainer);
 
 // Serve the built frontend static files (in production, ./public contains the web build)
 app.use("/*", serveStatic({ root: "./public" }));

@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { Routes, Route, useNavigate, useMatch } from "react-router-dom";
 import type { ActivityListItem, Interval, ParsedActivity } from "@fit-analyzer/shared";
 import { computeAverages } from "./lib/stats";
 import { Header } from "./components/Header";
@@ -9,6 +10,7 @@ import { StatsBar } from "./components/StatsBar";
 import { IntervalList } from "./components/IntervalList";
 import { SummaryCards } from "./components/SummaryCards";
 import { CopyBox } from "./components/CopyBox";
+import { TrainerView } from "./components/TrainerView";
 import {
   saveCustomIntervals,
   loadCustomIntervals,
@@ -26,41 +28,17 @@ import {
 } from "./lib/api";
 import type { UserInfo } from "./lib/api";
 
-type View = "history" | "upload" | "analysis";
-
-/** Parse the URL hash to determine the initial view and activity ID */
-function parseHash(): { view: View; activityId: string | null } {
-  const hash = window.location.hash;
-  if (hash.startsWith("#/activity/")) {
-    const id = hash.slice("#/activity/".length);
-    if (id) return { view: "analysis", activityId: id };
-  }
-  if (hash === "#/upload") {
-    return { view: "upload", activityId: null };
-  }
-  return { view: "history", activityId: null };
-}
-
-/** Update the URL hash without triggering a page reload */
-function setHash(view: View, activityId?: string | null) {
-  if (view === "analysis" && activityId) {
-    window.location.hash = `/activity/${activityId}`;
-  } else if (view === "upload") {
-    window.location.hash = "/upload";
-  } else {
-    // Use replaceState to clear hash cleanly (avoids scroll-to-top)
-    history.replaceState(null, "", window.location.pathname + window.location.search);
-  }
-}
-
 function App() {
-  const initialRoute = useRef(parseHash());
-  const [view, setView] = useState<View>(initialRoute.current.view);
+  const navigate = useNavigate();
+  const activityMatch = useMatch("/activity/:id");
+  const urlActivityId = activityMatch?.params?.id ?? null;
+
   const [activity, setActivity] = useState<ParsedActivity | null>(null);
-  const [activityId, setActivityId] = useState<string | null>(initialRoute.current.activityId);
+  const [activityId, setActivityId] = useState<string | null>(null);
   const [activities, setActivities] = useState<ActivityListItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [user, setUser] = useState<UserInfo | null>(null);
+  const [trainerInitialMessage, setTrainerInitialMessage] = useState("");
 
   const [selectionRange, setSelectionRange] = useState<
     [number, number] | null
@@ -72,25 +50,28 @@ function App() {
     () => loadCustomIntervals()
   );
   const [intervalMinutes, setIntervalMinutes] = useState<string>("");
-  // Track the initial interval minutes to pass to IntervalList on mount
   const [savedIntervalMinutes, setSavedIntervalMinutes] = useState<string>("");
 
   // Ref to prevent saving intervals back to DB right after loading them
   const skipNextSave = useRef(false);
+  // Track which activity ID has already been loaded to avoid duplicate fetches
+  const loadedActivityId = useRef<string | null>(null);
 
   // Fetch current user on mount
   useEffect(() => {
     fetchCurrentUser().then(setUser);
   }, []);
 
-  // Fetch activity list on mount + restore activity from URL hash
+  // Fetch activity list on mount
   useEffect(() => {
     loadActivities();
+  }, []);
 
-    const { activityId: hashId } = initialRoute.current;
-    if (hashId) {
-      // Restore the activity that was in the URL
-      fetchActivity(hashId)
+  // Restore activity from URL on initial load (e.g. direct link to /activity/:id)
+  useEffect(() => {
+    if (urlActivityId && urlActivityId !== loadedActivityId.current) {
+      loadedActivityId.current = urlActivityId;
+      fetchActivity(urlActivityId)
         .then((data) => {
           setActivity(data);
           setActivityId(data.id);
@@ -110,15 +91,13 @@ function App() {
           skipNextSave.current = true;
           setLapIntervalObjects([]);
           setIntervalRanges([]);
-          setView("analysis");
         })
         .catch((err) => {
           console.error("Failed to restore activity from URL:", err);
-          setView("history");
-          setHash("history");
+          navigate("/");
         });
     }
-  }, []);
+  }, [urlActivityId, navigate]);
 
   const loadActivities = async () => {
     setHistoryLoading(true);
@@ -153,13 +132,13 @@ function App() {
     async (data: ParsedActivity) => {
       setActivity(data);
       resetAnalysisState();
-      setView("analysis");
 
       // Save to server in background
       try {
         const id = await saveActivityToServer(data);
         setActivityId(id);
-        setHash("analysis", id);
+        loadedActivityId.current = id;
+        navigate(`/activity/${id}`);
         // Refresh the list
         const list = await fetchActivities();
         setActivities(list);
@@ -167,7 +146,7 @@ function App() {
         console.error("Failed to save activity to server:", err);
       }
     },
-    [resetAnalysisState]
+    [resetAnalysisState, navigate]
   );
 
   const handleSelectActivity = useCallback(
@@ -176,6 +155,7 @@ function App() {
         const data = await fetchActivity(id);
         setActivity(data);
         setActivityId(data.id);
+        loadedActivityId.current = data.id;
 
         // Reset selection/zoom state
         setSelectionRange(null);
@@ -200,41 +180,16 @@ function App() {
         // Skip saving intervals back to DB when IntervalList recomputes on mount
         skipNextSave.current = true;
 
-        // The lap intervals will be recomputed by IntervalList from laps + intervalMinutes
         setLapIntervalObjects([]);
         setIntervalRanges([]);
 
-        setView("analysis");
-        setHash("analysis", data.id);
+        navigate(`/activity/${data.id}`);
       } catch (err) {
         console.error("Failed to load activity:", err);
       }
     },
-    []
+    [navigate]
   );
-
-  // Handle browser back/forward navigation
-  useEffect(() => {
-    const handleHashChange = () => {
-      const { view: newView, activityId: newId } = parseHash();
-      if (newView === "analysis" && newId) {
-        handleSelectActivity(newId);
-      } else if (newView === "upload") {
-        setView("upload");
-        setActivity(null);
-        setActivityId(null);
-      } else {
-        setActivity(null);
-        setActivityId(null);
-        resetAnalysisState();
-        setView("history");
-        loadActivities();
-      }
-    };
-
-    window.addEventListener("hashchange", handleHashChange);
-    return () => window.removeEventListener("hashchange", handleHashChange);
-  }, [handleSelectActivity, resetAnalysisState]);
 
   const handleDeleteActivity = useCallback(async (id: string) => {
     try {
@@ -248,16 +203,15 @@ function App() {
   const handleBackToHistory = useCallback(() => {
     setActivity(null);
     setActivityId(null);
+    loadedActivityId.current = null;
     resetAnalysisState();
-    setView("history");
-    setHash("history");
+    navigate("/");
     loadActivities();
-  }, [resetAnalysisState]);
+  }, [resetAnalysisState, navigate]);
 
   const handleUploadNew = useCallback(() => {
-    setView("upload");
-    setHash("upload");
-  }, []);
+    navigate("/upload");
+  }, [navigate]);
 
   const handleIntervalClick = useCallback(
     (startSeconds: number, endSeconds: number) => {
@@ -322,7 +276,6 @@ function App() {
   useEffect(() => {
     if (!activityId) return;
 
-    // Skip the first save after loading from DB (IntervalList recomputes on mount)
     if (skipNextSave.current) {
       skipNextSave.current = false;
       return;
@@ -345,78 +298,109 @@ function App() {
     []
   );
 
+  const handleSendToTrainer = useCallback((text: string) => {
+    setTrainerInitialMessage(text);
+    navigate("/trainer");
+  }, [navigate]);
+
+  const handleOpenTrainer = useCallback(() => {
+    setTrainerInitialMessage("");
+    navigate("/trainer");
+  }, [navigate]);
+
+  // Analysis view content extracted for use in the Route element
+  const analysisContent = activity ? (
+    <div className="flex-1 flex flex-col pt-6 animate-[fadeIn_0.4s_ease-out]">
+      {/* Date header */}
+      <div className="px-6 mb-4">
+        <h2 className="text-2xl font-bold text-[#f1f5f9]">
+          Activity on {activity.summary.date}
+        </h2>
+        <p className="text-sm text-[#94a3b8] mt-1">
+          {activity.records.length.toLocaleString()} data points recorded
+        </p>
+      </div>
+
+      {/* Selection stats bar */}
+      <StatsBar
+        records={activity.records}
+        selectionRange={selectionRange}
+      />
+
+      {/* Interactive chart */}
+      <ActivityChart
+        records={activity.records}
+        onSelectionChange={handleSelectionChange}
+        externalZoom={chartZoom}
+        intervalRanges={[...intervalRanges, ...customIntervals]}
+        onAddInterval={handleAddInterval}
+      />
+
+      {/* Interval list */}
+      <IntervalList
+        records={activity.records}
+        laps={activity.laps}
+        onIntervalClick={handleIntervalClick}
+        onIntervalsChange={handleIntervalsChange}
+        onIntervalMinutesChange={handleIntervalMinutesChange}
+        customIntervals={customIntervals}
+        onRemoveCustomInterval={handleRemoveCustomInterval}
+        initialIntervalMinutes={savedIntervalMinutes}
+      />
+
+      {/* Summary cards */}
+      <SummaryCards summary={activity.summary} />
+
+      {/* Copyable summary box */}
+      <CopyBox
+        summary={activity.summary}
+        intervals={[...lapIntervalObjects, ...customIntervalObjects]}
+        onSendToTrainer={handleSendToTrainer}
+      />
+    </div>
+  ) : null;
+
   return (
     <div className="min-h-screen flex flex-col bg-[#0f0b1a]">
       <Header
-        view={view}
         onBackToHistory={handleBackToHistory}
         onUploadNew={handleUploadNew}
+        onOpenTrainer={handleOpenTrainer}
         user={user}
       />
 
-      {view === "history" && (
-        <ActivityHistory
-          activities={activities}
-          loading={historyLoading}
-          onSelect={handleSelectActivity}
-          onDelete={handleDeleteActivity}
-          onUploadNew={handleUploadNew}
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <ActivityHistory
+              activities={activities}
+              loading={historyLoading}
+              onSelect={handleSelectActivity}
+              onDelete={handleDeleteActivity}
+              onUploadNew={handleUploadNew}
+            />
+          }
         />
-      )}
-
-      {view === "upload" && (
-        <FileDropZone onFileParsed={handleFileParsed} />
-      )}
-
-      {view === "analysis" && activity && (
-        <div className="flex-1 flex flex-col pt-6 animate-[fadeIn_0.4s_ease-out]">
-          {/* Date header */}
-          <div className="px-6 mb-4">
-            <h2 className="text-2xl font-bold text-[#f1f5f9]">
-              Activity on {activity.summary.date}
-            </h2>
-            <p className="text-sm text-[#94a3b8] mt-1">
-              {activity.records.length.toLocaleString()} data points recorded
-            </p>
-          </div>
-
-          {/* Selection stats bar */}
-          <StatsBar
-            records={activity.records}
-            selectionRange={selectionRange}
-          />
-
-          {/* Interactive chart */}
-          <ActivityChart
-            records={activity.records}
-            onSelectionChange={handleSelectionChange}
-            externalZoom={chartZoom}
-            intervalRanges={[...intervalRanges, ...customIntervals]}
-            onAddInterval={handleAddInterval}
-          />
-
-          {/* Interval list */}
-          <IntervalList
-            records={activity.records}
-            laps={activity.laps}
-            onIntervalClick={handleIntervalClick}
-            onIntervalsChange={handleIntervalsChange}
-            onIntervalMinutesChange={handleIntervalMinutesChange}
-            customIntervals={customIntervals}
-            onRemoveCustomInterval={handleRemoveCustomInterval}
-            initialIntervalMinutes={savedIntervalMinutes}
-          />
-
-          {/* Summary cards */}
-          <SummaryCards summary={activity.summary} />
-
-          {/* Copyable summary box */}
-          <CopyBox
-            summary={activity.summary}
-            intervals={[...lapIntervalObjects, ...customIntervalObjects]}
-          />
-        </div>
-      )}
+        <Route
+          path="/upload"
+          element={<FileDropZone onFileParsed={handleFileParsed} />}
+        />
+        <Route
+          path="/activity/:id"
+          element={analysisContent}
+        />
+        <Route
+          path="/trainer"
+          element={
+            <TrainerView
+              initialMessage={trainerInitialMessage}
+              activityId="general"
+              onBack={() => navigate(-1)}
+            />
+          }
+        />
+      </Routes>
     </div>
   );
 }

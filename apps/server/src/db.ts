@@ -28,8 +28,6 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_activities_date ON activities(date);
-  CREATE INDEX IF NOT EXISTS idx_activities_user_id ON activities(user_id);
-  CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date);
 `);
 
 // Migrations: add columns for existing databases
@@ -40,16 +38,73 @@ const migrations = [
   `ALTER TABLE activities ADD COLUMN user_id TEXT NOT NULL DEFAULT ''`,
 ];
 
-// Create index for user_id after migrations (idempotent)
-db.exec(`CREATE INDEX IF NOT EXISTS idx_activities_user_id ON activities(user_id)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date)`);
-
 for (const migration of migrations) {
   try {
     db.exec(migration);
   } catch {
     // Column already exists — ignore
   }
+}
+
+// Create index for user_id after migrations (idempotent)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_activities_user_id ON activities(user_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date)`);
+
+// Trainer chat history tables
+db.exec(`
+  CREATE TABLE IF NOT EXISTS trainer_chats (
+    id TEXT PRIMARY KEY,
+    activity_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_trainer_chats_user_activity
+    ON trainer_chats(user_id, activity_id);
+
+  CREATE TABLE IF NOT EXISTS trainer_messages (
+    id TEXT PRIMARY KEY,
+    chat_id TEXT NOT NULL REFERENCES trainer_chats(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_trainer_messages_chat_id
+    ON trainer_messages(chat_id);
+`);
+
+// One-time migration: move messages JSON blob → trainer_messages rows
+try {
+  interface LegacyChat { id: string; messages: string }
+  const legacyChats = db
+    .prepare(`SELECT id, messages FROM trainer_chats WHERE messages IS NOT NULL AND messages != '[]'`)
+    .all() as LegacyChat[];
+
+  if (legacyChats.length > 0) {
+    const countStmt = db.prepare(`SELECT COUNT(*) as c FROM trainer_messages WHERE chat_id = ?`);
+    const insertStmt = db.prepare(
+      `INSERT OR IGNORE INTO trainer_messages (id, chat_id, role, content, created_at)
+       VALUES (?, ?, ?, ?, ?)`
+    );
+
+    db.transaction(() => {
+      for (const chat of legacyChats) {
+        const { c } = countStmt.get(chat.id) as { c: number };
+        if (c > 0) continue; // already migrated
+
+        const msgs = JSON.parse(chat.messages) as Array<{
+          id: string; role: string; content: string; createdAt: string;
+        }>;
+        for (const m of msgs) {
+          insertStmt.run(m.id, chat.id, m.role, m.content, m.createdAt);
+        }
+      }
+    })();
+
+    console.log(`[db] Migrated messages from ${legacyChats.length} chat(s) to trainer_messages`);
+  }
+} catch {
+  // messages column may not exist on a fresh DB — safe to ignore
 }
 
 export { db };
