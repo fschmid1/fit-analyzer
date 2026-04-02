@@ -3,6 +3,8 @@ import type {
   Interval,
   ParsedActivity,
   StoredRecord,
+  TrainerMessage,
+  TrainerChatHistory,
 } from "@fit-analyzer/shared";
 
 const API_BASE = "/api";
@@ -107,4 +109,25 @@ export async function deleteActivity(id: string): Promise<void> {
     method: "DELETE",
   });
   if (!res.ok && res.status !== 404) throw new Error("Failed to delete activity");
+}
+
+/** Fetch persisted trainer chat history for an activity */
+export async function fetchTrainerHistory(
+  activityId: string
+): Promise<TrainerChatHistory> {
+  const res = await fetch(`${API_BASE}/trainer/history/${activityId}`);
+  if (!res.ok) return { activityId, messages: [], updatedAt: new Date().toISOString() };
+  return res.json();
+}
+
+/** Persist trainer chat messages for an activity (upsert) */
+export async function saveTrainerHistory(
+  activityId: string,
+  messages: TrainerMessage[]
+): Promise<void> {
+  await fetch(`${API_BASE}/trainer/history/${activityId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages }),
+  });
 }

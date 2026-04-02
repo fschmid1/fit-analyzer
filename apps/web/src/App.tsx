@@ -303,6 +303,11 @@ function App() {
     navigate("/trainer");
   }, [navigate]);
 
+  const handleOpenTrainer = useCallback(() => {
+    setTrainerInitialMessage("");
+    navigate("/trainer");
+  }, [navigate]);
+
   // Analysis view content extracted for use in the Route element
   const analysisContent = activity ? (
     <div className="flex-1 flex flex-col pt-6 animate-[fadeIn_0.4s_ease-out]">
@@ -360,6 +365,7 @@ function App() {
       <Header
         onBackToHistory={handleBackToHistory}
         onUploadNew={handleUploadNew}
+        onOpenTrainer={handleOpenTrainer}
         user={user}
       />
 
@@ -389,6 +395,7 @@ function App() {
           element={
             <TrainerView
               initialMessage={trainerInitialMessage}
+              activityId={activityId ?? "general"}
               onBack={() => navigate(-1)}
             />
           }

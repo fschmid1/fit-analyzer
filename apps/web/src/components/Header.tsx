@@ -1,10 +1,11 @@
-import { Activity, ArrowLeft, Upload } from "lucide-react";
+import { Activity, ArrowLeft, BotMessageSquare, Upload } from "lucide-react";
 import { useMatch } from "react-router-dom";
 import type { UserInfo } from "../lib/api";
 
 interface HeaderProps {
   onBackToHistory: () => void;
   onUploadNew: () => void;
+  onOpenTrainer: () => void;
   user?: UserInfo | null;
 }
 
@@ -39,14 +40,17 @@ function getAvatarColor(username: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-export function Header({ onBackToHistory, onUploadNew, user }: HeaderProps) {
+export function Header({ onBackToHistory, onUploadNew, onOpenTrainer, user }: HeaderProps) {
   const isHistory = useMatch("/");
   const isAnalysis = useMatch("/activity/:id");
+  const isTrainer = useMatch("/trainer");
 
   // Show back button everywhere except the history page
   const showBack = !isHistory;
   // Show "Load New File" only on the analysis page
   const showUpload = !!isAnalysis;
+  // Show trainer button everywhere except the trainer page itself
+  const showTrainer = !isTrainer;
 
   return (
     <header className="flex items-center justify-between px-6 py-4 border-b border-[rgba(139,92,246,0.1)]">
@@ -82,6 +86,17 @@ export function Header({ onBackToHistory, onUploadNew, user }: HeaderProps) {
           >
             <Upload className="w-4 h-4" />
             Load New File
+          </button>
+        )}
+
+        {/* Trainer button — shown on all pages except the trainer itself */}
+        {showTrainer && (
+          <button
+            onClick={onOpenTrainer}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[#c4b5fd] hover:text-[#f1f5f9] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-all duration-200 cursor-pointer"
+          >
+            <BotMessageSquare className="w-4 h-4" />
+            Trainer
           </button>
         )}
 

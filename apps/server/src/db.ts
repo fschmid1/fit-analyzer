@@ -50,4 +50,18 @@ for (const migration of migrations) {
 db.exec(`CREATE INDEX IF NOT EXISTS idx_activities_user_id ON activities(user_id)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date)`);
 
+// Trainer chat history table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS trainer_chats (
+    id TEXT PRIMARY KEY,
+    activity_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    messages TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_trainer_chats_user_activity
+    ON trainer_chats(user_id, activity_id);
+`);
+
 export { db };

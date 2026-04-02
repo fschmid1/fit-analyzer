@@ -105,3 +105,25 @@ export interface UpdateIntervalsBody {
   intervalMinutes: string;
   customRanges: [number, number][];
 }
+
+// --- Trainer chat types ---
+
+/** A single persisted trainer chat message */
+export interface TrainerMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string; // ISO-8601
+}
+
+/** Response body for GET /api/trainer/history/:activityId */
+export interface TrainerChatHistory {
+  activityId: string;
+  messages: TrainerMessage[];
+  updatedAt: string;
+}
+
+/** PUT body for saving chat history */
+export interface SaveTrainerHistoryBody {
+  messages: TrainerMessage[];
+}

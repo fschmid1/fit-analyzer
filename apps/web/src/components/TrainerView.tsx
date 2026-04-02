@@ -3,13 +3,18 @@ import { useChat } from "@tanstack/ai-react";
 import { fetchServerSentEvents } from "@tanstack/ai-client";
 import { ArrowLeft, Send, Square } from "lucide-react";
 import type { UIMessage } from "@tanstack/ai-react";
+import type { TrainerMessage } from "@fit-analyzer/shared";
+import { fetchTrainerHistory, saveTrainerHistory } from "../lib/api";
 
 interface TrainerViewProps {
   initialMessage: string;
+  activityId: string;
   onBack: () => void;
 }
 
-/** Extract all text content from a UIMessage's parts */
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+/** Extract plain text from a UIMessage's parts */
 function getMessageText(msg: UIMessage): string {
   return msg.parts
     .filter((p): p is Extract<typeof p, { type: "text" }> => p.type === "text")
@@ -17,40 +22,74 @@ function getMessageText(msg: UIMessage): string {
     .join("");
 }
 
+/** Convert a stored TrainerMessage → TanStack UIMessage */
+function toUIMessage(m: TrainerMessage): UIMessage {
+  return {
+    id: m.id,
+    role: m.role,
+    parts: [{ type: "text" as const, content: m.content }],
+    createdAt: new Date(m.createdAt),
+  };
+}
+
+/** Convert a TanStack UIMessage → stored TrainerMessage */
+function toTrainerMessage(m: UIMessage): TrainerMessage {
+  return {
+    id: m.id,
+    role: m.role as "user" | "assistant",
+    content: getMessageText(m),
+    createdAt: (m.createdAt ?? new Date()).toISOString(),
+  };
+}
+
+// Stable connection instance (module-level so it doesn't recreate on re-render)
 const connection = fetchServerSentEvents("/api/trainer/chat");
 
-export function TrainerView({ initialMessage, onBack }: TrainerViewProps) {
-  const { messages, sendMessage, isLoading, stop } = useChat({ connection });
-  const [input, setInput] = useState(initialMessage);
+// ─── inner chat component (initialised once history is loaded) ───────────────
+
+interface TrainerChatProps {
+  initialMessages: UIMessage[];
+  initialInput: string;
+  activityId: string;
+  onBack: () => void;
+}
+
+function TrainerChat({ initialMessages, initialInput, activityId, onBack }: TrainerChatProps) {
+  const { messages, sendMessage, isLoading, stop } = useChat({
+    connection,
+    initialMessages,
+  });
+
+  const [input, setInput] = useState(initialInput);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const hasMounted = useRef(false);
 
   // Auto-grow textarea
-  const adjustTextareaHeight = useCallback(() => {
+  const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, []);
 
-  useEffect(() => {
-    adjustTextareaHeight();
-  }, [input, adjustTextareaHeight]);
+  useEffect(() => { adjustHeight(); }, [input, adjustHeight]);
 
-  // Pre-fill input on mount (only once)
-  useEffect(() => {
-    if (hasMounted.current) return;
-    hasMounted.current = true;
-    if (initialMessage) {
-      setInput(initialMessage);
-    }
-  }, [initialMessage]);
-
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Persist history whenever a response completes (isLoading: true → false)
+  const prevLoadingRef = useRef(false);
+  useEffect(() => {
+    if (prevLoadingRef.current && !isLoading && messages.length > 0) {
+      const toSave = messages
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map(toTrainerMessage);
+      saveTrainerHistory(activityId, toSave).catch(console.error);
+    }
+    prevLoadingRef.current = isLoading;
+  }, [isLoading, messages, activityId]);
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
@@ -69,6 +108,8 @@ export function TrainerView({ initialMessage, onBack }: TrainerViewProps) {
     [handleSend]
   );
 
+  const isGeneralChat = activityId === "general";
+
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-73px)]">
       {/* Sub-header */}
@@ -78,15 +119,13 @@ export function TrainerView({ initialMessage, onBack }: TrainerViewProps) {
           className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-xl transition-all duration-200 cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          Back to Activity
+          {isGeneralChat ? "Back" : "Back to Activity"}
         </button>
         <div className="flex flex-col">
           <span className="text-sm font-semibold text-[#f1f5f9]">
-            AI Trainer
+            {isGeneralChat ? "Cycling Coach" : "AI Trainer"}
           </span>
-          <span className="text-xs text-[#94a3b8]">
-            Kimi 2.5 via OpenRouter
-          </span>
+          <span className="text-xs text-[#94a3b8]">Kimi 2.5 via OpenRouter</span>
         </div>
       </div>
 
@@ -106,14 +145,10 @@ export function TrainerView({ initialMessage, onBack }: TrainerViewProps) {
         {messages.map((msg) => {
           const text = getMessageText(msg);
           if (!text && msg.role !== "assistant") return null;
-
           const isUser = msg.role === "user";
 
           return (
-            <div
-              key={msg.id}
-              className={`flex ${isUser ? "justify-end" : "justify-start"}`}
-            >
+            <div key={msg.id} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
               <div
                 className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words ${
                   isUser
@@ -122,7 +157,6 @@ export function TrainerView({ initialMessage, onBack }: TrainerViewProps) {
                 }`}
               >
                 {text || (
-                  /* streaming placeholder — show dots while assistant message is empty */
                   <span className="flex gap-1 items-center h-4">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:0ms]" />
                     <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:150ms]" />
@@ -134,21 +168,17 @@ export function TrainerView({ initialMessage, onBack }: TrainerViewProps) {
           );
         })}
 
-        {/* Streaming indicator — shown when loading but no assistant message yet */}
-        {isLoading &&
-          !messages.some(
-            (m) => m.role === "assistant" && getMessageText(m) === ""
-          ) && (
-            <div className="flex justify-start">
-              <div className="bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] rounded-2xl px-4 py-3">
-                <span className="flex gap-1 items-center h-4">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:0ms]" />
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:150ms]" />
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:300ms]" />
-                </span>
-              </div>
+        {isLoading && !messages.some((m) => m.role === "assistant" && getMessageText(m) === "") && (
+          <div className="flex justify-start">
+            <div className="bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] rounded-2xl px-4 py-3">
+              <span className="flex gap-1 items-center h-4">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:0ms]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:150ms]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:300ms]" />
+              </span>
             </div>
-          )}
+          </div>
+        )}
 
         <div ref={bottomRef} />
       </div>
@@ -187,5 +217,40 @@ export function TrainerView({ initialMessage, onBack }: TrainerViewProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── outer wrapper — loads history then hands off to TrainerChat ─────────────
+
+export function TrainerView({ initialMessage, activityId, onBack }: TrainerViewProps) {
+  const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
+
+  useEffect(() => {
+    fetchTrainerHistory(activityId)
+      .then((history) => setInitialMessages(history.messages.map(toUIMessage)))
+      .catch(() => setInitialMessages([]));
+  }, [activityId]);
+
+  // Show a subtle loading state while fetching history
+  if (initialMessages === null) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <span className="flex gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:0ms]" />
+          <span className="w-2 h-2 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:150ms]" />
+          <span className="w-2 h-2 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:300ms]" />
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <TrainerChat
+      key={activityId ?? "no-activity"}
+      initialMessages={initialMessages}
+      initialInput={initialMessage}
+      activityId={activityId}
+      onBack={onBack}
+    />
   );
 }

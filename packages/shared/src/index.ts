@@ -11,4 +11,7 @@ export type {
   CreateActivityBody,
   IntervalConfig,
   UpdateIntervalsBody,
+  TrainerMessage,
+  TrainerChatHistory,
+  SaveTrainerHistoryBody,
 } from "./types.js";
