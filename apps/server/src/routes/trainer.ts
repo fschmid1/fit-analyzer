@@ -8,6 +8,7 @@ import { Hono } from "hono";
 import { env } from "../env.js";
 import { db } from "../db.js";
 import type { TrainerMessage, SaveTrainerHistoryBody } from "@fit-analyzer/shared";
+import { parseCoachingMarkdown } from "../lib/parseCoachingMarkdown.js";
 
 const SYSTEM_PROMPT =
     "You are an expert endurance sports coach specialising in cycling and triathlon. " +
@@ -111,6 +112,40 @@ trainer.put("/history/:activityId", async (c) => {
     })();
 
     return c.json({ ok: true });
+});
+
+/** POST /import — parse a ChatGPT-style markdown export and store as chat history */
+trainer.post("/import", async (c) => {
+    const userId = getUserId(c);
+
+    const body = await c.req.parseBody();
+    const file = body["file"];
+
+    if (!file || typeof file === "string") {
+        return c.json({ error: "No file uploaded" }, 400);
+    }
+
+    const raw = await (file as File).text();
+    if (!raw.trim()) {
+        return c.json({ error: "File is empty" }, 400);
+    }
+
+    const messages = parseCoachingMarkdown(raw);
+    if (messages.length === 0) {
+        return c.json({ error: "No messages found — is this a valid ChatGPT markdown export?" }, 400);
+    }
+
+    const chatId = `${userId}:general`;
+
+    db.transaction(() => {
+        upsertChatStmt.run(chatId, "general", userId);
+        deleteMessagesStmt.run(chatId);
+        for (const m of messages) {
+            insertMessageStmt.run(m.id, chatId, m.role, m.content, m.createdAt);
+        }
+    })();
+
+    return c.json({ imported: messages.length, chatId });
 });
 
 export { trainer };

@@ -131,3 +131,20 @@ export async function saveTrainerHistory(
     body: JSON.stringify({ messages }),
   });
 }
+
+/** Upload a ChatGPT-style markdown export and import it as the general coaching chat */
+export async function importTrainerChat(
+  file: File
+): Promise<{ imported: number; chatId: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}/trainer/import`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Upload failed" }));
+    throw new Error(err.error ?? "Upload failed");
+  }
+  return res.json();
+}

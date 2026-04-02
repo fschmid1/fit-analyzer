@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useChat } from "@tanstack/ai-react";
 import { fetchServerSentEvents } from "@tanstack/ai-client";
-import { ArrowLeft, Brain, ChevronDown, ChevronRight, Send, Square } from "lucide-react";
+import { ArrowLeft, Brain, ChevronDown, ChevronRight, Send, Square, Upload } from "lucide-react";
 import type { UIMessage } from "@tanstack/ai-react";
 import type { TrainerMessage } from "@fit-analyzer/shared";
-import { fetchTrainerHistory, saveTrainerHistory } from "../lib/api";
+import { fetchTrainerHistory, importTrainerChat, saveTrainerHistory } from "../lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -140,17 +140,40 @@ interface TrainerChatProps {
   initialInput: string;
   activityId: string;
   onBack: () => void;
+  onImported: () => void;
 }
 
-function TrainerChat({ initialMessages, initialInput, activityId, onBack }: TrainerChatProps) {
+function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImported }: TrainerChatProps) {
   const { messages, sendMessage, status, isLoading, stop, error } = useChat({
     connection,
     initialMessages,
   });
 
   const [input, setInput] = useState(initialInput);
+  const [importState, setImportState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [importError, setImportError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset so the same file can be re-selected after an error
+    e.target.value = "";
+    setImportState("loading");
+    setImportError(null);
+    try {
+      await importTrainerChat(file);
+      setImportState("done");
+      setTimeout(() => setImportState("idle"), 3000);
+      onImported();
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Import failed");
+      setImportState("error");
+      setTimeout(() => setImportState("idle"), 5000);
+    }
+  }, [onImported]);
 
   // Auto-grow textarea
   const adjustHeight = useCallback(() => {
@@ -206,6 +229,15 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack }: Trai
 
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-73px)]">
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".md,text/markdown,text/plain"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
       {/* Sub-header */}
       <div className="flex items-center gap-3 px-6 py-4 border-b border-[rgba(139,92,246,0.1)] bg-[#0f0b1a]">
         <button
@@ -225,6 +257,28 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack }: Trai
             {(status === "ready" || status === "error") && "Kimi 2.5 via OpenRouter"}
           </span>
         </div>
+
+        {/* Import button — only in the general coaching chat */}
+        {isGeneralChat && (
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importState === "loading"}
+            title="Import ChatGPT markdown export"
+            className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl border transition-all duration-200 cursor-pointer disabled:cursor-wait ${
+              importState === "done"
+                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                : importState === "error"
+                ? "bg-rose-500/10 border-rose-500/20 text-rose-400"
+                : "bg-[#8b5cf6]/10 border-[#8b5cf6]/20 text-[#c4b5fd] hover:bg-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
+            }`}
+          >
+            <Upload className="w-3.5 h-3.5" />
+            {importState === "loading" && "Importing…"}
+            {importState === "done" && "Imported!"}
+            {importState === "error" && (importError ?? "Error")}
+            {importState === "idle" && "Import .md"}
+          </button>
+        )}
       </div>
 
       {/* Messages */}
@@ -354,10 +408,25 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack }: Trai
 
 export function TrainerView({ initialMessage, activityId, onBack }: TrainerViewProps) {
   const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
+  const [chatKey, setChatKey] = useState(0);
 
-  useEffect(() => {
+  const loadHistory = useCallback(() => {
+    setInitialMessages(null);
     fetchTrainerHistory(activityId)
       .then((h) => setInitialMessages(h.messages.map(toUIMessage)))
+      .catch(() => setInitialMessages([]));
+  }, [activityId]);
+
+  useEffect(() => { loadHistory(); }, [loadHistory]);
+
+  // Called after a successful import — re-fetch history and remount the chat
+  const handleImported = useCallback(() => {
+    setInitialMessages(null);
+    fetchTrainerHistory(activityId)
+      .then((h) => {
+        setInitialMessages(h.messages.map(toUIMessage));
+        setChatKey((k) => k + 1);
+      })
       .catch(() => setInitialMessages([]));
   }, [activityId]);
 
@@ -375,11 +444,12 @@ export function TrainerView({ initialMessage, activityId, onBack }: TrainerViewP
 
   return (
     <TrainerChat
-      key={activityId}
+      key={`${activityId}-${chatKey}`}
       initialMessages={initialMessages}
       initialInput={initialMessage}
       activityId={activityId}
       onBack={onBack}
+      onImported={handleImported}
     />
   );
 }
