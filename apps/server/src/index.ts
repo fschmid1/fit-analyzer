@@ -28,4 +28,6 @@ console.log(`Server starting on http://localhost:${port}`);
 export default {
   port,
   fetch: app.fetch,
+  // Allow long-running requests (e.g. LLM compaction) — 255 is the Bun maximum
+  idleTimeout: 255,
 };

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useChat } from "@tanstack/ai-react";
 import { fetchServerSentEvents } from "@tanstack/ai-client";
-import { ArrowLeft, Brain, ChevronDown, ChevronRight, Send, Square, Upload } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Brain, ChevronDown, ChevronRight, Minimize2, Send, Square, Upload } from "lucide-react";
 import type { UIMessage } from "@tanstack/ai-react";
 import type { TrainerMessage } from "@fit-analyzer/shared";
-import { fetchTrainerHistory, importTrainerChat, saveTrainerHistory } from "../lib/api";
+import { compactTrainerHistory, fetchTrainerHistory, importTrainerChat, saveTrainerHistory } from "../lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -141,9 +141,10 @@ interface TrainerChatProps {
   activityId: string;
   onBack: () => void;
   onImported: () => void;
+  onCompacted: () => void;
 }
 
-function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImported }: TrainerChatProps) {
+function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImported, onCompacted }: TrainerChatProps) {
   const { messages, sendMessage, status, isLoading, stop, error } = useChat({
     connection,
     initialMessages,
@@ -153,9 +154,14 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
   const [hasInput, setHasInput] = useState(!!initialInput.trim());
   const [importState, setImportState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [importError, setImportError] = useState<string | null>(null);
+  const [compactState, setCompactState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [compactError, setCompactError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -176,6 +182,39 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
     }
   }, [onImported]);
 
+  const handleCompact = useCallback(async () => {
+    setCompactState("loading");
+    setCompactError(null);
+    try {
+      await compactTrainerHistory(activityId);
+      setCompactState("done");
+      setTimeout(() => setCompactState("idle"), 3000);
+      onCompacted();
+    } catch (err) {
+      setCompactError(err instanceof Error ? err.message : "Compaction failed");
+      setCompactState("error");
+      setTimeout(() => setCompactState("idle"), 5000);
+    }
+  }, [activityId, onCompacted]);
+
+  const updateScrollButtons = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setShowScrollTop(el.scrollTop > 50);
+    setShowScrollBottom(el.scrollTop < el.scrollHeight - el.clientHeight - 50);
+  }, []);
+
+  const scrollToTop = useCallback(() => {
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, []);
+
+  // Check scroll button visibility once the DOM is ready
+  useEffect(() => { updateScrollButtons(); }, [updateScrollButtons]);
+
   // Auto-grow textarea
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -192,7 +231,9 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
     const behavior = isFirstRender.current ? "instant" : "smooth";
     isFirstRender.current = false;
     bottomRef.current?.scrollIntoView({ behavior });
-  }, [messages]);
+    // Re-evaluate button visibility after scroll settles
+    setTimeout(updateScrollButtons, 120);
+  }, [messages, updateScrollButtons]);
 
   // Save to DB when a response finishes (status: streaming → ready)
   const prevStatus = useRef(status);
@@ -263,31 +304,61 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
           </span>
         </div>
 
-        {/* Import button — only in the general coaching chat */}
-        {isGeneralChat && (
+        {/* Right-side action buttons */}
+        <div className="ml-auto flex items-center gap-2">
+          {/* Compact button — compresses old messages via Kimi K2.5 */}
           <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={importState === "loading"}
-            title="Import ChatGPT markdown export"
-            className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl border transition-all duration-200 cursor-pointer disabled:cursor-wait ${
-              importState === "done"
+            onClick={handleCompact}
+            disabled={compactState === "loading" || isLoading || messages.length === 0}
+            title="Compact conversation context with Kimi K2.5"
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl border transition-all duration-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+              compactState === "done"
                 ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                : importState === "error"
+                : compactState === "error"
                 ? "bg-rose-500/10 border-rose-500/20 text-rose-400"
+                : compactState === "loading"
+                ? "bg-[#8b5cf6]/10 border-[#8b5cf6]/20 text-[#c4b5fd] cursor-wait"
                 : "bg-[#8b5cf6]/10 border-[#8b5cf6]/20 text-[#c4b5fd] hover:bg-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
             }`}
           >
-            <Upload className="w-3.5 h-3.5" />
-            {importState === "loading" && "Importing…"}
-            {importState === "done" && "Imported!"}
-            {importState === "error" && (importError ?? "Error")}
-            {importState === "idle" && "Import .md"}
+            <Minimize2 className="w-3.5 h-3.5" />
+            {compactState === "loading" && "Compacting…"}
+            {compactState === "done" && "Compacted!"}
+            {compactState === "error" && (compactError ?? "Error")}
+            {compactState === "idle" && "Compact"}
           </button>
-        )}
+
+          {/* Import button — only in the general coaching chat */}
+          {isGeneralChat && (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importState === "loading"}
+              title="Import ChatGPT markdown export"
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl border transition-all duration-200 cursor-pointer disabled:cursor-wait ${
+                importState === "done"
+                  ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                  : importState === "error"
+                  ? "bg-rose-500/10 border-rose-500/20 text-rose-400"
+                  : "bg-[#8b5cf6]/10 border-[#8b5cf6]/20 text-[#c4b5fd] hover:bg-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
+              }`}
+            >
+              <Upload className="w-3.5 h-3.5" />
+              {importState === "loading" && "Importing…"}
+              {importState === "done" && "Imported!"}
+              {importState === "error" && (importError ?? "Error")}
+              {importState === "idle" && "Import .md"}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
+      <div className="flex-1 relative">
+      <div
+        ref={scrollRef}
+        onScroll={updateScrollButtons}
+        className="absolute inset-0 overflow-y-auto px-6 py-6 space-y-4"
+      >
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center gap-3 opacity-50">
             <div className="w-12 h-12 rounded-2xl bg-[#8b5cf6]/20 flex items-center justify-center">
@@ -372,6 +443,31 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
         <div ref={bottomRef} />
       </div>
 
+      {/* Floating scroll-to-top / scroll-to-bottom buttons */}
+      {(showScrollTop || showScrollBottom) && (
+        <div className="absolute bottom-4 right-5 flex flex-col gap-1.5 z-10">
+          {showScrollTop && (
+            <button
+              onClick={scrollToTop}
+              title="Scroll to top"
+              className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#1a1533]/90 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.2)] hover:border-[rgba(139,92,246,0.4)] text-[#7c6fa0] hover:text-[#c4b5fd] transition-all duration-200 cursor-pointer backdrop-blur-sm shadow-lg"
+            >
+              <ArrowUp className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {showScrollBottom && (
+            <button
+              onClick={scrollToBottom}
+              title="Scroll to bottom"
+              className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#1a1533]/90 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.2)] hover:border-[rgba(139,92,246,0.4)] text-[#7c6fa0] hover:text-[#c4b5fd] transition-all duration-200 cursor-pointer backdrop-blur-sm shadow-lg"
+            >
+              <ArrowDown className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+      </div>
+
       {/* Input bar */}
       <div className="px-6 pb-6 pt-3 border-t border-[rgba(139,92,246,0.1)] bg-[#0f0b1a]">
         <div className="flex gap-3 items-end bg-[#1a1533]/60 border border-[rgba(139,92,246,0.15)] rounded-2xl px-4 py-3">
@@ -429,8 +525,18 @@ export function TrainerView({ initialMessage, activityId, onBack }: TrainerViewP
 
   useEffect(() => { loadHistory(); }, [loadHistory]);
 
-  // Called after a successful import — re-fetch history and remount the chat
+  // Called after a successful import or compaction — re-fetch history and remount the chat
   const handleImported = useCallback(() => {
+    setInitialMessages(null);
+    fetchTrainerHistory(activityId)
+      .then((h) => {
+        setInitialMessages(h.messages.map(toUIMessage));
+        setChatKey((k) => k + 1);
+      })
+      .catch(() => setInitialMessages([]));
+  }, [activityId]);
+
+  const handleCompacted = useCallback(() => {
     setInitialMessages(null);
     fetchTrainerHistory(activityId)
       .then((h) => {
@@ -460,6 +566,7 @@ export function TrainerView({ initialMessage, activityId, onBack }: TrainerViewP
       activityId={activityId}
       onBack={onBack}
       onImported={handleImported}
+      onCompacted={handleCompacted}
     />
   );
 }

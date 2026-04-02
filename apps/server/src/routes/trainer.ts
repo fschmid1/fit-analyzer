@@ -114,6 +114,123 @@ trainer.put("/history/:activityId", async (c) => {
     return c.json({ ok: true });
 });
 
+/** POST /compact/:activityId — compact old messages using Kimi K2.5 and save result */
+trainer.post("/compact/:activityId", async (c) => {
+    const apiKey = env.OPENROUTER_KEY;
+    if (!apiKey) {
+        return c.json({ error: "OPENROUTER_KEY is not configured" }, 500);
+    }
+
+    const userId = getUserId(c);
+    const { activityId } = c.req.param();
+
+    // Load current history
+    const chatRow = getChatStmt.get(userId, activityId) as { id: string; updatedAt: string } | undefined;
+    if (!chatRow) {
+        return c.json({ messages: [], compacted: false });
+    }
+
+    const allMessages = getMessagesStmt.all(chatRow.id) as TrainerMessage[];
+
+    // Collect last 10 user + 10 assistant messages (preserved verbatim)
+    const keepEndIds = new Set<string>();
+    let userCount = 0;
+    let assistantCount = 0;
+    for (let i = allMessages.length - 1; i >= 0; i--) {
+        const msg = allMessages[i];
+        if (msg.role === "user" && userCount < 10) {
+            keepEndIds.add(msg.id);
+            userCount++;
+        } else if (msg.role === "assistant" && assistantCount < 10) {
+            keepEndIds.add(msg.id);
+            assistantCount++;
+        }
+        if (userCount >= 10 && assistantCount >= 10) break;
+    }
+
+    // Cutoff: index of the earliest message in the "keep end" set
+    const cutoffIndex = allMessages.findIndex((m) => keepEndIds.has(m.id));
+
+    // Everything before the cutoff gets compacted (summary replaces all of it)
+    const toCompact = allMessages.slice(0, cutoffIndex);
+
+    if (toCompact.length === 0) {
+        return c.json({ messages: allMessages, compacted: false });
+    }
+
+    // Build the compaction prompt
+    const messagesText = toCompact
+        .map((m) => `**${m.role === "user" ? "Athlete" : "Coach"}:** ${m.content}`)
+        .join("\n\n---\n\n");
+
+    const compactionPrompt =
+        "You are summarizing an older portion of a sports coaching conversation. " +
+        "Compress the following exchange into a concise but complete context summary using markdown. " +
+        "Preserve ALL important details:\n\n" +
+        "- Training data (power, HR, cadence, intervals, zones)\n" +
+        "- Coaching advice and recommendations given\n" +
+        "- Athlete goals, profile, and background\n" +
+        "- Issues discussed and solutions provided\n" +
+        "- Training plans, workouts, or progressions mentioned\n" +
+        "- Key insights and patterns identified\n\n" +
+        "Use markdown headers (`##`, `###`), bullet points, and **bold text** to highlight the most important information. " +
+        "Be thorough — this summary replaces the original messages.\n\n" +
+        "Messages to summarize:\n\n---\n\n" +
+        messagesText;
+
+    // Call OpenRouter directly (non-streaming), with a 4-minute hard timeout
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            model: "moonshotai/kimi-k2.5",
+            messages: [{ role: "user", content: compactionPrompt }],
+        }),
+        signal: AbortSignal.timeout(240_000),
+    });
+
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        return c.json({ error: "Compaction request failed", details: err }, 500);
+    }
+
+    const data = await response.json();
+    const summary: string = data.choices?.[0]?.message?.content ?? "*(Summary unavailable)*";
+
+    // Timestamp the summary 1 ms before the first kept message so it sorts first
+    const firstKeptAt = new Date(allMessages[cutoffIndex].createdAt).getTime();
+    const summaryMessage: TrainerMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content:
+            "## 📋 Context Summary\n\n" +
+            "*The following is a compressed summary of the earlier conversation to preserve context:*\n\n" +
+            summary,
+        createdAt: new Date(firstKeptAt - 1).toISOString(),
+    };
+
+    // Summary replaces all compacted messages; recent tail is kept verbatim
+    const newMessages: TrainerMessage[] = [
+        summaryMessage,
+        ...allMessages.slice(cutoffIndex),
+    ];
+
+    // Persist to DB
+    const chatId = `${userId}:${activityId}`;
+    db.transaction(() => {
+        upsertChatStmt.run(chatId, activityId, userId);
+        deleteMessagesStmt.run(chatId);
+        for (const m of newMessages) {
+            insertMessageStmt.run(m.id, chatId, m.role, m.content, m.createdAt);
+        }
+    })();
+
+    return c.json({ messages: newMessages, compacted: true, removed: toCompact.length });
+});
+
 /** POST /import — parse a ChatGPT-style markdown export and store as chat history */
 trainer.post("/import", async (c) => {
     const userId = getUserId(c);

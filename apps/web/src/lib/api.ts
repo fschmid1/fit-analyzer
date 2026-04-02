@@ -132,6 +132,20 @@ export async function saveTrainerHistory(
   });
 }
 
+/** Compact old messages in a trainer chat using Kimi K2.5 and save the result */
+export async function compactTrainerHistory(
+  activityId: string
+): Promise<{ messages: TrainerMessage[]; compacted: boolean; removed?: number }> {
+  const res = await fetch(`${API_BASE}/trainer/compact/${activityId}`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Compaction failed" }));
+    throw new Error(err.error ?? "Compaction failed");
+  }
+  return res.json();
+}
+
 /** Upload a ChatGPT-style markdown export and import it as the general coaching chat */
 export async function importTrainerChat(
   file: File
