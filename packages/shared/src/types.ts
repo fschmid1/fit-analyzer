@@ -73,6 +73,7 @@ export interface ActivityListItem {
   date: string;
   summary: ActivitySummary;
   createdAt: string;
+  stravaActivityId?: string | null;
 }
 
 /** Full activity returned by GET /api/activities/:id */
