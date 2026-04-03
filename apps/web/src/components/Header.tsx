@@ -1,5 +1,5 @@
-import { Activity, ArrowLeft, BotMessageSquare, Upload } from "lucide-react";
-import { useMatch } from "react-router-dom";
+import { Activity, ArrowLeft, BotMessageSquare, Settings, Upload } from "lucide-react";
+import { useMatch, useNavigate } from "react-router-dom";
 import type { UserInfo } from "../lib/api";
 
 interface HeaderProps {
@@ -41,9 +41,11 @@ function getAvatarColor(username: string): string {
 }
 
 export function Header({ onBackToHistory, onUploadNew, onOpenTrainer, user }: HeaderProps) {
+  const navigate = useNavigate();
   const isHistory = useMatch("/");
   const isAnalysis = useMatch("/activity/:id");
   const isTrainer = useMatch("/trainer");
+  const isSettings = useMatch("/settings");
 
   // Show back button everywhere except the history page
   const showBack = !isHistory;
@@ -51,6 +53,8 @@ export function Header({ onBackToHistory, onUploadNew, onOpenTrainer, user }: He
   const showUpload = !!isAnalysis;
   // Show trainer button everywhere except the trainer page itself
   const showTrainer = !isTrainer;
+  // Show settings button everywhere except the settings page
+  const showSettings = !isSettings;
 
   return (
     <header className="sticky top-0 z-50 flex items-center justify-between px-6 py-4 border-b border-[rgba(139,92,246,0.1)] bg-[#0f0b1a]">
@@ -97,6 +101,17 @@ export function Header({ onBackToHistory, onUploadNew, onOpenTrainer, user }: He
           >
             <BotMessageSquare className="w-4 h-4" />
             Trainer
+          </button>
+        )}
+
+        {/* Settings button */}
+        {showSettings && (
+          <button
+            onClick={() => navigate("/settings")}
+            className="flex items-center justify-center w-9 h-9 text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-xl transition-all duration-200 cursor-pointer"
+            title="Settings"
+          >
+            <Settings className="w-4 h-4" />
           </button>
         )}
 

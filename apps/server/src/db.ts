@@ -117,4 +117,28 @@ try {
   db.exec(`ALTER TABLE trainer_chats ADD COLUMN name TEXT NOT NULL DEFAULT 'Thread 1'`);
 } catch { /* column already exists */ }
 
+// Strava OAuth token storage
+db.exec(`
+  CREATE TABLE IF NOT EXISTS strava_tokens (
+    user_id       TEXT PRIMARY KEY,
+    access_token  TEXT NOT NULL,
+    refresh_token TEXT NOT NULL,
+    expires_at    INTEGER NOT NULL,
+    athlete_id    INTEGER NOT NULL,
+    scope         TEXT NOT NULL DEFAULT '',
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
+// Migration: add strava_activity_id to activities for duplicate prevention
+try {
+  db.exec(`ALTER TABLE activities ADD COLUMN strava_activity_id TEXT`);
+} catch { /* column already exists */ }
+db.exec(`
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_activities_strava_id
+    ON activities(user_id, strava_activity_id)
+    WHERE strava_activity_id IS NOT NULL
+`);
+
 export { db };

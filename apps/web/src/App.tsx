@@ -11,6 +11,7 @@ import { IntervalList } from "./components/IntervalList";
 import { SummaryCards } from "./components/SummaryCards";
 import { CopyBox } from "./components/CopyBox";
 import { TrainerView } from "./components/TrainerView";
+import { SettingsPage } from "./pages/SettingsPage";
 import {
   saveCustomIntervals,
   loadCustomIntervals,
@@ -399,6 +400,10 @@ function App() {
               onBack={() => navigate(-1)}
             />
           }
+        />
+        <Route
+          path="/settings"
+          element={<SettingsPage user={user} onActivitiesChanged={loadActivities} />}
         />
       </Routes>
     </div>
