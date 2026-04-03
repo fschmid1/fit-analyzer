@@ -20,7 +20,7 @@ function getUserId(c: { req: { header: (name: string) => string | undefined } })
 
 // Prepared statements for performance — now scoped by user_id
 const listStmt = db.prepare(
-  `SELECT id, date, summary, created_at as createdAt
+  `SELECT id, date, summary, strava_activity_id as stravaActivityId, created_at as createdAt
    FROM activities
    WHERE user_id = ?
    ORDER BY date DESC, created_at DESC`
@@ -56,6 +56,7 @@ activities.get("/", (c) => {
     id: string;
     date: string;
     summary: string;
+    stravaActivityId: string | null;
     createdAt: string;
   }[];
 
@@ -64,6 +65,7 @@ activities.get("/", (c) => {
     date: row.date,
     summary: JSON.parse(row.summary),
     createdAt: row.createdAt,
+    stravaActivityId: row.stravaActivityId ?? null,
   }));
 
   return c.json({ activities: items });

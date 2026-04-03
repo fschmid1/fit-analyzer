@@ -101,9 +101,18 @@ export function ActivityHistory({
           >
             {/* Date */}
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-[#f1f5f9] truncate">
-                {formatDate(activity.summary.date)}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold text-[#f1f5f9] truncate">
+                  {formatDate(activity.summary.date)}
+                </p>
+                {activity.stravaActivityId && (
+                  <span title="Imported from Strava" className="shrink-0">
+                    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-[#fc4c02]">
+                      <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
+                    </svg>
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-4 mt-1.5">
                 {/* Duration */}
                 <span className="flex items-center gap-1 text-xs text-[#94a3b8]">

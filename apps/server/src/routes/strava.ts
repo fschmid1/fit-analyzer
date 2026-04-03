@@ -193,25 +193,59 @@ function buildRecords(startDate: Date, streams: StravaStreams): StoredRecord[] {
     power: wattsData[i] ?? null,
     heartRate: hrData[i] ?? null,
     cadence: cadData[i] ?? null,
-    speed: velData[i] ?? null,
+    // Strava velocity_smooth is m/s → convert to km/h to match FIT parser output
+    speed: velData[i] != null ? Math.round(velData[i] * 3.6 * 10) / 10 : null,
     gradient: gradeData[i] ?? null,
   }));
 }
 
-/** Build ActivitySummary from a Strava activity + streams data. */
-function buildSummary(
-  activity: StravaActivity,
-  timeArr: number[],
-  wattsArr: number[]
-): ActivitySummary {
+/** Average of an array, excluding nulls (zeros included — same as computeAverages in stats.ts). */
+function streamAvg(arr: number[]): number | null {
+  if (!arr.length) return null;
+  return Math.round(arr.reduce((s, v) => s + v, 0) / arr.length);
+}
+
+/** Max of an array; null if empty. */
+function streamMax(arr: number[]): number | null {
+  if (!arr.length) return null;
+  return arr.reduce((m, v) => (v > m ? v : m), arr[0]);
+}
+
+/**
+ * Build ActivitySummary from streams data, using the same averaging logic as
+ * computeAverages() in stats.ts so summary cards match what the chart StatsBar
+ * shows. Falls back to Strava's pre-computed fields when streams are absent.
+ */
+function buildSummary(activity: StravaActivity, streams: StravaStreams): ActivitySummary {
+  const timeArr = streams.time?.data ?? [];
+  const wattsArr = streams.watts?.data ?? [];
+  const hrArr = streams.heartrate?.data ?? [];
+  const cadArr = streams.cadence?.data ?? [];
+
   return {
     date: activity.start_date.slice(0, 10),
     totalTimerTime: activity.moving_time,
-    avgPower: activity.average_watts ?? null,
-    maxPower: activity.max_watts ?? null,
-    avgHeartRate: activity.average_heartrate ?? null,
-    maxHeartRate: activity.max_heartrate ?? null,
-    avgCadence: activity.average_cadence ?? null,
+    // Prefer stream-computed values; fall back to Strava API fields when no streams
+    avgPower:
+      wattsArr.length > 0
+        ? streamAvg(wattsArr)
+        : activity.average_watts != null ? Math.round(activity.average_watts) : null,
+    maxPower:
+      wattsArr.length > 0
+        ? streamMax(wattsArr)
+        : activity.max_watts != null ? Math.round(activity.max_watts) : null,
+    avgHeartRate:
+      hrArr.length > 0
+        ? streamAvg(hrArr)
+        : activity.average_heartrate != null ? Math.round(activity.average_heartrate) : null,
+    maxHeartRate:
+      hrArr.length > 0
+        ? streamMax(hrArr)
+        : activity.max_heartrate != null ? Math.round(activity.max_heartrate) : null,
+    avgCadence:
+      cadArr.length > 0
+        ? streamAvg(cadArr)
+        : activity.average_cadence != null ? Math.round(activity.average_cadence) : null,
     totalWork: activity.kilojoules != null ? activity.kilojoules * 1000 : null,
     peak1minPower: computePeakPower(timeArr, wattsArr, 60),
     peak5minPower: computePeakPower(timeArr, wattsArr, 300),
@@ -278,11 +312,10 @@ async function importSingleActivity(
   const rawLaps: StravaLap[] = lapsRes.ok ? ((await lapsRes.json()) as StravaLap[]) : [];
 
   const timeArr = streams.time?.data ?? [];
-  const wattsArr = streams.watts?.data ?? [];
   const startDate = new Date(activity.start_date);
 
   const records = buildRecords(startDate, streams);
-  const summary = buildSummary(activity, timeArr, wattsArr);
+  const summary = buildSummary(activity, streams);
   const laps = buildLaps(rawLaps, timeArr);
 
   const id = crypto.randomUUID();
