@@ -12,6 +12,7 @@ export type {
   IntervalConfig,
   UpdateIntervalsBody,
   TrainerMessage,
+  TrainerThread,
   TrainerChatHistory,
   SaveTrainerHistoryBody,
 } from "./types.js";
