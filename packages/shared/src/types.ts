@@ -120,9 +120,19 @@ export interface TrainerMessage {
   createdAt: string; // ISO-8601
 }
 
-/** Response body for GET /api/trainer/history/:activityId */
-export interface TrainerChatHistory {
+/** A thread (conversation) within a trainer chat for an activity */
+export interface TrainerThread {
+  id: string;
+  name: string;
   activityId: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+}
+
+/** Response body for GET /api/trainer/history/:threadId */
+export interface TrainerChatHistory {
+  threadId: string;   // was activityId
   messages: TrainerMessage[];
   updatedAt: string;
 }
