@@ -154,6 +154,43 @@ export async function compactTrainerHistory(
   return res.json();
 }
 
+// ─── Strava ───────────────────────────────────────────────────────────────────
+
+export interface StravaStatus {
+  connected: boolean;
+  athleteId?: number;
+  scope?: string;
+}
+
+export async function fetchStravaStatus(): Promise<StravaStatus> {
+  const res = await fetch(`${API_BASE}/strava/status`);
+  if (!res.ok) return { connected: false };
+  return res.json();
+}
+
+export async function syncStravaActivities(
+  daysBack = 30
+): Promise<{ imported: number; skipped: number }> {
+  const res = await fetch(`${API_BASE}/strava/sync?daysBack=${daysBack}`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Sync failed" }));
+    throw new Error((err as { error?: string }).error ?? "Sync failed");
+  }
+  return res.json();
+}
+
+export async function disconnectStrava(): Promise<void> {
+  await fetch(`${API_BASE}/strava/disconnect`, { method: "DELETE" });
+}
+
+export function connectStrava(): void {
+  window.location.href = `${API_BASE}/strava/connect`;
+}
+
+// ─── Trainer ─────────────────────────────────────────────────────────────────
+
 export async function importTrainerChat(
   file: File,
   threadId?: string
