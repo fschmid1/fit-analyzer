@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
-import { Loader2, Link2, Link2Off, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, Link2, Link2Off, RefreshCw, CheckCircle2, AlertCircle, Webhook, WebhookOff } from "lucide-react";
 import {
   fetchStravaStatus,
   syncStravaActivities,
   disconnectStrava,
   connectStrava,
+  registerStravaWebhook,
+  unregisterStravaWebhook,
   type StravaStatus,
 } from "../lib/api";
 
@@ -19,6 +21,8 @@ export function StravaConnect({ onSynced }: StravaConnectProps) {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [webhookLoading, setWebhookLoading] = useState(false);
+  const [webhookRegistered, setWebhookRegistered] = useState<boolean | null>(null);
   const [daysBack, setDaysBack] = useState<DaysBack>(30);
   const [notification, setNotification] = useState<{
     type: "success" | "error";
@@ -87,11 +91,40 @@ export function StravaConnect({ onSynced }: StravaConnectProps) {
     try {
       await disconnectStrava();
       setStatus({ connected: false });
+      setWebhookRegistered(null);
       setNotification({ type: "success", message: "Strava disconnected." });
     } catch {
       setNotification({ type: "error", message: "Failed to disconnect." });
     } finally {
       setDisconnecting(false);
+    }
+  };
+
+  const handleRegisterWebhook = async () => {
+    setWebhookLoading(true);
+    setNotification(null);
+    try {
+      await registerStravaWebhook();
+      setWebhookRegistered(true);
+      setNotification({ type: "success", message: "Webhook registered — new rides will sync automatically." });
+    } catch (err) {
+      setNotification({ type: "error", message: (err as Error).message });
+    } finally {
+      setWebhookLoading(false);
+    }
+  };
+
+  const handleUnregisterWebhook = async () => {
+    setWebhookLoading(true);
+    setNotification(null);
+    try {
+      await unregisterStravaWebhook();
+      setWebhookRegistered(false);
+      setNotification({ type: "success", message: "Webhook removed." });
+    } catch (err) {
+      setNotification({ type: "error", message: (err as Error).message });
+    } finally {
+      setWebhookLoading(false);
     }
   };
 
@@ -187,6 +220,38 @@ export function StravaConnect({ onSynced }: StravaConnectProps) {
                 <p className="text-xs text-[#94a3b8]">
                   Syncs Ride, VirtualRide, and EBikeRide activities. Already-imported rides are skipped automatically.
                 </p>
+
+                {/* Webhook auto-sync */}
+                <div className="pt-2 border-t border-[rgba(139,92,246,0.1)] flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-medium text-[#f1f5f9]">Auto-sync new rides</p>
+                      <p className="text-xs text-[#94a3b8] mt-0.5">
+                        {webhookRegistered
+                          ? "Active — new rides are imported automatically."
+                          : "Register a webhook to import rides the moment you save them on Strava."}
+                      </p>
+                    </div>
+                    <button
+                      onClick={webhookRegistered ? handleUnregisterWebhook : handleRegisterWebhook}
+                      disabled={webhookLoading}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 cursor-pointer disabled:opacity-50 shrink-0 ml-3 ${
+                        webhookRegistered
+                          ? "text-[#94a3b8] hover:text-red-400 bg-transparent hover:bg-red-500/10"
+                          : "text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
+                      }`}
+                    >
+                      {webhookLoading ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : webhookRegistered ? (
+                        <WebhookOff className="w-3.5 h-3.5" />
+                      ) : (
+                        <Webhook className="w-3.5 h-3.5" />
+                      )}
+                      {webhookRegistered ? "Disable" : "Enable"}
+                    </button>
+                  </div>
+                </div>
 
                 {/* Disconnect */}
                 <div className="pt-1 border-t border-[rgba(139,92,246,0.1)]">

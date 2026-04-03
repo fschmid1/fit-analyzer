@@ -189,6 +189,21 @@ export function connectStrava(): void {
   window.location.href = `${API_BASE}/strava/connect`;
 }
 
+export async function registerStravaWebhook(): Promise<{ id: number }> {
+  const res = await fetch(`${API_BASE}/strava/webhook/subscription`, { method: "POST" });
+  const data = await res.json();
+  if (!res.ok) throw new Error((data as { error?: string }).error ?? "Registration failed");
+  return data;
+}
+
+export async function unregisterStravaWebhook(): Promise<void> {
+  const res = await fetch(`${API_BASE}/strava/webhook/subscription`, { method: "DELETE" });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ error: "Failed" }));
+    throw new Error((data as { error?: string }).error ?? "Failed to remove webhook");
+  }
+}
+
 // ─── Trainer ─────────────────────────────────────────────────────────────────
 
 export async function importTrainerChat(
