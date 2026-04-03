@@ -12,6 +12,7 @@ const db = new Database(DB_PATH);
 
 // Enable WAL mode for better concurrent read performance
 db.exec("PRAGMA journal_mode = WAL");
+db.exec("PRAGMA foreign_keys = ON");
 
 // Create tables
 db.exec(`
@@ -106,5 +107,14 @@ try {
 } catch {
   // messages column may not exist on a fresh DB — safe to ignore
 }
+
+// Migration: allow multiple threads per activity (drop unique index, re-add as non-unique)
+try { db.exec(`DROP INDEX IF EXISTS idx_trainer_chats_user_activity`); } catch { /* ignore */ }
+db.exec(`CREATE INDEX IF NOT EXISTS idx_trainer_chats_user_activity ON trainer_chats(user_id, activity_id)`);
+
+// Migration: add name column to existing trainer_chats rows
+try {
+  db.exec(`ALTER TABLE trainer_chats ADD COLUMN name TEXT NOT NULL DEFAULT 'Thread 1'`);
+} catch { /* column already exists */ }
 
 export { db };

@@ -1,10 +1,16 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useChat } from "@tanstack/ai-react";
 import { fetchServerSentEvents } from "@tanstack/ai-client";
-import { ArrowDown, ArrowLeft, ArrowUp, Brain, ChevronDown, ChevronRight, Minimize2, Send, Square, Upload } from "lucide-react";
+import {
+  ArrowDown, ArrowLeft, ArrowUp, Brain, ChevronDown, ChevronRight,
+  Minimize2, Pencil, Plus, Send, Square, Trash2, Upload,
+} from "lucide-react";
 import type { UIMessage } from "@tanstack/ai-react";
-import type { TrainerMessage } from "@fit-analyzer/shared";
-import { compactTrainerHistory, fetchTrainerHistory, importTrainerChat, saveTrainerHistory } from "../lib/api";
+import type { TrainerMessage, TrainerThread } from "@fit-analyzer/shared";
+import {
+  compactTrainerHistory, createThread, deleteThread, fetchThreads,
+  fetchTrainerHistory, importTrainerChat, renameThread, saveTrainerHistory,
+} from "../lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -14,7 +20,7 @@ interface TrainerViewProps {
   onBack: () => void;
 }
 
-// ─── helpers ────────────────────────────────────────────────────────────────
+// ─── helpers ─────────────────────────────────────────────────────────────────
 
 function getTextContent(msg: UIMessage): string {
   return msg.parts
@@ -48,7 +54,19 @@ function toTrainerMessage(m: UIMessage): TrainerMessage {
   };
 }
 
-// ─── sub-components ──────────────────────────────────────────────────────────
+function formatTime(date: Date | undefined): string {
+  if (!date) return "";
+  const now = new Date();
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (isToday) return time;
+  return `${date.toLocaleDateString([], { month: "short", day: "numeric" })} · ${time}`;
+}
+
+// ─── markdown components (unchanged) ─────────────────────────────────────────
 
 const mdComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
   p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
@@ -83,6 +101,8 @@ const mdComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
   tr: ({ children }) => <tr className="even:bg-[#8b5cf6]/5">{children}</tr>,
 };
 
+// ─── small UI pieces ──────────────────────────────────────────────────────────
+
 function DotsLoader() {
   return (
     <span className="flex gap-1 items-center h-5">
@@ -95,13 +115,10 @@ function DotsLoader() {
 
 function ThinkingBlock({ content, isStreaming }: { content: string; isStreaming: boolean }) {
   const [open, setOpen] = useState(false);
-
-  // Auto-open while streaming, collapse when done
   useEffect(() => {
     if (isStreaming) setOpen(true);
     else setOpen(false);
   }, [isStreaming]);
-
   return (
     <div className="mb-3 rounded-xl border border-[rgba(139,92,246,0.15)] bg-[#0f0b1a]/60 overflow-hidden">
       <button
@@ -110,10 +127,7 @@ function ThinkingBlock({ content, isStreaming }: { content: string; isStreaming:
       >
         <Brain className="w-3.5 h-3.5 shrink-0" />
         {isStreaming ? (
-          <span className="flex items-center gap-2">
-            Thinking
-            <DotsLoader />
-          </span>
+          <span className="flex items-center gap-2">Thinking<DotsLoader /></span>
         ) : (
           <span>Reasoning</span>
         )}
@@ -130,21 +144,168 @@ function ThinkingBlock({ content, isStreaming }: { content: string; isStreaming:
   );
 }
 
-// Stable module-level connection — recreating on every render would cancel in-flight streams
-const connection = fetchServerSentEvents("/api/trainer/chat");
+// ─── ThreadSidebar ────────────────────────────────────────────────────────────
 
-// ─── inner chat ──────────────────────────────────────────────────────────────
-
-interface TrainerChatProps {
-  initialMessages: UIMessage[];
-  initialInput: string;
-  activityId: string;
-  onBack: () => void;
-  onImported: () => void;
-  onCompacted: () => void;
+interface ThreadSidebarProps {
+  threads: TrainerThread[];
+  activeThreadId: string | null;
+  onSelect: (id: string) => void;
+  onCreate: () => void;
+  onRename: (id: string, name: string) => void;
+  onDelete: (id: string) => void;
 }
 
-function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImported, onCompacted }: TrainerChatProps) {
+interface ContextMenu {
+  threadId: string;
+  x: number;
+  y: number;
+}
+
+function ThreadSidebar({ threads, activeThreadId, onSelect, onCreate, onRename, onDelete }: ThreadSidebarProps) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close context menu on outside click or Escape
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClick = () => setContextMenu(null);
+    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") setContextMenu(null); };
+    window.addEventListener("mousedown", handleClick);
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      window.removeEventListener("mousedown", handleClick);
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, [contextMenu]);
+
+  const handleContextMenu = useCallback((thread: TrainerThread, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ threadId: thread.id, x: e.clientX, y: e.clientY });
+  }, []);
+
+  const startEdit = useCallback((threadId: string) => {
+    const thread = threads.find((t) => t.id === threadId);
+    if (!thread) return;
+    setContextMenu(null);
+    setEditingId(threadId);
+    setEditingName(thread.name);
+  }, [threads]);
+
+  const commitEdit = useCallback(() => {
+    if (editingId && editingName.trim()) onRename(editingId, editingName.trim());
+    setEditingId(null);
+  }, [editingId, editingName, onRename]);
+
+  const handleDelete = useCallback((threadId: string) => {
+    setContextMenu(null);
+    onDelete(threadId);
+  }, [onDelete]);
+
+  return (
+    <div className="w-52 shrink-0 flex flex-col border-r border-[rgba(139,92,246,0.1)] bg-[#080612] overflow-hidden">
+      <div className="px-3 pt-3 pb-2 text-[10px] font-semibold text-[#4a4468] uppercase tracking-widest border-b border-[rgba(139,92,246,0.08)]">
+        Threads
+      </div>
+
+      <div className="flex-1 overflow-y-auto py-1">
+        {threads.map((thread) => (
+          <div
+            key={thread.id}
+            onClick={() => onSelect(thread.id)}
+            onContextMenu={(e) => handleContextMenu(thread, e)}
+            className={`group flex items-center gap-1.5 px-2 py-2 mx-1 my-0.5 rounded-lg cursor-pointer transition-colors ${
+              thread.id === activeThreadId
+                ? "bg-[#8b5cf6]/15 text-[#e2d9f3]"
+                : "text-[#7c6fa0] hover:bg-[#1a1533]/50 hover:text-[#c4b5fd]"
+            }`}
+          >
+            {editingId === thread.id ? (
+              <input
+                autoFocus
+                value={editingName}
+                onChange={(e) => setEditingName(e.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitEdit();
+                  if (e.key === "Escape") setEditingId(null);
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="flex-1 min-w-0 bg-[#1a1533] border border-[#8b5cf6]/40 rounded px-1.5 py-0.5 text-xs text-[#e2d9f3] outline-none"
+              />
+            ) : (
+              <span className="flex-1 min-w-0 text-xs truncate">
+                {thread.name}
+              </span>
+            )}
+
+            {thread.messageCount > 0 && editingId !== thread.id && (
+              <span className="text-[10px] text-[#4a4468] shrink-0 tabular-nums">
+                {thread.messageCount}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="p-2 border-t border-[rgba(139,92,246,0.08)]">
+        <button
+          onClick={onCreate}
+          className="w-full flex items-center gap-2 px-2 py-2 text-xs text-[#4a4468] hover:text-[#c4b5fd] hover:bg-[#1a1533]/50 rounded-lg transition-colors cursor-pointer"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          New Thread
+        </button>
+      </div>
+
+      {/* Context menu — rendered via portal-like fixed positioning */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          className="fixed z-50 min-w-36 py-1 rounded-xl bg-[#1a1533] border border-[rgba(139,92,246,0.2)] shadow-xl shadow-black/40 overflow-hidden"
+        >
+          <button
+            onClick={() => startEdit(contextMenu.threadId)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-[#c4b5fd] hover:bg-[#8b5cf6]/15 transition-colors cursor-pointer"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            Rename
+          </button>
+          <div className="my-1 border-t border-[rgba(139,92,246,0.1)]" />
+          <button
+            onClick={() => handleDelete(contextMenu.threadId)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── stable SSE connection ────────────────────────────────────────────────────
+
+const connection = fetchServerSentEvents("/api/trainer/chat");
+
+// ─── TrainerChat ──────────────────────────────────────────────────────────────
+
+interface TrainerChatProps {
+  threadId: string;
+  activityId: string;
+  initialMessages: UIMessage[];
+  initialInput: string;
+  onBack: () => void;
+  onImported: () => void;
+  onCompacted: (newThread: TrainerThread) => void;
+}
+
+function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBack, onImported, onCompacted }: TrainerChatProps) {
   const { messages, sendMessage, status, isLoading, stop, error } = useChat({
     connection,
     initialMessages,
@@ -166,12 +327,11 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    // Reset so the same file can be re-selected after an error
     e.target.value = "";
     setImportState("loading");
     setImportError(null);
     try {
-      await importTrainerChat(file);
+      await importTrainerChat(file, threadId);
       setImportState("done");
       setTimeout(() => setImportState("idle"), 3000);
       onImported();
@@ -180,22 +340,22 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
       setImportState("error");
       setTimeout(() => setImportState("idle"), 5000);
     }
-  }, [onImported]);
+  }, [threadId, onImported]);
 
   const handleCompact = useCallback(async () => {
     setCompactState("loading");
     setCompactError(null);
     try {
-      await compactTrainerHistory(activityId);
+      const result = await compactTrainerHistory(threadId);
       setCompactState("done");
       setTimeout(() => setCompactState("idle"), 3000);
-      onCompacted();
+      if (result.compacted) onCompacted(result.thread);
     } catch (err) {
       setCompactError(err instanceof Error ? err.message : "Compaction failed");
       setCompactState("error");
       setTimeout(() => setCompactState("idle"), 5000);
     }
-  }, [activityId, onCompacted]);
+  }, [threadId, onCompacted]);
 
   const updateScrollButtons = useCallback(() => {
     const el = scrollRef.current;
@@ -204,38 +364,27 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
     setShowScrollBottom(el.scrollTop < el.scrollHeight - el.clientHeight - 50);
   }, []);
 
-  const scrollToTop = useCallback(() => {
-    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-  }, []);
+  const scrollToTop = useCallback(() => scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" }), []);
+  const scrollToBottom = useCallback(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), []);
 
-  const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
-
-  // Check scroll button visibility once the DOM is ready
   useEffect(() => { updateScrollButtons(); }, [updateScrollButtons]);
 
-  // Auto-grow textarea
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, []);
-  // Run once on mount to size the textarea for any pre-filled initialInput
   useEffect(() => { adjustHeight(); }, [adjustHeight]);
 
-  // Scroll to bottom — instant on first render, smooth for new content
   const isFirstRender = useRef(true);
   useEffect(() => {
     const behavior = isFirstRender.current ? "instant" : "smooth";
     isFirstRender.current = false;
     bottomRef.current?.scrollIntoView({ behavior });
-    // Re-evaluate button visibility after scroll settles
     setTimeout(updateScrollButtons, 120);
   }, [messages, updateScrollButtons]);
 
-  // Save to DB when a response finishes (status: streaming → ready)
   const prevStatus = useRef(status);
   useEffect(() => {
     const wasStreaming = prevStatus.current === "streaming";
@@ -244,11 +393,11 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
       const toSave = messages
         .filter((m) => m.role === "user" || m.role === "assistant")
         .map(toTrainerMessage)
-        .filter((m) => m.content); // skip empty assistant placeholders
-      if (toSave.length > 0) saveTrainerHistory(activityId, toSave).catch(console.error);
+        .filter((m) => m.content);
+      if (toSave.length > 0) saveTrainerHistory(threadId, toSave).catch(console.error);
     }
     prevStatus.current = status;
-  }, [status, messages, activityId]);
+  }, [status, messages, threadId]);
 
   const handleSend = useCallback(async () => {
     const text = inputRef.current.trim();
@@ -262,10 +411,7 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        handleSend();
-      }
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
     },
     [handleSend]
   );
@@ -274,8 +420,7 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
   const lastMsgId = messages[messages.length - 1]?.id;
 
   return (
-    <div className="flex-1 flex flex-col h-[calc(100vh-73px)]">
-      {/* Hidden file input */}
+    <div className="flex-1 flex flex-col min-h-0">
       <input
         ref={fileInputRef}
         type="file"
@@ -285,7 +430,7 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
       />
 
       {/* Sub-header */}
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-[rgba(139,92,246,0.1)] bg-[#0f0b1a]">
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-[rgba(139,92,246,0.1)] bg-[#0f0b1a] shrink-0">
         <button
           onClick={onBack}
           className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-xl transition-all duration-200 cursor-pointer"
@@ -304,13 +449,11 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
           </span>
         </div>
 
-        {/* Right-side action buttons */}
         <div className="ml-auto flex items-center gap-2">
-          {/* Compact button — compresses old messages via Kimi K2.5 */}
           <button
             onClick={handleCompact}
             disabled={compactState === "loading" || isLoading || messages.length === 0}
-            title="Compact conversation context with Kimi K2.5"
+            title="Fork and compact conversation with Kimi K2.5"
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl border transition-all duration-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
               compactState === "done"
                 ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
@@ -328,7 +471,6 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
             {compactState === "idle" && "Compact"}
           </button>
 
-          {/* Import button — only in the general coaching chat */}
           {isGeneralChat && (
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -353,123 +495,118 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
       </div>
 
       {/* Messages */}
-      <div className="flex-1 relative">
-      <div
-        ref={scrollRef}
-        onScroll={updateScrollButtons}
-        className="absolute inset-0 overflow-y-auto px-6 py-6 space-y-4"
-      >
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center gap-3 opacity-50">
-            <div className="w-12 h-12 rounded-2xl bg-[#8b5cf6]/20 flex items-center justify-center">
-              <Send className="w-5 h-5 text-[#8b5cf6]" />
+      <div className="flex-1 relative min-h-0">
+        <div
+          ref={scrollRef}
+          onScroll={updateScrollButtons}
+          className="absolute inset-0 overflow-y-auto px-6 py-6 space-y-4"
+        >
+          {messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full text-center gap-3 opacity-50">
+              <div className="w-12 h-12 rounded-2xl bg-[#8b5cf6]/20 flex items-center justify-center">
+                <Send className="w-5 h-5 text-[#8b5cf6]" />
+              </div>
+              <p className="text-sm text-[#94a3b8]">
+                Paste your activity data below and ask your trainer anything.
+              </p>
             </div>
-            <p className="text-sm text-[#94a3b8]">
-              Paste your activity data below and ask your trainer anything.
-            </p>
-          </div>
-        )}
+          )}
 
-        {messages.map((msg) => {
-          const isUser = msg.role === "user";
-          const isLastMsg = msg.id === lastMsgId;
-          const isCurrentlyStreaming = isLastMsg && status === "streaming";
+          {messages.map((msg) => {
+            const isUser = msg.role === "user";
+            const isLastMsg = msg.id === lastMsgId;
+            const isCurrentlyStreaming = isLastMsg && status === "streaming";
 
-          if (isUser) {
-            const text = getTextContent(msg);
-            if (!text) return null;
-            return (
-              <div key={msg.id} className="flex justify-end">
-                <div className="max-w-[80%] rounded-2xl px-4 py-3 text-base leading-relaxed break-words bg-[#8b5cf6]/20 border border-[#8b5cf6]/30 text-[#e2d9f3] whitespace-pre-wrap">
-                  {text}
+            if (isUser) {
+              const text = getTextContent(msg);
+              if (!text) return null;
+              return (
+                <div key={msg.id} className="flex flex-col items-end gap-1">
+                  <div className="max-w-[80%] rounded-2xl px-4 py-3 text-base leading-relaxed break-words bg-[#8b5cf6]/20 border border-[#8b5cf6]/30 text-[#e2d9f3] whitespace-pre-wrap">
+                    {text}
+                  </div>
+                  <span className="text-[10px] text-[#4a4468] pr-1">
+                    {formatTime(msg.createdAt)}
+                  </span>
                 </div>
+              );
+            }
+
+            const thinkingContent = getThinkingContent(msg);
+            const textContent = getTextContent(msg);
+            const isThinkingPhase = isCurrentlyStreaming && !!thinkingContent && !textContent;
+
+            return (
+              <div key={msg.id} className="flex flex-col items-start gap-1">
+                <div className="max-w-[80%] rounded-2xl px-4 py-3 text-base leading-relaxed break-words bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] text-[#c4b5fd]">
+                  {thinkingContent && (
+                    <ThinkingBlock content={thinkingContent} isStreaming={isThinkingPhase} />
+                  )}
+                  {textContent ? (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                      {textContent}
+                    </ReactMarkdown>
+                  ) : isCurrentlyStreaming && !thinkingContent ? (
+                    <DotsLoader />
+                  ) : null}
+                  {isCurrentlyStreaming && textContent && (
+                    <span className="inline-block w-0.5 h-4 bg-[#8b5cf6] animate-pulse ml-0.5 align-middle" />
+                  )}
+                </div>
+                {!isCurrentlyStreaming && textContent && (
+                  <span className="text-[10px] text-[#4a4468] pl-1">
+                    {formatTime(msg.createdAt)}
+                  </span>
+                )}
               </div>
             );
-          }
+          })}
 
-          // Assistant message
-          const thinkingContent = getThinkingContent(msg);
-          const textContent = getTextContent(msg);
-          const isThinkingPhase = isCurrentlyStreaming && !!thinkingContent && !textContent;
-
-          return (
-            <div key={msg.id} className="flex justify-start">
-              <div className="max-w-[80%] rounded-2xl px-4 py-3 text-base leading-relaxed break-words bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] text-[#c4b5fd]">
-                {/* Thinking block */}
-                {thinkingContent && (
-                  <ThinkingBlock
-                    content={thinkingContent}
-                    isStreaming={isThinkingPhase}
-                  />
-                )}
-
-                {/* Response text */}
-                {textContent ? (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                    {textContent}
-                  </ReactMarkdown>
-                ) : isCurrentlyStreaming && !thinkingContent ? (
-                  // Waiting for first tokens and no thinking yet
-                  <DotsLoader />
-                ) : null}
-
-                {/* Streaming cursor on last token */}
-                {isCurrentlyStreaming && textContent && (
-                  <span className="inline-block w-0.5 h-4 bg-[#8b5cf6] animate-pulse ml-0.5 align-middle" />
-                )}
+          {status === "submitted" && (
+            <div className="flex justify-start">
+              <div className="bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] rounded-2xl px-4 py-3">
+                <DotsLoader />
               </div>
             </div>
-          );
-        })}
-
-        {/* Submitted but no assistant message started yet */}
-        {status === "submitted" && (
-          <div className="flex justify-start">
-            <div className="bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] rounded-2xl px-4 py-3">
-              <DotsLoader />
-            </div>
-          </div>
-        )}
-
-        {/* Error state */}
-        {error && (
-          <div className="flex justify-start">
-            <div className="max-w-[80%] rounded-2xl px-4 py-3 text-sm bg-rose-500/10 border border-rose-500/20 text-rose-400">
-              Error: {error.message}
-            </div>
-          </div>
-        )}
-
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Floating scroll-to-top / scroll-to-bottom buttons */}
-      {(showScrollTop || showScrollBottom) && (
-        <div className="absolute bottom-4 right-5 flex flex-col gap-1.5 z-10">
-          {showScrollTop && (
-            <button
-              onClick={scrollToTop}
-              title="Scroll to top"
-              className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#1a1533]/90 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.2)] hover:border-[rgba(139,92,246,0.4)] text-[#7c6fa0] hover:text-[#c4b5fd] transition-all duration-200 cursor-pointer backdrop-blur-sm shadow-lg"
-            >
-              <ArrowUp className="w-3.5 h-3.5" />
-            </button>
           )}
-          {showScrollBottom && (
-            <button
-              onClick={scrollToBottom}
-              title="Scroll to bottom"
-              className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#1a1533]/90 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.2)] hover:border-[rgba(139,92,246,0.4)] text-[#7c6fa0] hover:text-[#c4b5fd] transition-all duration-200 cursor-pointer backdrop-blur-sm shadow-lg"
-            >
-              <ArrowDown className="w-3.5 h-3.5" />
-            </button>
+
+          {error && (
+            <div className="flex justify-start">
+              <div className="max-w-[80%] rounded-2xl px-4 py-3 text-sm bg-rose-500/10 border border-rose-500/20 text-rose-400">
+                Error: {error.message}
+              </div>
+            </div>
           )}
+
+          <div ref={bottomRef} />
         </div>
-      )}
+
+        {(showScrollTop || showScrollBottom) && (
+          <div className="absolute bottom-4 right-5 flex flex-col gap-1.5 z-10">
+            {showScrollTop && (
+              <button
+                onClick={scrollToTop}
+                title="Scroll to top"
+                className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#1a1533]/90 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.2)] hover:border-[rgba(139,92,246,0.4)] text-[#7c6fa0] hover:text-[#c4b5fd] transition-all duration-200 cursor-pointer backdrop-blur-sm shadow-lg"
+              >
+                <ArrowUp className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {showScrollBottom && (
+              <button
+                onClick={scrollToBottom}
+                title="Scroll to bottom"
+                className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#1a1533]/90 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.2)] hover:border-[rgba(139,92,246,0.4)] text-[#7c6fa0] hover:text-[#c4b5fd] transition-all duration-200 cursor-pointer backdrop-blur-sm shadow-lg"
+              >
+                <ArrowDown className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Input bar */}
-      <div className="px-6 pb-6 pt-3 border-t border-[rgba(139,92,246,0.1)] bg-[#0f0b1a]">
+      <div className="px-6 pb-6 pt-3 border-t border-[rgba(139,92,246,0.1)] bg-[#0f0b1a] shrink-0">
         <div className="flex gap-3 items-end bg-[#1a1533]/60 border border-[rgba(139,92,246,0.15)] rounded-2xl px-4 py-3">
           <textarea
             ref={textareaRef}
@@ -510,63 +647,165 @@ function TrainerChat({ initialMessages, initialInput, activityId, onBack, onImpo
   );
 }
 
-// ─── outer wrapper — loads history then mounts TrainerChat ───────────────────
+// ─── TrainerView ──────────────────────────────────────────────────────────────
 
 export function TrainerView({ initialMessage, activityId, onBack }: TrainerViewProps) {
+  const [threads, setThreads] = useState<TrainerThread[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
   const [chatKey, setChatKey] = useState(0);
+  const [threadsLoading, setThreadsLoading] = useState(true);
+  const [currentInitialInput, setCurrentInitialInput] = useState(initialMessage);
+  const initialized = useRef(false);
 
-  const loadHistory = useCallback(() => {
+  // Load threads for this activity
+  const loadThreads = useCallback(async () => {
+    setThreadsLoading(true);
+    try {
+      const list = await fetchThreads(activityId);
+      setThreads(list);
+      if (!initialized.current && list.length > 0) {
+        initialized.current = true;
+        // Auto-select the most recently updated thread
+        const latest = list.reduce((a, b) => (a.updatedAt > b.updatedAt ? a : b));
+        setActiveThreadId(latest.id);
+      }
+    } catch {
+      setThreads([]);
+    } finally {
+      setThreadsLoading(false);
+    }
+  }, [activityId]);
+
+  useEffect(() => { loadThreads(); }, [loadThreads]);
+
+  // When active thread changes, load its messages
+  useEffect(() => {
+    if (!activeThreadId) {
+      setInitialMessages(null);
+      return;
+    }
     setInitialMessages(null);
-    fetchTrainerHistory(activityId)
+    fetchTrainerHistory(activeThreadId)
       .then((h) => setInitialMessages(h.messages.map(toUIMessage)))
       .catch(() => setInitialMessages([]));
-  }, [activityId]);
+  }, [activeThreadId]);
 
-  useEffect(() => { loadHistory(); }, [loadHistory]);
+  const handleSelectThread = useCallback((id: string) => {
+    setActiveThreadId(id);
+    setCurrentInitialInput(""); // only pre-fill on first open
+  }, []);
 
-  // Called after a successful import or compaction — re-fetch history and remount the chat
+  const handleCreateThread = useCallback(async () => {
+    const name = `Thread ${threads.length + 1}`;
+    const thread = await createThread(activityId, name);
+    setThreads((prev) => [...prev, thread]);
+    setActiveThreadId(thread.id);
+    setCurrentInitialInput("");
+  }, [activityId, threads.length]);
+
+  const handleRenameThread = useCallback(async (threadId: string, name: string) => {
+    await renameThread(threadId, name);
+    setThreads((prev) => prev.map((t) => (t.id === threadId ? { ...t, name } : t)));
+  }, []);
+
+  const handleDeleteThread = useCallback(async (threadId: string) => {
+    await deleteThread(threadId);
+    setThreads((prev) => {
+      const next = prev.filter((t) => t.id !== threadId);
+      if (activeThreadId === threadId) {
+        setActiveThreadId(next.length > 0 ? next[next.length - 1].id : null);
+      }
+      return next;
+    });
+  }, [activeThreadId]);
+
   const handleImported = useCallback(() => {
+    if (!activeThreadId) return;
     setInitialMessages(null);
-    fetchTrainerHistory(activityId)
+    fetchTrainerHistory(activeThreadId)
       .then((h) => {
         setInitialMessages(h.messages.map(toUIMessage));
         setChatKey((k) => k + 1);
       })
       .catch(() => setInitialMessages([]));
-  }, [activityId]);
+  }, [activeThreadId]);
 
-  const handleCompacted = useCallback(() => {
-    setInitialMessages(null);
-    fetchTrainerHistory(activityId)
-      .then((h) => {
-        setInitialMessages(h.messages.map(toUIMessage));
-        setChatKey((k) => k + 1);
-      })
-      .catch(() => setInitialMessages([]));
-  }, [activityId]);
+  const handleCompacted = useCallback((newThread: TrainerThread) => {
+    setThreads((prev) => [...prev, newThread]);
+    setActiveThreadId(newThread.id);
+    // activeThreadId change triggers the useEffect to fetch new thread's messages
+  }, []);
 
-  if (initialMessages === null) {
+  // ── render ──────────────────────────────────────────────────────────────────
+
+  const chatArea = (() => {
+    if (threadsLoading) {
+      return (
+        <div className="flex-1 flex items-center justify-center">
+          <span className="flex gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:0ms]" />
+            <span className="w-2 h-2 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:150ms]" />
+            <span className="w-2 h-2 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:300ms]" />
+          </span>
+        </div>
+      );
+    }
+
+    if (activeThreadId === null) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8 opacity-60">
+          <div className="w-12 h-12 rounded-2xl bg-[#8b5cf6]/20 flex items-center justify-center">
+            <Plus className="w-5 h-5 text-[#8b5cf6]" />
+          </div>
+          <p className="text-sm text-[#94a3b8]">No threads yet.</p>
+          <button
+            onClick={handleCreateThread}
+            className="px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-all duration-200 cursor-pointer"
+          >
+            Create first thread
+          </button>
+        </div>
+      );
+    }
+
+    if (initialMessages === null) {
+      return (
+        <div className="flex-1 flex items-center justify-center">
+          <span className="flex gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:0ms]" />
+            <span className="w-2 h-2 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:150ms]" />
+            <span className="w-2 h-2 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:300ms]" />
+          </span>
+        </div>
+      );
+    }
+
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <span className="flex gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:0ms]" />
-          <span className="w-2 h-2 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:150ms]" />
-          <span className="w-2 h-2 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:300ms]" />
-        </span>
-      </div>
+      <TrainerChat
+        key={`${activeThreadId}-${chatKey}`}
+        threadId={activeThreadId}
+        activityId={activityId}
+        initialMessages={initialMessages}
+        initialInput={currentInitialInput}
+        onBack={onBack}
+        onImported={handleImported}
+        onCompacted={handleCompacted}
+      />
     );
-  }
+  })();
 
   return (
-    <TrainerChat
-      key={`${activityId}-${chatKey}`}
-      initialMessages={initialMessages}
-      initialInput={initialMessage}
-      activityId={activityId}
-      onBack={onBack}
-      onImported={handleImported}
-      onCompacted={handleCompacted}
-    />
+    <div className="flex-1 flex overflow-hidden h-[calc(100vh-73px)]">
+      <ThreadSidebar
+        threads={threads}
+        activeThreadId={activeThreadId}
+        onSelect={handleSelectThread}
+        onCreate={handleCreateThread}
+        onRename={handleRenameThread}
+        onDelete={handleDeleteThread}
+      />
+      {chatArea}
+    </div>
   );
 }
