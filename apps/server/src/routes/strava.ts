@@ -199,54 +199,55 @@ function buildRecords(startDate: Date, streams: StravaStreams): StoredRecord[] {
   }));
 }
 
-/** Average of an array, excluding nulls (zeros included — same as computeAverages in stats.ts). */
-function streamAvg(arr: number[]): number | null {
-  if (!arr.length) return null;
-  return Math.round(arr.reduce((s, v) => s + v, 0) / arr.length);
-}
-
-/** Max of an array; null if empty. */
-function streamMax(arr: number[]): number | null {
-  if (!arr.length) return null;
-  return arr.reduce((m, v) => (v > m ? v : m), arr[0]);
-}
-
 /**
- * Build ActivitySummary from streams data, using the same averaging logic as
- * computeAverages() in stats.ts so summary cards match what the chart StatsBar
- * shows. Falls back to Strava's pre-computed fields when streams are absent.
+ * Build ActivitySummary entirely from raw stream data.
+ * Nothing is taken from Strava's pre-computed API fields.
+ *
+ * Uses a simple mean of non-zero samples, matching Garmin's session record:
+ * the device records at 1 Hz so its simple mean == its time-weighted mean.
+ * Time-weighting Strava's variable-rate stream is NOT equivalent because large
+ * Δt values at pause/auto-pause boundaries are gaps, not sample durations —
+ * weighting by them over-penalises the first sample after each stop.
  */
-function buildSummary(activity: StravaActivity, streams: StravaStreams): ActivitySummary {
-  const timeArr = streams.time?.data ?? [];
-  const wattsArr = streams.watts?.data ?? [];
-  const hrArr = streams.heartrate?.data ?? [];
-  const cadArr = streams.cadence?.data ?? [];
+function buildSummary(
+  activity: StravaActivity,
+  records: StoredRecord[],
+  timeArr: number[],
+  wattsArr: number[]
+): ActivitySummary {
+  // Simple mean of non-zero values, mirroring Garmin session record behaviour:
+  // zeros (coasting / sensor dropout) are excluded from averages.
+  const powerVals = records.map(r => r.power).filter((v): v is number => v !== null && v > 0);
+  const hrVals    = records.map(r => r.heartRate).filter((v): v is number => v !== null && v > 0);
+  const cadVals   = records.map(r => r.cadence).filter((v): v is number => v !== null && v > 0);
+
+  const avg = (vals: number[]) =>
+    vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : null;
+  const max = (vals: number[]) =>
+    vals.length ? vals.reduce((m, v) => (v > m ? v : m), vals[0]) : null;
+
+  // Total work: ∫ power dt (W·s = J), nulls treated as 0W
+  let totalWork: number | null = null;
+  if (wattsArr.length > 0 && timeArr.length === wattsArr.length) {
+    let joules = 0;
+    for (let i = 0; i < wattsArr.length; i++) {
+      const dt = i === 0 ? timeArr[0] : timeArr[i] - timeArr[i - 1];
+      joules += (wattsArr[i] ?? 0) * dt;
+    }
+    totalWork = Math.round(joules);
+  }
 
   return {
     date: activity.start_date.slice(0, 10),
+    // moving_time matches Garmin's totalTimerTime (excludes pauses; time stream
+    // runs 0→elapsed_time which overshoots by the total paused duration)
     totalTimerTime: activity.moving_time,
-    // Prefer stream-computed values; fall back to Strava API fields when no streams
-    avgPower:
-      wattsArr.length > 0
-        ? streamAvg(wattsArr)
-        : activity.average_watts != null ? Math.round(activity.average_watts) : null,
-    maxPower:
-      wattsArr.length > 0
-        ? streamMax(wattsArr)
-        : activity.max_watts != null ? Math.round(activity.max_watts) : null,
-    avgHeartRate:
-      hrArr.length > 0
-        ? streamAvg(hrArr)
-        : activity.average_heartrate != null ? Math.round(activity.average_heartrate) : null,
-    maxHeartRate:
-      hrArr.length > 0
-        ? streamMax(hrArr)
-        : activity.max_heartrate != null ? Math.round(activity.max_heartrate) : null,
-    avgCadence:
-      cadArr.length > 0
-        ? streamAvg(cadArr)
-        : activity.average_cadence != null ? Math.round(activity.average_cadence) : null,
-    totalWork: activity.kilojoules != null ? activity.kilojoules * 1000 : null,
+    avgPower:     avg(powerVals),
+    maxPower:     max(powerVals),
+    avgHeartRate: avg(hrVals),
+    maxHeartRate: max(hrVals),
+    avgCadence:   avg(cadVals),
+    totalWork,
     peak1minPower: computePeakPower(timeArr, wattsArr, 60),
     peak5minPower: computePeakPower(timeArr, wattsArr, 300),
   };
@@ -312,10 +313,11 @@ async function importSingleActivity(
   const rawLaps: StravaLap[] = lapsRes.ok ? ((await lapsRes.json()) as StravaLap[]) : [];
 
   const timeArr = streams.time?.data ?? [];
+  const wattsArr = streams.watts?.data ?? [];
   const startDate = new Date(activity.start_date);
 
   const records = buildRecords(startDate, streams);
-  const summary = buildSummary(activity, streams);
+  const summary = buildSummary(activity, records, timeArr, wattsArr);
   const laps = buildLaps(rawLaps, timeArr);
 
   const id = crypto.randomUUID();
