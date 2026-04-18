@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "fit-analyzer";
-const CACHE_VERSION = "v3";
+const CACHE_VERSION = "v4";
 const UI_CACHE = `${CACHE_PREFIX}-ui-${CACHE_VERSION}`;
 const ASSET_CACHE = `${CACHE_PREFIX}-assets-${CACHE_VERSION}`;
 const FONT_CACHE = `${CACHE_PREFIX}-fonts-${CACHE_VERSION}`;
@@ -11,6 +11,8 @@ const APP_SHELL_URLS = [
   "/apple-touch-icon.png",
   "/icon-192.png",
   "/icon-512.png",
+  "/screenshots/desktop-dashboard.png",
+  "/screenshots/mobile-dashboard.png",
   "/manifest.webmanifest",
 ];
 const SAME_ORIGIN_STATIC_PATHS = new Set([
@@ -18,6 +20,8 @@ const SAME_ORIGIN_STATIC_PATHS = new Set([
   "/apple-touch-icon.png",
   "/icon-192.png",
   "/icon-512.png",
+  "/screenshots/desktop-dashboard.png",
+  "/screenshots/mobile-dashboard.png",
   "/manifest.webmanifest",
   "/vite.svg",
 ]);
