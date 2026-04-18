@@ -2,6 +2,7 @@
   "name": "FIT Analyzer",
   "short_name": "FIT Analyzer",
   "description": "Analyze FIT activity files and review training insights.",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
