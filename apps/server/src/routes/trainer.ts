@@ -16,12 +16,38 @@ const SYSTEM_PROMPT =
     "When the user shares their activity summary and interval data, analyse power, heart rate and cadence trends " +
     "and give practical training advice.";
 
+const KIMI_MODEL = "moonshotai/kimi-k2.5";
+const OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions";
 const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 20;
 
 function getUserId(c: { req: { header: (name: string) => string | undefined } }): string {
     const userId = c.req.header("x-authentik-username");
     if (!userId) throw new Error("Missing x-authentik-username header");
     return userId;
+}
+
+type TrainerChatRequestBody = {
+    messages?: Parameters<typeof convertMessagesToModelMessages>[0];
+    threadId?: unknown;
+    conversationId?: unknown;
+};
+
+function getStringBodyValue(value: unknown): string | undefined {
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function getKimiRequestMetadata(body: TrainerChatRequestBody, userId: string) {
+    const threadId = getStringBodyValue(body.threadId);
+    const conversationId = getStringBodyValue(body.conversationId) ?? threadId;
+
+    return {
+        app: "fit-analyzer",
+        feature: "trainer-chat",
+        context_cache: "openrouter-moonshot-automatic",
+        user_id: userId,
+        ...(threadId ? { thread_id: threadId } : {}),
+        ...(conversationId ? { conversation_id: conversationId } : {}),
+    };
 }
 
 // ─── Prepared statements ─────────────────────────────────────────────────────
@@ -86,12 +112,21 @@ trainer.post("/chat", async (c) => {
     const apiKey = env.OPENROUTER_KEY;
     if (!apiKey) return c.json({ error: "OPENROUTER_KEY is not configured" }, 500);
 
-    const body = await c.req.json();
+    const userId = c.req.header("x-authentik-username") ?? "anonymous";
+    const body: TrainerChatRequestBody = await c.req.json();
     const modelMessages = convertMessagesToModelMessages(body.messages ?? []);
-    const adapter = createOpenRouterText("moonshotai/kimi-k2.5", apiKey);
+    const adapter = createOpenRouterText(KIMI_MODEL, apiKey);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const stream = chat({ adapter, messages: modelMessages as any, systemPrompts: [SYSTEM_PROMPT] });
+    const stream = chat({
+        adapter,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        messages: modelMessages as any,
+        systemPrompts: [SYSTEM_PROMPT],
+        // Moonshot/Kimi context caching is automatic on OpenRouter. Avoid setting
+        // manual provider ordering here so OpenRouter can keep its cache-friendly
+        // sticky routing for stable conversation prefixes.
+        modelOptions: { metadata: getKimiRequestMetadata(body, userId) } as never,
+    });
     return toServerSentEventsResponse(stream);
 });
 
@@ -230,10 +265,20 @@ trainer.post("/compact/:threadId", async (c) => {
         "Messages to summarize:\n\n---\n\n" +
         messagesText;
 
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    const response = await fetch(OPENROUTER_CHAT_COMPLETIONS_URL, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "moonshotai/kimi-k2.5", messages: [{ role: "user", content: compactionPrompt }] }),
+        body: JSON.stringify({
+            model: KIMI_MODEL,
+            messages: [{ role: "user", content: compactionPrompt }],
+            metadata: {
+                app: "fit-analyzer",
+                feature: "trainer-compaction",
+                context_cache: "openrouter-moonshot-automatic",
+                user_id: userId,
+                source_thread_id: threadId,
+            },
+        }),
         signal: AbortSignal.timeout(240_000),
     });
 

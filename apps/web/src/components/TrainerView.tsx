@@ -374,6 +374,7 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
   const { messages, sendMessage, status, isLoading, stop, error } = useChat({
     connection,
     initialMessages,
+    body: { threadId },
   });
 
   const inputRef = useRef(initialInput);
@@ -517,7 +518,7 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
           <span className="truncate text-xs text-[#94a3b8]">
             {status === "submitted" && "Sending…"}
             {status === "streaming" && "Responding…"}
-            {(status === "ready" || status === "error") && "Kimi 2.5 via OpenRouter"}
+            {(status === "ready" || status === "error") && "Kimi 2.5 with OpenRouter cache"}
           </span>
         </div>
 
