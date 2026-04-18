@@ -57,28 +57,29 @@ export function Header({ onBackToHistory, onUploadNew, onOpenTrainer, user }: He
   const showSettings = !isSettings;
 
   return (
-    <header className="sticky top-0 z-50 flex items-center justify-between px-6 py-4 border-b border-[rgba(139,92,246,0.1)] bg-[#0f0b1a]">
-      <div className="flex items-center gap-3">
-        <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#8b5cf6]/20">
-          <Activity className="w-5 h-5 text-[#8b5cf6]" />
+    <header className="sticky top-0 z-50 flex items-center justify-between gap-3 px-3 py-3 sm:px-6 sm:py-4 border-b border-[rgba(139,92,246,0.1)] bg-[#0f0b1a]">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <div className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-[#8b5cf6]/20 shrink-0">
+          <Activity className="w-4 h-4 sm:w-5 sm:h-5 text-[#8b5cf6]" />
         </div>
-        <div>
-          <h1 className="text-lg font-bold text-[#f1f5f9] leading-tight">
+        <div className="min-w-0">
+          <h1 className="text-base sm:text-lg font-bold text-[#f1f5f9] leading-tight truncate">
             FIT Analyzer
           </h1>
-          <p className="text-xs text-[#94a3b8]">Training Data Visualization</p>
+          <p className="hidden sm:block text-xs text-[#94a3b8]">Training Data Visualization</p>
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         {/* Back to History button — shown on all pages except history */}
         {showBack && (
           <button
             onClick={onBackToHistory}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-xl transition-all duration-200 cursor-pointer"
+            className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-all duration-200 cursor-pointer"
+            title="History"
           >
             <ArrowLeft className="w-4 h-4" />
-            History
+            <span className="hidden sm:inline">History</span>
           </button>
         )}
 
@@ -86,10 +87,11 @@ export function Header({ onBackToHistory, onUploadNew, onOpenTrainer, user }: He
         {showUpload && (
           <button
             onClick={onUploadNew}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-xl transition-all duration-200 cursor-pointer"
+            className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-all duration-200 cursor-pointer"
+            title="Load New File"
           >
             <Upload className="w-4 h-4" />
-            Load New File
+            <span className="hidden sm:inline">Load New File</span>
           </button>
         )}
 
@@ -97,10 +99,11 @@ export function Header({ onBackToHistory, onUploadNew, onOpenTrainer, user }: He
         {showTrainer && (
           <button
             onClick={onOpenTrainer}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[#c4b5fd] hover:text-[#f1f5f9] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-all duration-200 cursor-pointer"
+            className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#c4b5fd] hover:text-[#f1f5f9] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-lg transition-all duration-200 cursor-pointer"
+            title="Trainer"
           >
             <BotMessageSquare className="w-4 h-4" />
-            Trainer
+            <span className="hidden sm:inline">Trainer</span>
           </button>
         )}
 
@@ -108,7 +111,7 @@ export function Header({ onBackToHistory, onUploadNew, onOpenTrainer, user }: He
         {showSettings && (
           <button
             onClick={() => navigate("/settings")}
-            className="flex items-center justify-center w-9 h-9 text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-xl transition-all duration-200 cursor-pointer"
+            className="flex items-center justify-center w-9 h-9 text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-all duration-200 cursor-pointer"
             title="Settings"
           >
             <Settings className="w-4 h-4" />
@@ -117,7 +120,7 @@ export function Header({ onBackToHistory, onUploadNew, onOpenTrainer, user }: He
 
         {/* User avatar */}
         {user && (
-          <div className="flex items-center gap-2.5 pl-3 border-l border-[rgba(139,92,246,0.15)]">
+          <div className="flex items-center gap-2.5 pl-2 sm:pl-3 border-l border-[rgba(139,92,246,0.15)]">
             <div className="text-right hidden sm:block">
               <p className="text-sm font-medium text-[#f1f5f9] leading-tight">
                 {user.name || user.username}
@@ -129,7 +132,7 @@ export function Header({ onBackToHistory, onUploadNew, onOpenTrainer, user }: He
               )}
             </div>
             <div
-              className="flex items-center justify-center w-9 h-9 rounded-full text-sm font-bold text-white shrink-0"
+              className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full text-xs sm:text-sm font-bold text-white shrink-0"
               style={{ backgroundColor: getAvatarColor(user.username) }}
               title={`${user.name || user.username} (${user.email})`}
             >

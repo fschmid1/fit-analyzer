@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useChat } from "@tanstack/ai-react";
 import { fetchServerSentEvents } from "@tanstack/ai-client";
 import {
   ArrowDown, ArrowLeft, ArrowUp, Brain, ChevronDown, ChevronRight,
-  Minimize2, Pencil, Plus, Send, Square, Trash2, Upload,
+  Menu, Minimize2, MoreVertical, Pencil, Plus, Send, Square, Trash2, Upload, X,
 } from "lucide-react";
 import type { UIMessage } from "@tanstack/ai-react";
 import type { TrainerMessage, TrainerThread } from "@fit-analyzer/shared";
@@ -91,7 +92,7 @@ const mdComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
   a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#a78bfa] underline underline-offset-2 hover:text-[#c4b5fd] transition-colors">{children}</a>,
   hr: () => <hr className="border-[rgba(139,92,246,0.2)] my-3" />,
   table: ({ children }) => (
-    <div className="overflow-x-auto my-2">
+    <div className="max-w-full overflow-x-auto my-2">
       <table className="w-full text-sm border-collapse">{children}</table>
     </div>
   ),
@@ -120,7 +121,7 @@ function ThinkingBlock({ content, isStreaming }: { content: string; isStreaming:
     else setOpen(false);
   }, [isStreaming]);
   return (
-    <div className="mb-3 rounded-xl border border-[rgba(139,92,246,0.15)] bg-[#0f0b1a]/60 overflow-hidden">
+    <div className="mb-3 rounded-lg border border-[rgba(139,92,246,0.15)] bg-[#0f0b1a]/60 overflow-hidden">
       <button
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#7c6fa0] hover:text-[#a78bfa] transition-colors cursor-pointer"
@@ -153,6 +154,8 @@ interface ThreadSidebarProps {
   onCreate: () => void;
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
+  open: boolean;
+  onClose: () => void;
 }
 
 interface ContextMenu {
@@ -161,7 +164,25 @@ interface ContextMenu {
   y: number;
 }
 
-function ThreadSidebar({ threads, activeThreadId, onSelect, onCreate, onRename, onDelete }: ThreadSidebarProps) {
+const CONTEXT_MENU_WIDTH = 160;
+const CONTEXT_MENU_HEIGHT = 104;
+const CONTEXT_MENU_MARGIN = 8;
+
+function getContextMenuPosition(x: number, y: number) {
+  if (typeof window === "undefined") return { x, y };
+  return {
+    x: Math.max(
+      CONTEXT_MENU_MARGIN,
+      Math.min(x, window.innerWidth - CONTEXT_MENU_WIDTH - CONTEXT_MENU_MARGIN),
+    ),
+    y: Math.max(
+      CONTEXT_MENU_MARGIN,
+      Math.min(y, window.innerHeight - CONTEXT_MENU_HEIGHT - CONTEXT_MENU_MARGIN),
+    ),
+  };
+}
+
+function ThreadSidebar({ threads, activeThreadId, onSelect, onCreate, onRename, onDelete, open, onClose }: ThreadSidebarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
@@ -172,19 +193,30 @@ function ThreadSidebar({ threads, activeThreadId, onSelect, onCreate, onRename, 
     if (!contextMenu) return;
     const handleClick = () => setContextMenu(null);
     const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") setContextMenu(null); };
-    window.addEventListener("mousedown", handleClick);
+    window.addEventListener("pointerdown", handleClick);
     window.addEventListener("keydown", handleKey);
     return () => {
-      window.removeEventListener("mousedown", handleClick);
+      window.removeEventListener("pointerdown", handleClick);
       window.removeEventListener("keydown", handleKey);
     };
   }, [contextMenu]);
 
+  const openContextMenu = useCallback((threadId: string, x: number, y: number) => {
+    setContextMenu({ threadId, ...getContextMenuPosition(x, y) });
+  }, []);
+
   const handleContextMenu = useCallback((thread: TrainerThread, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setContextMenu({ threadId: thread.id, x: e.clientX, y: e.clientY });
-  }, []);
+    openContextMenu(thread.id, e.clientX, e.clientY);
+  }, [openContextMenu]);
+
+  const handleMenuButtonClick = useCallback((thread: TrainerThread, e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    openContextMenu(thread.id, rect.right - CONTEXT_MENU_WIDTH, rect.bottom + 4);
+  }, [openContextMenu]);
 
   const startEdit = useCallback((threadId: string) => {
     const thread = threads.find((t) => t.id === threadId);
@@ -205,16 +237,30 @@ function ThreadSidebar({ threads, activeThreadId, onSelect, onCreate, onRename, 
   }, [onDelete]);
 
   return (
-    <div className="w-52 shrink-0 flex flex-col border-r border-[rgba(139,92,246,0.1)] bg-[#080612] overflow-hidden">
-      <div className="px-3 pt-3 pb-2 text-[10px] font-semibold text-[#4a4468] uppercase tracking-widest border-b border-[rgba(139,92,246,0.08)]">
-        Threads
+    <div className={`fixed inset-y-0 left-0 z-[60] flex w-72 max-w-[82vw] shrink-0 flex-col overflow-hidden border-r border-[rgba(139,92,246,0.1)] bg-[#080612] shadow-2xl shadow-black/40 transition-transform duration-200 md:static md:z-auto md:w-52 md:max-w-none md:translate-x-0 md:shadow-none ${
+      open ? "translate-x-0" : "-translate-x-full"
+    }`}>
+      <div className="flex items-center justify-between gap-2 px-3 pt-3 pb-2 border-b border-[rgba(139,92,246,0.08)]">
+        <span className="text-[10px] font-semibold text-[#4a4468] uppercase tracking-widest">
+          Threads
+        </span>
+        <button
+          onClick={onClose}
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-[rgba(139,92,246,0.1)] bg-[#1a1533]/70 text-[#94a3b8] md:hidden"
+          title="Close threads"
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto py-1">
         {threads.map((thread) => (
           <div
             key={thread.id}
-            onClick={() => onSelect(thread.id)}
+            onClick={() => {
+              onSelect(thread.id);
+              onClose();
+            }}
             onContextMenu={(e) => handleContextMenu(thread, e)}
             className={`group flex items-center gap-1.5 px-2 py-2 mx-1 my-0.5 rounded-lg cursor-pointer transition-colors ${
               thread.id === activeThreadId
@@ -246,13 +292,28 @@ function ThreadSidebar({ threads, activeThreadId, onSelect, onCreate, onRename, 
                 {thread.messageCount}
               </span>
             )}
+
+            {editingId !== thread.id && (
+              <button
+                type="button"
+                onClick={(e) => handleMenuButtonClick(thread, e)}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[#7c6fa0] opacity-100 transition-colors hover:bg-[#241e3d] hover:text-[#c4b5fd] focus:opacity-100 focus:outline-none focus:ring-1 focus:ring-[#8b5cf6]/40 md:opacity-0 md:group-hover:opacity-100"
+                title={`Actions for ${thread.name}`}
+                aria-label={`Actions for ${thread.name}`}
+              >
+                <MoreVertical className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         ))}
       </div>
 
       <div className="p-2 border-t border-[rgba(139,92,246,0.08)]">
         <button
-          onClick={onCreate}
+          onClick={() => {
+            onCreate();
+            onClose();
+          }}
           className="w-full flex items-center gap-2 px-2 py-2 text-xs text-[#4a4468] hover:text-[#c4b5fd] hover:bg-[#1a1533]/50 rounded-lg transition-colors cursor-pointer"
         >
           <Plus className="w-3.5 h-3.5" />
@@ -260,17 +321,18 @@ function ThreadSidebar({ threads, activeThreadId, onSelect, onCreate, onRename, 
         </button>
       </div>
 
-      {/* Context menu — rendered via portal-like fixed positioning */}
-      {contextMenu && (
+      {contextMenu && createPortal(
         <div
           ref={contextMenuRef}
-          onMouseDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
           style={{ top: contextMenu.y, left: contextMenu.x }}
-          className="fixed z-50 min-w-36 py-1 rounded-xl bg-[#1a1533] border border-[rgba(139,92,246,0.2)] shadow-xl shadow-black/40 overflow-hidden"
+          className="fixed z-[80] w-40 py-1 rounded-lg bg-[#1a1533] border border-[rgba(139,92,246,0.2)] shadow-xl shadow-black/40 overflow-hidden"
+          role="menu"
         >
           <button
             onClick={() => startEdit(contextMenu.threadId)}
             className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-[#c4b5fd] hover:bg-[#8b5cf6]/15 transition-colors cursor-pointer"
+            role="menuitem"
           >
             <Pencil className="w-3.5 h-3.5" />
             Rename
@@ -279,11 +341,13 @@ function ThreadSidebar({ threads, activeThreadId, onSelect, onCreate, onRename, 
           <button
             onClick={() => handleDelete(contextMenu.threadId)}
             className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+            role="menuitem"
           >
             <Trash2 className="w-3.5 h-3.5" />
             Delete
           </button>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -301,11 +365,12 @@ interface TrainerChatProps {
   initialMessages: UIMessage[];
   initialInput: string;
   onBack: () => void;
+  onOpenThreads: () => void;
   onImported: () => void;
   onCompacted: (newThread: TrainerThread) => void;
 }
 
-function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBack, onImported, onCompacted }: TrainerChatProps) {
+function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBack, onOpenThreads, onImported, onCompacted }: TrainerChatProps) {
   const { messages, sendMessage, status, isLoading, stop, error } = useChat({
     connection,
     initialMessages,
@@ -420,7 +485,7 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
   const lastMsgId = messages[messages.length - 1]?.id;
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div className="flex-1 flex flex-col min-h-0 min-w-0">
       <input
         ref={fileInputRef}
         type="file"
@@ -430,31 +495,38 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
       />
 
       {/* Sub-header */}
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-[rgba(139,92,246,0.1)] bg-[#0f0b1a] shrink-0">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-3 sm:gap-3 sm:px-6 sm:py-4 border-b border-[rgba(139,92,246,0.1)] bg-[#0f0b1a] shrink-0">
+        <button
+          onClick={onOpenThreads}
+          className="flex items-center justify-center w-10 h-10 text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-all duration-200 cursor-pointer md:hidden"
+          title="Threads"
+        >
+          <Menu className="w-4 h-4" />
+        </button>
         <button
           onClick={onBack}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-xl transition-all duration-200 cursor-pointer"
+          className="flex items-center gap-2 px-3 py-2 sm:py-1.5 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-all duration-200 cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          {isGeneralChat ? "Back" : "Back to Activity"}
+          <span>{isGeneralChat ? "Back" : "Activity"}</span>
         </button>
-        <div className="flex flex-col">
-          <span className="text-sm font-semibold text-[#f1f5f9]">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-sm font-semibold text-[#f1f5f9]">
             {isGeneralChat ? "Cycling Coach" : "AI Trainer"}
           </span>
-          <span className="text-xs text-[#94a3b8]">
+          <span className="truncate text-xs text-[#94a3b8]">
             {status === "submitted" && "Sending…"}
             {status === "streaming" && "Responding…"}
             {(status === "ready" || status === "error") && "Kimi 2.5 via OpenRouter"}
           </span>
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:w-auto sm:flex sm:items-center">
           <button
             onClick={handleCompact}
             disabled={compactState === "loading" || isLoading || messages.length === 0}
             title="Fork and compact conversation with Kimi K2.5"
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl border transition-all duration-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+            className={`flex min-w-0 items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 text-xs font-medium rounded-lg border transition-all duration-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
               compactState === "done"
                 ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
                 : compactState === "error"
@@ -465,10 +537,12 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
             }`}
           >
             <Minimize2 className="w-3.5 h-3.5" />
-            {compactState === "loading" && "Compacting…"}
-            {compactState === "done" && "Compacted!"}
-            {compactState === "error" && (compactError ?? "Error")}
-            {compactState === "idle" && "Compact"}
+            <span className="truncate">
+              {compactState === "loading" && "Compacting…"}
+              {compactState === "done" && "Compacted!"}
+              {compactState === "error" && (compactError ?? "Error")}
+              {compactState === "idle" && "Compact"}
+            </span>
           </button>
 
           {isGeneralChat && (
@@ -476,7 +550,7 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
               onClick={() => fileInputRef.current?.click()}
               disabled={importState === "loading"}
               title="Import ChatGPT markdown export"
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl border transition-all duration-200 cursor-pointer disabled:cursor-wait ${
+              className={`flex min-w-0 items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 text-xs font-medium rounded-lg border transition-all duration-200 cursor-pointer disabled:cursor-wait ${
                 importState === "done"
                   ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
                   : importState === "error"
@@ -485,10 +559,12 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
               }`}
             >
               <Upload className="w-3.5 h-3.5" />
-              {importState === "loading" && "Importing…"}
-              {importState === "done" && "Imported!"}
-              {importState === "error" && (importError ?? "Error")}
-              {importState === "idle" && "Import .md"}
+              <span className="truncate">
+                {importState === "loading" && "Importing…"}
+                {importState === "done" && "Imported!"}
+                {importState === "error" && (importError ?? "Error")}
+                {importState === "idle" && "Import .md"}
+              </span>
             </button>
           )}
         </div>
@@ -499,11 +575,11 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
         <div
           ref={scrollRef}
           onScroll={updateScrollButtons}
-          className="absolute inset-0 overflow-y-auto px-6 py-6 space-y-4"
+          className="absolute inset-0 overflow-y-auto px-3 py-4 sm:px-6 sm:py-6 space-y-4"
         >
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center gap-3 opacity-50">
-              <div className="w-12 h-12 rounded-2xl bg-[#8b5cf6]/20 flex items-center justify-center">
+              <div className="w-12 h-12 rounded-lg bg-[#8b5cf6]/20 flex items-center justify-center">
                 <Send className="w-5 h-5 text-[#8b5cf6]" />
               </div>
               <p className="text-sm text-[#94a3b8]">
@@ -522,7 +598,7 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
               if (!text) return null;
               return (
                 <div key={msg.id} className="flex flex-col items-end gap-1">
-                  <div className="max-w-[80%] rounded-2xl px-4 py-3 text-base leading-relaxed break-words bg-[#8b5cf6]/20 border border-[#8b5cf6]/30 text-[#e2d9f3] whitespace-pre-wrap">
+                  <div className="min-w-0 max-w-[calc(100%-1rem)] overflow-hidden rounded-lg px-3 py-2.5 text-sm leading-relaxed break-words bg-[#8b5cf6]/20 border border-[#8b5cf6]/30 text-[#e2d9f3] whitespace-pre-wrap [overflow-wrap:anywhere] sm:max-w-[80%] sm:px-4 sm:py-3 sm:text-base">
                     {text}
                   </div>
                   <span className="text-[10px] text-[#4a4468] pr-1">
@@ -538,7 +614,7 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
 
             return (
               <div key={msg.id} className="flex flex-col items-start gap-1">
-                <div className="max-w-[80%] rounded-2xl px-4 py-3 text-base leading-relaxed break-words bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] text-[#c4b5fd]">
+                <div className="min-w-0 max-w-[calc(100%-1rem)] overflow-hidden rounded-lg px-3 py-2.5 text-sm leading-relaxed break-words bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] text-[#c4b5fd] [overflow-wrap:anywhere] sm:max-w-[80%] sm:px-4 sm:py-3 sm:text-base">
                   {thinkingContent && (
                     <ThinkingBlock content={thinkingContent} isStreaming={isThinkingPhase} />
                   )}
@@ -564,7 +640,7 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
 
           {status === "submitted" && (
             <div className="flex justify-start">
-              <div className="bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] rounded-2xl px-4 py-3">
+              <div className="bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] rounded-lg px-4 py-3">
                 <DotsLoader />
               </div>
             </div>
@@ -572,7 +648,7 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
 
           {error && (
             <div className="flex justify-start">
-              <div className="max-w-[80%] rounded-2xl px-4 py-3 text-sm bg-rose-500/10 border border-rose-500/20 text-rose-400">
+              <div className="min-w-0 max-w-[calc(100%-1rem)] overflow-hidden rounded-lg px-4 py-3 text-sm bg-rose-500/10 border border-rose-500/20 text-rose-400 [overflow-wrap:anywhere] sm:max-w-[80%]">
                 Error: {error.message}
               </div>
             </div>
@@ -582,12 +658,12 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
         </div>
 
         {(showScrollTop || showScrollBottom) && (
-          <div className="absolute bottom-4 right-5 flex flex-col gap-1.5 z-10">
+          <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-5 flex flex-col gap-1.5 z-10">
             {showScrollTop && (
               <button
                 onClick={scrollToTop}
                 title="Scroll to top"
-                className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#1a1533]/90 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.2)] hover:border-[rgba(139,92,246,0.4)] text-[#7c6fa0] hover:text-[#c4b5fd] transition-all duration-200 cursor-pointer backdrop-blur-sm shadow-lg"
+                className="flex items-center justify-center w-8 h-8 rounded-lg bg-[#1a1533]/90 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.2)] hover:border-[rgba(139,92,246,0.4)] text-[#7c6fa0] hover:text-[#c4b5fd] transition-all duration-200 cursor-pointer backdrop-blur-sm shadow-lg"
               >
                 <ArrowUp className="w-3.5 h-3.5" />
               </button>
@@ -596,7 +672,7 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
               <button
                 onClick={scrollToBottom}
                 title="Scroll to bottom"
-                className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#1a1533]/90 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.2)] hover:border-[rgba(139,92,246,0.4)] text-[#7c6fa0] hover:text-[#c4b5fd] transition-all duration-200 cursor-pointer backdrop-blur-sm shadow-lg"
+                className="flex items-center justify-center w-8 h-8 rounded-lg bg-[#1a1533]/90 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.2)] hover:border-[rgba(139,92,246,0.4)] text-[#7c6fa0] hover:text-[#c4b5fd] transition-all duration-200 cursor-pointer backdrop-blur-sm shadow-lg"
               >
                 <ArrowDown className="w-3.5 h-3.5" />
               </button>
@@ -606,8 +682,8 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
       </div>
 
       {/* Input bar */}
-      <div className="px-6 pb-6 pt-3 border-t border-[rgba(139,92,246,0.1)] bg-[#0f0b1a] shrink-0">
-        <div className="flex gap-3 items-end bg-[#1a1533]/60 border border-[rgba(139,92,246,0.15)] rounded-2xl px-4 py-3">
+      <div className="px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-6 sm:pb-6 sm:pt-3 border-t border-[rgba(139,92,246,0.1)] bg-[#0f0b1a] shrink-0">
+        <div className="flex gap-2 sm:gap-3 items-end bg-[#1a1533]/60 border border-[rgba(139,92,246,0.15)] rounded-lg px-3 py-2.5 sm:px-4 sm:py-3">
           <textarea
             ref={textareaRef}
             defaultValue={initialInput}
@@ -618,7 +694,7 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
               adjustHeight();
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Ask your trainer about this activity… (Enter to send, Shift+Enter for newline)"
+            placeholder="Ask your trainer..."
             rows={1}
             className="flex-1 resize-none bg-transparent text-sm text-[#f1f5f9] placeholder-[#4a4468] outline-none leading-relaxed"
             style={{ maxHeight: "200px" }}
@@ -627,7 +703,7 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
             <button
               onClick={stop}
               title="Stop generation"
-              className="flex items-center justify-center w-8 h-8 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-400 transition-all duration-200 cursor-pointer shrink-0"
+              className="flex items-center justify-center w-8 h-8 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-400 transition-all duration-200 cursor-pointer shrink-0"
             >
               <Square className="w-3.5 h-3.5 fill-current" />
             </button>
@@ -636,7 +712,7 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
               onClick={handleSend}
               disabled={!hasInput}
               title="Send message"
-              className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#8b5cf6]/20 hover:bg-[#8b5cf6]/30 border border-[#8b5cf6]/30 text-[#8b5cf6] transition-all duration-200 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center justify-center w-8 h-8 rounded-lg bg-[#8b5cf6]/20 hover:bg-[#8b5cf6]/30 border border-[#8b5cf6]/30 text-[#8b5cf6] transition-all duration-200 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Send className="w-3.5 h-3.5" />
             </button>
@@ -655,6 +731,7 @@ export function TrainerView({ initialMessage, activityId, onBack }: TrainerViewP
   const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
   const [chatKey, setChatKey] = useState(0);
   const [threadsLoading, setThreadsLoading] = useState(true);
+  const [threadsOpen, setThreadsOpen] = useState(false);
   const [currentInitialInput, setCurrentInitialInput] = useState(initialMessage);
   const initialized = useRef(false);
 
@@ -755,13 +832,13 @@ export function TrainerView({ initialMessage, activityId, onBack }: TrainerViewP
     if (activeThreadId === null) {
       return (
         <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8 opacity-60">
-          <div className="w-12 h-12 rounded-2xl bg-[#8b5cf6]/20 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-lg bg-[#8b5cf6]/20 flex items-center justify-center">
             <Plus className="w-5 h-5 text-[#8b5cf6]" />
           </div>
           <p className="text-sm text-[#94a3b8]">No threads yet.</p>
           <button
             onClick={handleCreateThread}
-            className="px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-all duration-200 cursor-pointer"
+            className="px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-lg transition-all duration-200 cursor-pointer"
           >
             Create first thread
           </button>
@@ -789,6 +866,7 @@ export function TrainerView({ initialMessage, activityId, onBack }: TrainerViewP
         initialMessages={initialMessages}
         initialInput={currentInitialInput}
         onBack={onBack}
+        onOpenThreads={() => setThreadsOpen(true)}
         onImported={handleImported}
         onCompacted={handleCompacted}
       />
@@ -796,7 +874,7 @@ export function TrainerView({ initialMessage, activityId, onBack }: TrainerViewP
   })();
 
   return (
-    <div className="flex-1 flex overflow-hidden h-[calc(100vh-73px)]">
+    <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden md:flex-row">
       <ThreadSidebar
         threads={threads}
         activeThreadId={activeThreadId}
@@ -804,7 +882,17 @@ export function TrainerView({ initialMessage, activityId, onBack }: TrainerViewP
         onCreate={handleCreateThread}
         onRename={handleRenameThread}
         onDelete={handleDeleteThread}
+        open={threadsOpen}
+        onClose={() => setThreadsOpen(false)}
       />
+      {threadsOpen && (
+        <button
+          type="button"
+          aria-label="Close threads"
+          onClick={() => setThreadsOpen(false)}
+          className="fixed inset-0 z-50 bg-black/50 md:hidden"
+        />
+      )}
       {chatArea}
     </div>
   );

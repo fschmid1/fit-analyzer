@@ -1,0 +1,18 @@
+{
+  "name": "FIT Analyzer",
+  "short_name": "FIT Analyzer",
+  "description": "Analyze FIT activity files and review training insights.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f0b1a",
+  "theme_color": "#0f0b1a",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

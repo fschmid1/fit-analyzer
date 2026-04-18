@@ -16,6 +16,8 @@ const SYSTEM_PROMPT =
     "When the user shares their activity summary and interval data, analyse power, heart rate and cadence trends " +
     "and give practical training advice.";
 
+const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 20;
+
 function getUserId(c: { req: { header: (name: string) => string | undefined } }): string {
     const userId = c.req.header("x-authentik-username");
     if (!userId) throw new Error("Missing x-authentik-username header");
@@ -189,9 +191,17 @@ trainer.post("/compact/:threadId", async (c) => {
     let assistantCount = 0;
     for (let i = allMessages.length - 1; i >= 0; i--) {
         const msg = allMessages[i];
-        if (msg.role === "user" && userCount < 10) { keepEndIds.add(msg.id); userCount++; }
-        else if (msg.role === "assistant" && assistantCount < 10) { keepEndIds.add(msg.id); assistantCount++; }
-        if (userCount >= 10 && assistantCount >= 10) break;
+        if (msg.role === "user" && userCount < COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE) {
+            keepEndIds.add(msg.id);
+            userCount++;
+        } else if (msg.role === "assistant" && assistantCount < COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE) {
+            keepEndIds.add(msg.id);
+            assistantCount++;
+        }
+        if (
+            userCount >= COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE &&
+            assistantCount >= COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE
+        ) break;
     }
 
     const cutoffIndex = allMessages.findIndex((m) => keepEndIds.has(m.id));
