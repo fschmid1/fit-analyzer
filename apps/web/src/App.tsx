@@ -10,6 +10,7 @@ import { StatsBar } from "./components/StatsBar";
 import { IntervalList } from "./components/IntervalList";
 import { SummaryCards } from "./components/SummaryCards";
 import { CopyBox } from "./components/CopyBox";
+import { InstallPrompt } from "./components/InstallPrompt";
 import { TrainerView } from "./components/TrainerView";
 import { SettingsPage } from "./pages/SettingsPage";
 import {
@@ -406,6 +407,7 @@ function App() {
           element={<SettingsPage user={user} onActivitiesChanged={loadActivities} />}
         />
       </Routes>
+      <InstallPrompt />
     </div>
   );
 }
