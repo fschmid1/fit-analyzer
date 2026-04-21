@@ -5,6 +5,10 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
+    "@fit-analyzer/server#build": {
+      "dependsOn": ["@fit-analyzer/web#build", "^build"],
+      "outputs": ["dist/**", "public/**"]
+    },
     "dev": {
       "cache": false,
       "persistent": true
