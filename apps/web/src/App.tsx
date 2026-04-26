@@ -245,7 +245,7 @@ function App() {
       const stats =
         slice.length > 0
           ? computeAverages(slice)
-          : { avgPower: null, avgHeartRate: null, avgCadence: null };
+          : { avgPower: null, avgHeartRate: null, avgCadence: null, duration: 0 };
       return {
         index: idx,
         startSeconds: start,
@@ -253,7 +253,7 @@ function App() {
         avgPower: stats.avgPower,
         avgHeartRate: stats.avgHeartRate,
         avgCadence: stats.avgCadence,
-        duration: end - start,
+        duration: stats.duration,
       };
     });
   }, [activity, customIntervals]);

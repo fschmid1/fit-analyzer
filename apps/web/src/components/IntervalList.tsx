@@ -52,7 +52,7 @@ export function IntervalList({
       const stats =
         slice.length > 0
           ? computeAverages(slice)
-          : { avgPower: null, avgHeartRate: null, avgCadence: null };
+          : { avgPower: null, avgHeartRate: null, avgCadence: null, duration: 0 };
       return {
         index: idx,
         startSeconds: start,
@@ -60,7 +60,7 @@ export function IntervalList({
         avgPower: stats.avgPower,
         avgHeartRate: stats.avgHeartRate,
         avgCadence: stats.avgCadence,
-        duration: end - start,
+        duration: stats.duration,
       };
     });
   }, [records, customIntervals]);

@@ -1,13 +1,29 @@
 import type { ActivityRecord, Interval, LapMarker, SelectionStats } from "@fit-analyzer/shared";
 
+const EMPTY_SELECTION_STATS: SelectionStats = {
+  avgPower: null,
+  avgHeartRate: null,
+  avgCadence: null,
+  duration: 0,
+};
+
 export function computeAverages(records: ActivityRecord[]): SelectionStats {
   if (records.length === 0) {
-    return { avgPower: null, avgHeartRate: null, avgCadence: null, duration: 0 };
+    return EMPTY_SELECTION_STATS;
   }
 
-  const validPower = records.filter((r) => r.power !== null);
-  const validHR = records.filter((r) => r.heartRate !== null);
-  const validCadence = records.filter((r) => r.cadence !== null);
+  const includedRecords = records.filter((r) => r.cadence !== 0);
+  const validPower = includedRecords.filter((r) => r.power !== null);
+  const validHR = includedRecords.filter((r) => r.heartRate !== null);
+  const validCadence = includedRecords.filter((r) => r.cadence !== null);
+  const duration = records.slice(0, -1).reduce((total, record, index) => {
+    if (record.cadence === 0) return total;
+
+    const nextRecord = records[index + 1];
+    const sampleDuration = nextRecord.elapsedSeconds - record.elapsedSeconds;
+
+    return sampleDuration > 0 ? total + sampleDuration : total;
+  }, 0);
 
   return {
     avgPower: validPower.length
@@ -25,8 +41,7 @@ export function computeAverages(records: ActivityRecord[]): SelectionStats {
           validCadence.reduce((s, r) => s + r.cadence!, 0) / validCadence.length
         )
       : null,
-    duration:
-      records[records.length - 1].elapsedSeconds - records[0].elapsedSeconds,
+    duration,
   };
 }
 
@@ -118,7 +133,7 @@ export function computeIntervals(
       (r) => r.elapsedSeconds >= start && r.elapsedSeconds <= end
     );
 
-    const stats = slice.length > 0 ? computeAverages(slice) : { avgPower: null, avgHeartRate: null, avgCadence: null };
+    const stats = slice.length > 0 ? computeAverages(slice) : EMPTY_SELECTION_STATS;
 
     return {
       index: idx,
@@ -127,7 +142,7 @@ export function computeIntervals(
       avgPower: stats.avgPower,
       avgHeartRate: stats.avgHeartRate,
       avgCadence: stats.avgCadence,
-      duration: end - start,
+      duration: stats.duration,
     };
   });
 }
