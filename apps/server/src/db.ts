@@ -131,6 +131,18 @@ db.exec(`
   )
 `);
 
+// User settings
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_settings (
+    user_id TEXT PRIMARY KEY,
+    waxed_chain_reminders_enabled INTEGER NOT NULL DEFAULT 0,
+    waxed_chain_reminder_km INTEGER NOT NULL DEFAULT 300,
+    waxed_chain_ntfy_topic TEXT NOT NULL DEFAULT '',
+    waxed_chain_accumulated_km REAL NOT NULL DEFAULT 0,
+    waxed_chain_last_notified_at TEXT
+  )
+`);
+
 // Migration: add strava_activity_id to activities for duplicate prevention
 try {
   db.exec(`ALTER TABLE activities ADD COLUMN strava_activity_id TEXT`);

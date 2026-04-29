@@ -6,6 +6,7 @@ import type {
   TrainerMessage,
   TrainerChatHistory,
   TrainerThread,
+  WaxedChainReminderSettings,
 } from "@fit-analyzer/shared";
 
 const API_BASE = "/api";
@@ -16,6 +17,10 @@ export interface UserInfo {
   name: string;
 }
 
+export interface UserSettingsResponse {
+  waxedChainReminder: WaxedChainReminderSettings;
+}
+
 export async function fetchCurrentUser(): Promise<UserInfo | null> {
   try {
     const res = await fetch(`${API_BASE}/me`);
@@ -24,6 +29,34 @@ export async function fetchCurrentUser(): Promise<UserInfo | null> {
   } catch {
     return null;
   }
+}
+
+export async function fetchUserSettings(): Promise<UserSettingsResponse> {
+  const res = await fetch(`${API_BASE}/me/settings`);
+  if (!res.ok) throw new Error("Failed to fetch settings");
+  return res.json();
+}
+
+export async function updateWaxedChainReminderSettings(
+  input: {
+    enabled: boolean;
+    thresholdKm: number;
+    ntfyTopic: string;
+  }
+): Promise<WaxedChainReminderSettings> {
+  const res = await fetch(`${API_BASE}/me/settings`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+
+  const data = await res.json().catch(() => ({ error: "Failed to update settings" }));
+
+  if (!res.ok) {
+    throw new Error((data as { error?: string }).error ?? "Failed to update settings");
+  }
+
+  return (data as UserSettingsResponse).waxedChainReminder;
 }
 
 export async function fetchActivities(): Promise<ActivityListItem[]> {

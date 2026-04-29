@@ -111,6 +111,23 @@ export interface UpdateIntervalsBody {
   customRanges: [number, number][];
 }
 
+// --- User settings types ---
+
+export interface WaxedChainReminderSettings {
+  enabled: boolean;
+  thresholdKm: number;
+  ntfyTopic: string;
+  accumulatedKm: number;
+  remainingKm: number;
+  lastNotifiedAt: string | null;
+}
+
+export interface UpdateWaxedChainReminderSettingsBody {
+  enabled: boolean;
+  thresholdKm: number;
+  ntfyTopic: string;
+}
+
 // --- Trainer chat types ---
 
 /** A single persisted trainer chat message */

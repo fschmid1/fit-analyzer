@@ -1,6 +1,19 @@
 import { Hono } from "hono";
+import type { UpdateWaxedChainReminderSettingsBody } from "@fit-analyzer/shared";
+import {
+  getWaxedChainReminderSettings,
+  updateWaxedChainReminderSettings,
+} from "../lib/waxedChainReminders.js";
 
 const me = new Hono();
+
+function getUserId(c: { req: { header: (name: string) => string | undefined } }): string {
+  const userId = c.req.header("x-authentik-username");
+  if (!userId) {
+    throw new Error("Missing x-authentik-username header");
+  }
+  return userId;
+}
 
 // GET /me — return the current user info from Authentik proxy headers
 me.get("/", (c) => {
@@ -13,6 +26,54 @@ me.get("/", (c) => {
   }
 
   return c.json({ username, email, name });
+});
+
+// GET /me/settings — return persisted user settings
+me.get("/settings", (c) => {
+  let userId: string;
+  try {
+    userId = getUserId(c);
+  } catch {
+    return c.json({ error: "Not authenticated" }, 401);
+  }
+
+  return c.json({
+    waxedChainReminder: getWaxedChainReminderSettings(userId),
+  });
+});
+
+// PATCH /me/settings — update persisted user settings
+me.patch("/settings", async (c) => {
+  let userId: string;
+  try {
+    userId = getUserId(c);
+  } catch {
+    return c.json({ error: "Not authenticated" }, 401);
+  }
+
+  const body = await c.req.json<UpdateWaxedChainReminderSettingsBody>();
+  const thresholdKm = Number(body.thresholdKm);
+  const ntfyTopic = body.ntfyTopic?.trim() ?? "";
+
+  if (typeof body.enabled !== "boolean") {
+    return c.json({ error: "enabled must be a boolean" }, 400);
+  }
+
+  if (!Number.isFinite(thresholdKm) || thresholdKm <= 0) {
+    return c.json({ error: "thresholdKm must be a positive number" }, 400);
+  }
+
+  if (body.enabled && !ntfyTopic) {
+    return c.json({ error: "ntfyTopic is required when reminders are enabled" }, 400);
+  }
+
+  const settings = updateWaxedChainReminderSettings(userId, {
+    enabled: body.enabled,
+    thresholdKm,
+    ntfyTopic,
+  });
+
+  return c.json({ waxedChainReminder: settings });
 });
 
 export { me };

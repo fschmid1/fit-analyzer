@@ -11,6 +11,8 @@ export type {
   CreateActivityBody,
   IntervalConfig,
   UpdateIntervalsBody,
+  WaxedChainReminderSettings,
+  UpdateWaxedChainReminderSettingsBody,
   TrainerMessage,
   TrainerThread,
   TrainerChatHistory,

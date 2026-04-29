@@ -6,6 +6,7 @@ import type {
   CreateActivityBody,
   UpdateIntervalsBody,
 } from "@fit-analyzer/shared";
+import { handleNewActivityForWaxedChainReminder } from "../lib/waxedChainReminders.js";
 
 const activities = new Hono();
 
@@ -145,6 +146,10 @@ activities.post("/", async (c) => {
     JSON.stringify(body.intervals ?? []),
     userId
   );
+
+  void handleNewActivityForWaxedChainReminder(userId, body.records).catch((error) => {
+    console.error(`[activities] Failed to evaluate waxed-chain reminder for user ${userId}:`, error);
+  });
 
   return c.json({ id }, 201);
 });

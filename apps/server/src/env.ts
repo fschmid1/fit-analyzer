@@ -10,6 +10,8 @@ export const env = createEnv({
         STRAVA_CLIENT_SECRET: z.string().optional(),
         STRAVA_REDIRECT_URI: z.string().optional(),
         STRAVA_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
+        NTFY_HOST: z.string().optional(),
+        NTFY_TOKEN: z.string().optional(),
     },
     runtimeEnv: process.env,
     emptyStringAsUndefined: true,

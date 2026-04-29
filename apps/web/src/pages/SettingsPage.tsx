@@ -1,4 +1,5 @@
 import { StravaConnect } from "../components/StravaConnect";
+import { WaxedChainReminderSettings } from "../components/WaxedChainReminderSettings";
 import type { UserInfo } from "../lib/api";
 
 interface SettingsPageProps {
@@ -18,6 +19,13 @@ export function SettingsPage({ onActivitiesChanged }: SettingsPageProps) {
             Integrations
           </h3>
           <StravaConnect onSynced={onActivitiesChanged} />
+        </section>
+
+        <section className="mt-8">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8] mb-3">
+            Maintenance
+          </h3>
+          <WaxedChainReminderSettings />
         </section>
       </div>
     </div>
