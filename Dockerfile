@@ -32,8 +32,10 @@ WORKDIR /app
 COPY --from=build /app/apps/server/dist ./dist
 COPY --from=build /app/apps/server/package.json ./
 
-# Copy frontend build as static files for the server to serve
-COPY --from=build /app/apps/web/dist ./public
+# Copy the server-prepared static bundle.
+# The server build step assembles this from the web build, so Docker and
+# local production runs serve the same artifact set.
+COPY --from=build /app/apps/server/public ./public
 
 # Create data directory for SQLite
 RUN mkdir -p /app/data
