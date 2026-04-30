@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import type { UpdateWaxedChainReminderSettingsBody } from "@fit-analyzer/shared";
 import {
   getWaxedChainReminderSettings,
+  resetWaxedChainReminderProgress,
+  sendTestWaxedChainReminder,
   updateWaxedChainReminderSettings,
 } from "../lib/waxedChainReminders.js";
 
@@ -74,6 +76,39 @@ me.patch("/settings", async (c) => {
   });
 
   return c.json({ waxedChainReminder: settings });
+});
+
+// POST /me/settings/waxed-chain/reset — reset persisted reminder progress
+me.post("/settings/waxed-chain/reset", (c) => {
+  let userId: string;
+  try {
+    userId = getUserId(c);
+  } catch {
+    return c.json({ error: "Not authenticated" }, 401);
+  }
+
+  const settings = resetWaxedChainReminderProgress(userId);
+  return c.json({ waxedChainReminder: settings });
+});
+
+// POST /me/settings/waxed-chain/send-test — send a test notification
+me.post("/settings/waxed-chain/send-test", async (c) => {
+  let userId: string;
+  try {
+    userId = getUserId(c);
+  } catch {
+    return c.json({ error: "Not authenticated" }, 401);
+  }
+
+  try {
+    await sendTestWaxedChainReminder(userId);
+    return c.json({ ok: true });
+  } catch (error) {
+    return c.json(
+      { error: error instanceof Error ? error.message : "Failed to send test notification" },
+      400
+    );
+  }
 });
 
 export { me };

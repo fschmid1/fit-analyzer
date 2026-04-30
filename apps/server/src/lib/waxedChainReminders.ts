@@ -110,7 +110,11 @@ async function sendWaxedChainReminder(topic: string, thresholdKm: number, accumu
   });
 
   if (env.NTFY_TOKEN) {
-    headers.set("Authorization", `Bearer ${env.NTFY_TOKEN}`);
+    // ntfy accepts access tokens via Basic auth with an empty username.
+    headers.set(
+      "Authorization",
+      `Basic ${Buffer.from(`:${env.NTFY_TOKEN}`).toString("base64")}`
+    );
   }
 
   const response = await fetch(`${env.NTFY_HOST.replace(/\/+$/, "")}/${encodeURIComponent(topic)}`, {
@@ -120,8 +124,25 @@ async function sendWaxedChainReminder(topic: string, thresholdKm: number, accumu
   });
 
   if (!response.ok) {
-    throw new Error(`ntfy request failed with status ${response.status}`);
+    const errorText = await response.text().catch(() => "");
+    throw new Error(
+      `ntfy request failed with status ${response.status}${errorText ? `: ${errorText}` : ""}`
+    );
   }
+}
+
+export async function sendTestWaxedChainReminder(userId: string): Promise<void> {
+  const settings = getWaxedChainReminderSettings(userId);
+
+  if (!settings.ntfyTopic) {
+    throw new Error("ntfyTopic is not configured");
+  }
+
+  await sendWaxedChainReminder(
+    settings.ntfyTopic,
+    settings.thresholdKm,
+    settings.accumulatedKm
+  );
 }
 
 export function getWaxedChainReminderSettings(userId: string): WaxedChainReminderSettings {
@@ -139,6 +160,11 @@ export function updateWaxedChainReminderSettings(
     input.ntfyTopic.trim()
   );
 
+  return getWaxedChainReminderSettings(userId);
+}
+
+export function resetWaxedChainReminderProgress(userId: string): WaxedChainReminderSettings {
+  updateAccumulatedStmt.run(userId, 0, null);
   return getWaxedChainReminderSettings(userId);
 }
 

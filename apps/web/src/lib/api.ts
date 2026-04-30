@@ -59,6 +59,32 @@ export async function updateWaxedChainReminderSettings(
   return (data as UserSettingsResponse).waxedChainReminder;
 }
 
+export async function resetWaxedChainReminderProgress(): Promise<WaxedChainReminderSettings> {
+  const res = await fetch(`${API_BASE}/me/settings/waxed-chain/reset`, {
+    method: "POST",
+  });
+
+  const data = await res.json().catch(() => ({ error: "Failed to reset reminder progress" }));
+
+  if (!res.ok) {
+    throw new Error((data as { error?: string }).error ?? "Failed to reset reminder progress");
+  }
+
+  return (data as UserSettingsResponse).waxedChainReminder;
+}
+
+export async function sendWaxedChainReminderTest(): Promise<void> {
+  const res = await fetch(`${API_BASE}/me/settings/waxed-chain/send-test`, {
+    method: "POST",
+  });
+
+  const data = await res.json().catch(() => ({ error: "Failed to send test notification" }));
+
+  if (!res.ok) {
+    throw new Error((data as { error?: string }).error ?? "Failed to send test notification");
+  }
+}
+
 export async function fetchActivities(): Promise<ActivityListItem[]> {
   const res = await fetch(`${API_BASE}/activities`);
   if (!res.ok) throw new Error("Failed to fetch activities");

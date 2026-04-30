@@ -1,7 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
-import mkcert from "vite-plugin-mkcert";
 
 // Vite logs EPIPE / ECONNRESET proxy errors as [vite] http proxy error.
 // These are benign — they fire when the browser cancels an in-flight request
@@ -23,7 +22,7 @@ const silenceProxyEpipe: Plugin = {
 
 // https://vitejs.dev/config/
 export default defineConfig({
-    plugins: [react(), tailwindcss(), mkcert(), silenceProxyEpipe],
+    plugins: [react(), tailwindcss(), silenceProxyEpipe],
     server: {
         proxy: {
             "/api": {

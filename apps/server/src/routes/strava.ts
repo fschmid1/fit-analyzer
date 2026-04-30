@@ -3,17 +3,12 @@ import type {
     LapMarker,
     StoredRecord,
 } from "@fit-analyzer/shared";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { Hono } from "hono";
 import { db } from "../db.js";
 import { env } from "../env.js";
 import { handleNewActivityForWaxedChainReminder } from "../lib/waxedChainReminders.js";
 
 const strava = new Hono();
-const STRAVA_TOKEN_EXCHANGE_TIMEOUT_MS = 30000;
-const STRAVA_TOKEN_REFRESH_TIMEOUT_MS = 15000;
-const execFileAsync = promisify(execFile);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -105,81 +100,22 @@ function pruneStates() {
     }
 }
 
-async function fetchWithTimeout(
-    input: string | URL | Request,
-    init?: RequestInit,
-    timeoutMs = 10000,
-): Promise<Response> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-    try {
-        return await fetch(input, {
-            ...init,
-            signal: controller.signal,
-        });
-    } finally {
-        clearTimeout(timeoutId);
-    }
-}
-
-function isAbortError(error: unknown): boolean {
-    return error instanceof Error && error.name === "AbortError";
-}
-
-async function exchangeStravaTokenWithCurl(
+async function exchangeStravaTokenWithBunFetch(
     params: Record<string, string>,
-    timeoutMs: number,
 ): Promise<Response> {
-    const body = new URLSearchParams(params).toString();
     const startedAt = Date.now();
-    const { stdout } = await execFileAsync(
-        "curl",
-        [
-            "--silent",
-            "--show-error",
-            "--location",
-            "--max-time",
-            String(Math.ceil(timeoutMs / 1000)),
-            "--request",
-            "POST",
-            "https://www.strava.com/oauth/token",
-            "--header",
-            "Content-Type: application/x-www-form-urlencoded",
-            "--data",
-            body,
-            "--write-out",
-            "\n%{http_code}",
-        ],
-        {
-            timeout: timeoutMs + 1000,
-            maxBuffer: 1024 * 1024,
-        },
-    );
-
-    const splitIndex = stdout.lastIndexOf("\n");
-    if (splitIndex === -1) {
-        throw new Error("Strava token exchange returned an unexpected curl response");
-    }
-
-    const responseBody = stdout.slice(0, splitIndex);
-    const statusText = stdout.slice(splitIndex + 1).trim();
-    const status = Number(statusText);
-
-    if (!Number.isInteger(status)) {
-        throw new Error(`Strava token exchange returned an invalid status code: ${statusText}`);
-    }
-
-    console.log(
-        `[strava] curl token exchange completed in ${Date.now() - startedAt}ms with status ${status}`,
-    );
-
-    return new Response(responseBody, {
-        status,
+    console.log("[strava] Bun fetch token request starting");
+    const response = await fetch("https://www.strava.com/oauth/token", {
+        method: "POST",
         headers: {
-            "Content-Type": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
         },
+        body: new URLSearchParams(params),
     });
+    console.log(
+        `[strava] Bun fetch token exchange completed in ${Date.now() - startedAt}ms with status ${response.status}`,
+    );
+    return response;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -230,33 +166,13 @@ async function getValidToken(userId: string): Promise<string> {
     if (!token) throw new Error("Strava not connected for this user");
 
     if (Math.floor(Date.now() / 1000) >= token.expires_at - 60) {
-        let res: Response;
-        try {
-            console.log(
-                `[strava] Starting token refresh for user ${userId} with timeout ${STRAVA_TOKEN_REFRESH_TIMEOUT_MS}ms`,
-            );
-            res = await exchangeStravaTokenWithCurl(
-                {
-                    client_id: env.STRAVA_CLIENT_ID ?? "",
-                    client_secret: env.STRAVA_CLIENT_SECRET ?? "",
-                    grant_type: "refresh_token",
-                    refresh_token: token.refresh_token,
-                },
-                STRAVA_TOKEN_REFRESH_TIMEOUT_MS,
-            );
-        } catch (error) {
-            if (
-                isAbortError(error) ||
-                (error instanceof Error &&
-                    (error.message.includes("timed out") ||
-                        error.message.includes("ETIMEDOUT")))
-            ) {
-                throw new Error(
-                    `Strava token refresh timed out after ${STRAVA_TOKEN_REFRESH_TIMEOUT_MS}ms`,
-                );
-            }
-            throw error;
-        }
+        console.log(`[strava] Starting token refresh for user ${userId}`);
+        const res = await exchangeStravaTokenWithBunFetch({
+            client_id: env.STRAVA_CLIENT_ID ?? "",
+            client_secret: env.STRAVA_CLIENT_SECRET ?? "",
+            grant_type: "refresh_token",
+            refresh_token: token.refresh_token,
+        });
         console.log(
             `[strava] Token refresh response received for user ${userId}: status=${res.status}`,
         );
@@ -568,41 +484,16 @@ strava.get("/callback", async (c) => {
     console.log(`[strava] Callback resolved user from state: userId=${userId}`);
 
     try {
-        let res: Response;
-        try {
-            console.log(
-                `[strava] Starting token exchange for user ${userId} with timeout ${STRAVA_TOKEN_EXCHANGE_TIMEOUT_MS}ms`,
-            );
-            res = await exchangeStravaTokenWithCurl(
-                {
-                    client_id: env.STRAVA_CLIENT_ID ?? "",
-                    client_secret: env.STRAVA_CLIENT_SECRET ?? "",
-                    code,
-                    grant_type: "authorization_code",
-                },
-                STRAVA_TOKEN_EXCHANGE_TIMEOUT_MS,
-            );
-            console.log(
-                `[strava] Token exchange response received for user ${userId}: status=${res.status}`,
-            );
-        } catch (err) {
-            if (
-                isAbortError(err) ||
-                (err instanceof Error &&
-                    (err.message.includes("timed out") ||
-                        err.message.includes("ETIMEDOUT")))
-            ) {
-                console.error(
-                    `[strava] Token exchange timed out after ${STRAVA_TOKEN_EXCHANGE_TIMEOUT_MS}ms for user ${userId}`,
-                );
-                return c.redirect("/settings?strava=error");
-            }
-            console.error(
-                `[strava] Token exchange threw before response for user ${userId}:`,
-                err,
-            );
-            throw err;
-        }
+        console.log(`[strava] Starting token exchange for user ${userId}`);
+        const res = await exchangeStravaTokenWithBunFetch({
+            client_id: env.STRAVA_CLIENT_ID ?? "",
+            client_secret: env.STRAVA_CLIENT_SECRET ?? "",
+            code,
+            grant_type: "authorization_code",
+        });
+        console.log(
+            `[strava] Token exchange response received for user ${userId}: status=${res.status}`,
+        );
 
         if (!res.ok) {
             console.error(`[strava] Token exchange failed: ${res.status}`);

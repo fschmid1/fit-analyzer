@@ -3,6 +3,8 @@ import { AlertCircle, BellRing, CheckCircle2, Loader2 } from "lucide-react";
 import type { WaxedChainReminderSettings } from "@fit-analyzer/shared";
 import {
   fetchUserSettings,
+  resetWaxedChainReminderProgress,
+  sendWaxedChainReminderTest,
   updateWaxedChainReminderSettings,
 } from "../lib/api";
 
@@ -22,6 +24,8 @@ export function WaxedChainReminderSettings() {
   const [ntfyTopic, setNtfyTopic] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [sendingTest, setSendingTest] = useState(false);
   const [notification, setNotification] = useState<{
     type: "success" | "error";
     message: string;
@@ -81,9 +85,54 @@ export function WaxedChainReminderSettings() {
     }
   };
 
+  const handleReset = async () => {
+    setResetting(true);
+    setNotification(null);
+
+    try {
+      const nextSettings = await resetWaxedChainReminderProgress();
+      setSettings(nextSettings);
+      setNotification({
+        type: "success",
+        message: "Waxed chain reminder progress reset.",
+      });
+    } catch (error) {
+      setNotification({
+        type: "error",
+        message: error instanceof Error ? error.message : "Failed to reset reminder progress",
+      });
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const handleSendTest = async () => {
+    setSendingTest(true);
+    setNotification(null);
+
+    try {
+      await sendWaxedChainReminderTest();
+      setNotification({
+        type: "success",
+        message: "Test notification sent.",
+      });
+    } catch (error) {
+      setNotification({
+        type: "error",
+        message: error instanceof Error ? error.message : "Failed to send test notification",
+      });
+    } finally {
+      setSendingTest(false);
+    }
+  };
+
   const thresholdValue = Number(thresholdKm);
   const isThresholdValid = Number.isFinite(thresholdValue) && thresholdValue > 0;
-  const isSaveDisabled = saving || !isThresholdValid || (enabled && ntfyTopic.trim().length === 0);
+  const isSaveDisabled =
+    saving || resetting || sendingTest || !isThresholdValid || (enabled && ntfyTopic.trim().length === 0);
+  const isResetDisabled = resetting || saving || sendingTest || !settings || settings.accumulatedKm <= 0;
+  const isSendTestDisabled =
+    sendingTest || saving || resetting || !ntfyTopic.trim();
 
   return (
     <div className="flex flex-col gap-4">
@@ -183,21 +232,53 @@ export function WaxedChainReminderSettings() {
               <p className="text-xs text-[#94a3b8]">
                 The `ntfy` host and token are read from the server environment.
               </p>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={isSaveDisabled}
-                className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {saving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Saving…
-                  </>
-                ) : (
-                  "Save"
-                )}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSendTest}
+                  disabled={isSendTestDisabled}
+                  className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 hover:border-amber-500/40 rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {sendingTest ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Sending…
+                    </>
+                  ) : (
+                    "Send test"
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  disabled={isResetDisabled}
+                  className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-[#94a3b8] bg-transparent hover:bg-red-500/10 border border-[rgba(139,92,246,0.15)] hover:border-red-500/30 rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {resetting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Resetting…
+                    </>
+                  ) : (
+                    "Reset counter"
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={isSaveDisabled}
+                  className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Saving…
+                    </>
+                  ) : (
+                    "Save"
+                  )}
+                </button>
+              </div>
             </div>
           </>
         )}
