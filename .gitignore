@@ -19,6 +19,9 @@ dist-ssr
 data/
 *.db
 
+# Generated server-served frontend bundle
+apps/server/public/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

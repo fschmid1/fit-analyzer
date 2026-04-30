@@ -52,24 +52,12 @@ Accessible at [http://localhost:3000](http://localhost:3000).
 ## Project Structure
 
 ```
-src/
-├── components/
-│   ├── ActivityChart.tsx    # Interactive multi-metric chart
-│   ├── FileDropZone.tsx     # FIT file upload interface
-│   ├── IntervalList.tsx     # Lap & custom interval management
-│   ├── StatsBar.tsx         # Selection stats display
-│   ├── SummaryCards.tsx     # Activity summary metrics
-│   ├── CopyBox.tsx          # Formatted text export
-│   ├── MetricCard.tsx       # Individual metric card
-│   └── Header.tsx           # App header
-├── lib/
-│   ├── parseFit.ts          # FIT file parsing via Garmin SDK
-│   ├── stats.ts             # Peak power, averages, interval computation
-│   ├── formatters.ts        # Text formatting utilities
-│   └── storage.ts           # localStorage persistence
-├── types/
-│   ├── fit.ts               # Core TypeScript interfaces
-│   └── garmin-fitsdk.d.ts   # Garmin SDK type definitions
-├── App.tsx                  # Root component & state management
-└── main.tsx                 # Entry point
+apps/
+├── web/
+│   ├── src/                 # React app source
+│   └── public/              # Source static assets: manifest, icons, screenshots
+└── server/
+    └── src/                 # Bun API server and static file host
 ```
+
+`apps/server/public` is generated at build time by copying `apps/web/dist` and should not be committed.

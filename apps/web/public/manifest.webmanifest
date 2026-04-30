@@ -6,8 +6,11 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "portrait-primary",
   "background_color": "#0f0b1a",
   "theme_color": "#0f0b1a",
+  "categories": ["sports", "health", "productivity"],
   "icons": [
     {
       "src": "/icon-192.png",
