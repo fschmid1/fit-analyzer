@@ -2,11 +2,16 @@ import { Hono } from "hono";
 import { db } from "../db.js";
 import type {
   ActivityListItem,
+  ActivitySummary,
   StoredActivity,
+  StoredRecord,
   CreateActivityBody,
   UpdateIntervalsBody,
 } from "@fit-analyzer/shared";
-import { handleNewActivityForWaxedChainReminder } from "../lib/waxedChainReminders.js";
+import {
+  computeDistanceKm,
+  handleNewActivityForWaxedChainReminder,
+} from "../lib/waxedChainReminders.js";
 
 const activities = new Hono();
 
@@ -21,7 +26,7 @@ function getUserId(c: { req: { header: (name: string) => string | undefined } })
 
 // Prepared statements for performance — now scoped by user_id
 const listStmt = db.prepare(
-  `SELECT id, date, summary, strava_activity_id as stravaActivityId, created_at as createdAt
+  `SELECT id, date, summary, records, strava_activity_id as stravaActivityId, created_at as createdAt
    FROM activities
    WHERE user_id = ?
    ORDER BY date DESC, created_at DESC`
@@ -42,7 +47,31 @@ const updateIntervalsStmt = db.prepare(
   `UPDATE activities SET intervals = ?, interval_minutes = ?, custom_ranges = ? WHERE id = ? AND user_id = ?`
 );
 
+const updateSummaryStmt = db.prepare(
+  `UPDATE activities SET summary = ? WHERE id = ? AND user_id = ?`
+);
+
 const deleteStmt = db.prepare("DELETE FROM activities WHERE id = ? AND user_id = ?");
+
+function hydrateSummaryDistance(
+  summary: ActivitySummary,
+  records?: StoredRecord[]
+): { summary: ActivitySummary; repaired: boolean } {
+  if ("totalDistanceKm" in summary) {
+    return { summary, repaired: false };
+  }
+
+  const computedDistanceKm =
+    records && records.length > 1 ? Math.round(computeDistanceKm(records) * 10) / 10 : null;
+
+  return {
+    summary: {
+      ...summary,
+      totalDistanceKm: computedDistanceKm && computedDistanceKm > 0 ? computedDistanceKm : null,
+    },
+    repaired: true,
+  };
+}
 
 // GET /activities — list all activities for the current user (summary only, no records)
 activities.get("/", (c) => {
@@ -57,17 +86,28 @@ activities.get("/", (c) => {
     id: string;
     date: string;
     summary: string;
+    records: string;
     stravaActivityId: string | null;
     createdAt: string;
   }[];
 
-  const items: ActivityListItem[] = rows.map((row) => ({
-    id: row.id,
-    date: row.date,
-    summary: JSON.parse(row.summary),
-    createdAt: row.createdAt,
-    stravaActivityId: row.stravaActivityId ?? null,
-  }));
+  const items: ActivityListItem[] = rows.map((row) => {
+    const rawSummary = JSON.parse(row.summary) as ActivitySummary;
+    const records = JSON.parse(row.records) as StoredRecord[];
+    const { summary, repaired } = hydrateSummaryDistance(rawSummary, records);
+
+    if (repaired) {
+      updateSummaryStmt.run(JSON.stringify(summary), row.id, userId);
+    }
+
+    return {
+      id: row.id,
+      date: row.date,
+      summary,
+      createdAt: row.createdAt,
+      stravaActivityId: row.stravaActivityId ?? null,
+    };
+  });
 
   return c.json({ activities: items });
 });
@@ -101,11 +141,19 @@ activities.get("/:id", (c) => {
     return c.json({ error: "Activity not found" }, 404);
   }
 
+  const records = JSON.parse(row.records) as StoredRecord[];
+  const rawSummary = JSON.parse(row.summary) as ActivitySummary;
+  const { summary, repaired } = hydrateSummaryDistance(rawSummary, records);
+
+  if (repaired) {
+    updateSummaryStmt.run(JSON.stringify(summary), row.id, userId);
+  }
+
   const activity: StoredActivity = {
     id: row.id,
     date: row.date,
-    summary: JSON.parse(row.summary),
-    records: JSON.parse(row.records),
+    summary,
+    records,
     laps: JSON.parse(row.laps),
     intervals: JSON.parse(row.intervals || "[]"),
     intervalMinutes: row.interval_minutes || "",

@@ -70,7 +70,7 @@ function toPublicSettings(row: UserSettingsRow | null): WaxedChainReminderSettin
   };
 }
 
-function computeDistanceKm(records: StoredRecord[]): number {
+export function computeDistanceKm(records: StoredRecord[]): number {
   if (records.length < 2) return 0;
 
   let distanceKm = 0;
