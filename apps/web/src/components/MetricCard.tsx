@@ -18,7 +18,7 @@ export function MetricCard({
   color,
 }: MetricCardProps) {
   return (
-    <div className="flex items-center gap-4 p-4 bg-[#1a1533]/70 backdrop-blur-md border border-[rgba(139,92,246,0.1)] rounded-2xl hover:border-[rgba(139,92,246,0.2)] transition-all duration-200">
+    <div className="flex min-w-0 items-center gap-4 p-4 bg-[#1a1533]/70 backdrop-blur-md border border-[rgba(139,92,246,0.1)] rounded-2xl hover:border-[rgba(139,92,246,0.2)] transition-all duration-200">
       <div
         className="flex items-center justify-center w-11 h-11 rounded-xl shrink-0"
         style={{ backgroundColor: `${color}20` }}
@@ -29,8 +29,8 @@ export function MetricCard({
         <p className="text-xs font-medium text-[#94a3b8] uppercase tracking-wider">
           {label}
         </p>
-        <div className="flex items-baseline gap-1.5">
-          <p className="text-2xl font-bold text-[#f1f5f9]">{value}</p>
+        <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+          <p className="min-w-0 text-2xl font-bold text-[#f1f5f9]">{value}</p>
           <p className="text-sm text-[#94a3b8]">{unit}</p>
         </div>
         {subValue && (

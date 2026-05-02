@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Clock, Zap, Heart, Trash2, Loader2 } from "lucide-react";
+import { Clock, Zap, Heart, Route, Trash2, Loader2 } from "lucide-react";
 import type { ActivityListItem } from "@fit-analyzer/shared";
 
 interface ActivityHistoryProps {
@@ -94,10 +94,18 @@ export function ActivityHistory({
 
       <div className="flex flex-col gap-3">
         {activities.map((activity) => (
-          <button
+          <div
             key={activity.id}
             onClick={() => onSelect(activity.id)}
             className="group flex items-center gap-4 p-4 bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-xl transition-all duration-200 cursor-pointer text-left w-full"
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect(activity.id);
+              }
+            }}
           >
             {/* Date */}
             <div className="flex-1 min-w-0">
@@ -119,6 +127,13 @@ export function ActivityHistory({
                   <Clock className="w-3 h-3" />
                   {formatDuration(activity.summary.totalTimerTime)}
                 </span>
+
+                {activity.summary.totalDistanceKm !== null && (
+                  <span className="flex items-center gap-1 text-xs text-[#22c55e]">
+                    <Route className="w-3 h-3" />
+                    {activity.summary.totalDistanceKm} km
+                  </span>
+                )}
 
                 {/* Avg Power */}
                 {activity.summary.avgPower !== null && (
@@ -146,17 +161,19 @@ export function ActivityHistory({
             </div>
 
             {/* Delete button */}
-            <div
+            <button
+              type="button"
               onClick={(e) => handleDelete(e, activity.id)}
-              className="opacity-0 group-hover:opacity-100 p-2 text-[#94a3b8] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all duration-200"
+              aria-label={`Delete activity from ${formatDate(activity.summary.date)}`}
+              className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 shrink-0 p-2 text-[#94a3b8] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all duration-200"
             >
               {deletingId === activity.id ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <Trash2 className="w-4 h-4" />
               )}
-            </div>
-          </button>
+            </button>
+          </div>
         ))}
       </div>
     </div>

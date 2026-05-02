@@ -66,6 +66,10 @@ export function parseFit(arrayBuffer: ArrayBuffer): ParsedActivity {
     totalTimerTime: session?.totalTimerTime
       ? Math.round(session.totalTimerTime)
       : Math.round(records[records.length - 1].elapsedSeconds),
+    totalDistanceKm:
+      session?.totalDistance != null
+        ? Math.round((session.totalDistance / 1000) * 10) / 10
+        : null,
     avgPower: session?.avgPower ? Math.round(session.avgPower) : null,
     maxPower: session?.maxPower ? Math.round(session.maxPower) : null,
     avgHeartRate: session?.avgHeartRate

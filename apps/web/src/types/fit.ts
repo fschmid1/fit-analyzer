@@ -9,6 +9,7 @@ export interface ActivityRecord {
 export interface ActivitySummary {
   date: string;
   totalTimerTime: number;
+  totalDistanceKm: number | null;
   avgPower: number | null;
   maxPower: number | null;
   avgHeartRate: number | null;

@@ -291,6 +291,10 @@ function buildSummary(
         // moving_time matches Garmin's totalTimerTime (excludes pauses; time stream
         // runs 0→elapsed_time which overshoots by the total paused duration)
         totalTimerTime: activity.moving_time,
+        totalDistanceKm:
+            activity.distance != null
+                ? Math.round((activity.distance / 1000) * 10) / 10
+                : null,
         avgPower: avg(powerVals),
         maxPower: max(powerVals),
         avgHeartRate: avg(hrVals),

@@ -29,6 +29,7 @@ export function formatCopyBoxText(
   lines.push(
     `- total_timer_time: ${summary.totalTimerTime ? Math.round(summary.totalTimerTime) : "N/A"}`
   );
+  lines.push(`- total_distance_km: ${summary.totalDistanceKm ?? "N/A"}`);
   lines.push(`- avg_power: ${summary.avgPower ?? "N/A"}`);
   lines.push(`- max_power: ${summary.maxPower ?? "N/A"}`);
   lines.push(`- avg_heartRate: ${summary.avgHeartRate ?? "N/A"}`);

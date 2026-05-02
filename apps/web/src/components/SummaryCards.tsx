@@ -5,6 +5,7 @@ import {
   Clock,
   TrendingUp,
   Flame,
+  Route,
 } from "lucide-react";
 import { MetricCard } from "./MetricCard";
 import { formatElapsedTime } from "../lib/formatters";
@@ -22,6 +23,13 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
       value: formatElapsedTime(summary.totalTimerTime),
       unit: "",
       color: "#a78bfa",
+    },
+    {
+      icon: Route,
+      label: "Distance",
+      value: summary.totalDistanceKm ?? "N/A",
+      unit: summary.totalDistanceKm !== null ? "km" : "",
+      color: "#22c55e",
     },
     {
       icon: Zap,
@@ -78,7 +86,7 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
 
   return (
     <div className="px-6 pb-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
         {cards.map((card) => (
           <MetricCard key={card.label} {...card} />
         ))}
