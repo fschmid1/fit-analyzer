@@ -1,14 +1,18 @@
-import {
-    chat,
-    convertMessagesToModelMessages,
-    toServerSentEventsResponse,
-} from "@tanstack/ai";
-import { createOpenRouterText } from "@tanstack/ai-openrouter";
+import type {
+    SaveTrainerHistoryBody,
+    TrainerMessage,
+} from "@fit-analyzer/shared";
+import { convertMessagesToModelMessages } from "@tanstack/ai";
 import { Hono } from "hono";
-import { env } from "../env.js";
 import { db } from "../db.js";
-import type { TrainerMessage, SaveTrainerHistoryBody } from "@fit-analyzer/shared";
+import { env } from "../env.js";
+import { createOpenRouterTrainerStream } from "../lib/openRouterTrainerStream.js";
 import { parseCoachingMarkdown } from "../lib/parseCoachingMarkdown.js";
+import {
+    createTrainerStreamConsumer,
+    hasActiveTrainerStream,
+    startTrainerStreamProducer,
+} from "../lib/trainerStreamRegistry.js";
 
 const SYSTEM_PROMPT =
     "You are an expert endurance sports coach specialising in cycling and triathlon. " +
@@ -17,10 +21,13 @@ const SYSTEM_PROMPT =
     "and give practical training advice.";
 
 const KIMI_MODEL = "moonshotai/kimi-k2.5";
-const OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions";
+const OPENROUTER_CHAT_COMPLETIONS_URL =
+    "https://openrouter.ai/api/v1/chat/completions";
 const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 20;
 
-function getUserId(c: { req: { header: (name: string) => string | undefined } }): string {
+function getUserId(c: {
+    req: { header: (name: string) => string | undefined };
+}): string {
     const userId = c.req.header("x-authentik-username");
     if (!userId) throw new Error("Missing x-authentik-username header");
     return userId;
@@ -30,6 +37,7 @@ type TrainerChatRequestBody = {
     messages?: Parameters<typeof convertMessagesToModelMessages>[0];
     threadId?: unknown;
     conversationId?: unknown;
+    streamId?: unknown;
 };
 
 function getStringBodyValue(value: unknown): string | undefined {
@@ -60,48 +68,48 @@ const getThreadsStmt = db.prepare(
      LEFT JOIN trainer_messages m ON m.chat_id = c.id
      WHERE c.user_id = ? AND c.activity_id = ?
      GROUP BY c.id
-     ORDER BY c.created_at ASC`
+     ORDER BY c.created_at ASC`,
 );
 
 const getThreadByIdStmt = db.prepare(
     `SELECT id, name, activity_id as activityId, user_id as userId,
             created_at as createdAt, updated_at as updatedAt
      FROM trainer_chats
-     WHERE id = ? AND user_id = ?`
+     WHERE id = ? AND user_id = ?`,
 );
 
 const getMessagesStmt = db.prepare(
     `SELECT id, role, content, created_at as createdAt
      FROM trainer_messages
      WHERE chat_id = ?
-     ORDER BY created_at ASC`
+     ORDER BY created_at ASC`,
 );
 
 const createThreadStmt = db.prepare(
     `INSERT INTO trainer_chats (id, activity_id, user_id, name, created_at, updated_at)
-     VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`
+     VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
 );
 
 const renameThreadStmt = db.prepare(
     `UPDATE trainer_chats SET name = ?, updated_at = datetime('now')
-     WHERE id = ? AND user_id = ?`
+     WHERE id = ? AND user_id = ?`,
 );
 
 const deleteThreadStmt = db.prepare(
-    `DELETE FROM trainer_chats WHERE id = ? AND user_id = ?`
+    `DELETE FROM trainer_chats WHERE id = ? AND user_id = ?`,
 );
 
 const deleteMessagesStmt = db.prepare(
-    `DELETE FROM trainer_messages WHERE chat_id = ?`
+    `DELETE FROM trainer_messages WHERE chat_id = ?`,
 );
 
 const touchThreadStmt = db.prepare(
-    `UPDATE trainer_chats SET updated_at = datetime('now') WHERE id = ?`
+    `UPDATE trainer_chats SET updated_at = datetime('now') WHERE id = ?`,
 );
 
 const insertMessageStmt = db.prepare(
     `INSERT INTO trainer_messages (id, chat_id, role, content, created_at)
-     VALUES (?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?)`,
 );
 
 const trainer = new Hono();
@@ -110,24 +118,52 @@ const trainer = new Hono();
 
 trainer.post("/chat", async (c) => {
     const apiKey = env.OPENROUTER_KEY;
-    if (!apiKey) return c.json({ error: "OPENROUTER_KEY is not configured" }, 500);
+    if (!apiKey)
+        return c.json({ error: "OPENROUTER_KEY is not configured" }, 500);
 
     const userId = c.req.header("x-authentik-username") ?? "anonymous";
     const body: TrainerChatRequestBody = await c.req.json();
+    const streamId = getStringBodyValue(body.streamId) ?? crypto.randomUUID();
     const modelMessages = convertMessagesToModelMessages(body.messages ?? []);
-    const adapter = createOpenRouterText(KIMI_MODEL, apiKey);
 
-    const stream = chat({
-        adapter,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        messages: modelMessages as any,
-        systemPrompts: [SYSTEM_PROMPT],
-        // Moonshot/Kimi context caching is automatic on OpenRouter. Avoid setting
-        // manual provider ordering here so OpenRouter can keep its cache-friendly
-        // sticky routing for stable conversation prefixes.
-        modelOptions: { metadata: getKimiRequestMetadata(body, userId) } as never,
+    if (!hasActiveTrainerStream(streamId)) {
+        startTrainerStreamProducer(
+            streamId,
+            createOpenRouterTrainerStream({
+                apiKey,
+                model: KIMI_MODEL,
+                systemPrompt: SYSTEM_PROMPT,
+                messages: modelMessages,
+                metadata: getKimiRequestMetadata(body, userId),
+                threadId: getStringBodyValue(body.threadId),
+            }),
+        );
+    }
+
+    return new Response(createTrainerStreamConsumer(streamId), {
+        headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+        },
     });
-    return toServerSentEventsResponse(stream);
+});
+
+trainer.get("/chat/:streamId", async (c) => {
+    const { streamId } = c.req.param();
+
+    if (hasActiveTrainerStream(streamId)) {
+        console.log("resuming stream");
+        return new Response(createTrainerStreamConsumer(streamId), {
+            headers: {
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                Connection: "keep-alive",
+            },
+        });
+    }
+
+    return c.json({ error: "Stream not found or already completed" }, 404);
 });
 
 // ─── Thread CRUD ──────────────────────────────────────────────────────────────
@@ -143,7 +179,8 @@ trainer.post("/threads/:activityId", async (c) => {
     const userId = getUserId(c);
     const { activityId } = c.req.param();
     const body = await c.req.json().catch(() => ({}));
-    const name: string = (body.name as string | undefined)?.trim() || "Thread 1";
+    const name: string =
+        (body.name as string | undefined)?.trim() || "Thread 1";
     const threadId = crypto.randomUUID();
     createThreadStmt.run(threadId, activityId, userId, name);
     const thread = getThreadByIdStmt.get(threadId, userId);
@@ -179,7 +216,11 @@ trainer.get("/history/:threadId", (c) => {
         | { id: string; updatedAt: string }
         | undefined;
     if (!thread) {
-        return c.json({ threadId, messages: [], updatedAt: new Date().toISOString() });
+        return c.json({
+            threadId,
+            messages: [],
+            updatedAt: new Date().toISOString(),
+        });
     }
     const messages = getMessagesStmt.all(thread.id) as TrainerMessage[];
     return c.json({ threadId, messages, updatedAt: thread.updatedAt });
@@ -198,7 +239,13 @@ trainer.put("/history/:threadId", async (c) => {
         deleteMessagesStmt.run(threadId);
         touchThreadStmt.run(threadId);
         for (const m of messages) {
-            insertMessageStmt.run(m.id, threadId, m.role, m.content, m.createdAt);
+            insertMessageStmt.run(
+                m.id,
+                threadId,
+                m.role,
+                m.content,
+                m.createdAt,
+            );
         }
     })();
 
@@ -209,7 +256,8 @@ trainer.put("/history/:threadId", async (c) => {
 
 trainer.post("/compact/:threadId", async (c) => {
     const apiKey = env.OPENROUTER_KEY;
-    if (!apiKey) return c.json({ error: "OPENROUTER_KEY is not configured" }, 500);
+    if (!apiKey)
+        return c.json({ error: "OPENROUTER_KEY is not configured" }, 500);
 
     const userId = getUserId(c);
     const { threadId } = c.req.param();
@@ -226,28 +274,42 @@ trainer.post("/compact/:threadId", async (c) => {
     let assistantCount = 0;
     for (let i = allMessages.length - 1; i >= 0; i--) {
         const msg = allMessages[i];
-        if (msg.role === "user" && userCount < COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE) {
+        if (
+            msg.role === "user" &&
+            userCount < COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE
+        ) {
             keepEndIds.add(msg.id);
             userCount++;
-        } else if (msg.role === "assistant" && assistantCount < COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE) {
+        } else if (
+            msg.role === "assistant" &&
+            assistantCount < COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE
+        ) {
             keepEndIds.add(msg.id);
             assistantCount++;
         }
         if (
             userCount >= COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE &&
             assistantCount >= COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE
-        ) break;
+        )
+            break;
     }
 
     const cutoffIndex = allMessages.findIndex((m) => keepEndIds.has(m.id));
     const toCompact = allMessages.slice(0, cutoffIndex);
 
     if (toCompact.length === 0) {
-        return c.json({ thread: { ...sourceThread, messageCount: allMessages.length }, messages: allMessages, compacted: false });
+        return c.json({
+            thread: { ...sourceThread, messageCount: allMessages.length },
+            messages: allMessages,
+            compacted: false,
+        });
     }
 
     const messagesText = toCompact
-        .map((m) => `**${m.role === "user" ? "Athlete" : "Coach"}:** ${m.content}`)
+        .map(
+            (m) =>
+                `**${m.role === "user" ? "Athlete" : "Coach"}:** ${m.content}`,
+        )
         .join("\n\n---\n\n");
 
     const compactionPrompt =
@@ -267,7 +329,10 @@ trainer.post("/compact/:threadId", async (c) => {
 
     const response = await fetch(OPENROUTER_CHAT_COMPLETIONS_URL, {
         method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+        },
         body: JSON.stringify({
             model: KIMI_MODEL,
             messages: [{ role: "user", content: compactionPrompt }],
@@ -284,11 +349,15 @@ trainer.post("/compact/:threadId", async (c) => {
 
     if (!response.ok) {
         const err = await response.json().catch(() => ({}));
-        return c.json({ error: "Compaction request failed", details: err }, 500);
+        return c.json(
+            { error: "Compaction request failed", details: err },
+            500,
+        );
     }
 
     const data = await response.json();
-    const summary: string = data.choices?.[0]?.message?.content ?? "*(Summary unavailable)*";
+    const summary: string =
+        data.choices?.[0]?.message?.content ?? "*(Summary unavailable)*";
 
     const firstKeptAt = new Date(allMessages[cutoffIndex].createdAt).getTime();
     const summaryMessage: TrainerMessage = {
@@ -302,8 +371,10 @@ trainer.post("/compact/:threadId", async (c) => {
     };
 
     // Give every message a fresh ID — the originals still exist in the source thread
-    const newMessages: TrainerMessage[] = [summaryMessage, ...allMessages.slice(cutoffIndex)]
-        .map((m) => ({ ...m, id: crypto.randomUUID() }));
+    const newMessages: TrainerMessage[] = [
+        summaryMessage,
+        ...allMessages.slice(cutoffIndex),
+    ].map((m) => ({ ...m, id: crypto.randomUUID() }));
 
     const forkId = crypto.randomUUID();
     const forkName = `${sourceThread.name} · Compacted`;
@@ -316,7 +387,11 @@ trainer.post("/compact/:threadId", async (c) => {
     })();
 
     const forkThread = getThreadByIdStmt.get(forkId, userId) as {
-        id: string; name: string; activityId: string; createdAt: string; updatedAt: string;
+        id: string;
+        name: string;
+        activityId: string;
+        createdAt: string;
+        updatedAt: string;
     };
 
     return c.json({
@@ -335,14 +410,20 @@ trainer.post("/import", async (c) => {
     const file = body["file"];
     const threadId = body["threadId"] as string | undefined;
 
-    if (!file || typeof file === "string") return c.json({ error: "No file uploaded" }, 400);
+    if (!file || typeof file === "string")
+        return c.json({ error: "No file uploaded" }, 400);
 
     const raw = await (file as File).text();
     if (!raw.trim()) return c.json({ error: "File is empty" }, 400);
 
     const messages = parseCoachingMarkdown(raw);
     if (messages.length === 0) {
-        return c.json({ error: "No messages found — is this a valid ChatGPT markdown export?" }, 400);
+        return c.json(
+            {
+                error: "No messages found — is this a valid ChatGPT markdown export?",
+            },
+            400,
+        );
     }
 
     let targetThreadId = threadId;
@@ -352,14 +433,25 @@ trainer.post("/import", async (c) => {
         if (!thread) return c.json({ error: "Thread not found" }, 404);
     } else {
         targetThreadId = crypto.randomUUID();
-        createThreadStmt.run(targetThreadId, "general", userId, "Imported Chat");
+        createThreadStmt.run(
+            targetThreadId,
+            "general",
+            userId,
+            "Imported Chat",
+        );
     }
 
     db.transaction(() => {
         deleteMessagesStmt.run(targetThreadId!);
         touchThreadStmt.run(targetThreadId!);
         for (const m of messages) {
-            insertMessageStmt.run(m.id, targetThreadId, m.role, m.content, m.createdAt);
+            insertMessageStmt.run(
+                m.id,
+                targetThreadId,
+                m.role,
+                m.content,
+                m.createdAt,
+            );
         }
     })();
 

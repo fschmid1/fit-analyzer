@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useChat } from "@tanstack/ai-react";
-import { fetchServerSentEvents } from "@tanstack/ai-client";
+import type { StreamChunk } from "@tanstack/ai";
 import {
   ArrowDown, ArrowLeft, ArrowUp, Brain, ChevronDown, ChevronRight,
   Menu, Minimize2, MoreVertical, Pencil, Plus, Send, Square, Trash2, Upload, X,
@@ -12,6 +12,14 @@ import {
   compactTrainerHistory, createThread, deleteThread, fetchThreads,
   fetchTrainerHistory, importTrainerChat, renameThread, saveTrainerHistory,
 } from "../lib/api";
+import { createTrainerStreamConnection } from "../lib/trainerStreamConnection";
+import {
+  clearActiveTrainerStream,
+  clearTrainerDraft,
+  loadActiveTrainerStream,
+  loadTrainerDraft,
+  saveTrainerDraft,
+} from "../lib/trainerStreamState";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -53,6 +61,120 @@ function toTrainerMessage(m: UIMessage): TrainerMessage {
     content: getTextContent(m),
     createdAt: (m.createdAt ?? new Date()).toISOString(),
   };
+}
+
+function stripTrailingAssistant(messages: UIMessage[]): UIMessage[] {
+  if (messages.length === 0) return messages;
+  const lastMessage = messages[messages.length - 1];
+  if (lastMessage.role !== "assistant") return messages;
+  return messages.slice(0, -1);
+}
+
+function ensureAssistantMessage(messages: UIMessage[], messageId?: string): UIMessage[] {
+  const lastMessage = messages[messages.length - 1];
+  if (lastMessage?.role === "assistant") {
+    if (messageId && lastMessage.id !== messageId) {
+      return [...messages.slice(0, -1), { ...lastMessage, id: messageId }];
+    }
+    return messages;
+  }
+
+  return [
+    ...messages,
+    {
+      id: messageId ?? crypto.randomUUID(),
+      role: "assistant",
+      parts: [],
+      createdAt: new Date(),
+    },
+  ];
+}
+
+function applyResumedChunk(messages: UIMessage[], chunk: StreamChunk): UIMessage[] {
+  if (chunk.type === "RUN_STARTED" || chunk.type === "RUN_FINISHED" || chunk.type === "RUN_ERROR") {
+    return messages;
+  }
+
+  if (chunk.type === "STEP_STARTED") {
+    return ensureAssistantMessage(messages);
+  }
+
+  if (chunk.type === "STEP_FINISHED") {
+    const nextMessages = ensureAssistantMessage(messages);
+    const assistant = nextMessages[nextMessages.length - 1];
+    if (!assistant || assistant.role !== "assistant") return nextMessages;
+
+    const existingThinking = assistant.parts.find(
+      (part): part is Extract<typeof part, { type: "thinking" }> => part.type === "thinking",
+    );
+    const nextThinking = chunk.content ?? `${existingThinking?.content ?? ""}${chunk.delta ?? ""}`;
+    const nextParts = assistant.parts.some((part) => part.type === "thinking")
+      ? assistant.parts.map((part) => (part.type === "thinking" ? { ...part, content: nextThinking } : part))
+      : [...assistant.parts, { type: "thinking" as const, content: nextThinking }];
+
+    return [...nextMessages.slice(0, -1), { ...assistant, parts: nextParts }];
+  }
+
+  if (chunk.type === "TEXT_MESSAGE_START") {
+    return ensureAssistantMessage(messages, chunk.messageId);
+  }
+
+  if (chunk.type === "TEXT_MESSAGE_CONTENT") {
+    const nextMessages = ensureAssistantMessage(messages, chunk.messageId);
+    const assistant = nextMessages[nextMessages.length - 1];
+    if (!assistant || assistant.role !== "assistant") return nextMessages;
+
+    const existingText = assistant.parts.find(
+      (part): part is Extract<typeof part, { type: "text" }> => part.type === "text",
+    );
+    const nextText = chunk.content ?? `${existingText?.content ?? ""}${chunk.delta ?? ""}`;
+    const nextParts = assistant.parts.some((part) => part.type === "text")
+      ? assistant.parts.map((part) => (part.type === "text" ? { ...part, content: nextText } : part))
+      : [...assistant.parts, { type: "text" as const, content: nextText }];
+
+    return [...nextMessages.slice(0, -1), { ...assistant, id: chunk.messageId, parts: nextParts }];
+  }
+
+  return messages;
+}
+
+async function streamResumedChat(
+  streamId: string,
+  onChunk: (chunk: StreamChunk) => void,
+  signal: AbortSignal,
+) {
+  const response = await fetch(`/api/trainer/chat/${streamId}`, {
+    method: "GET",
+    credentials: "same-origin",
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Resume failed: ${response.status} ${response.statusText}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Resume response body is not readable");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split("\n\n");
+    buffer = events.pop() ?? "";
+
+    for (const event of events) {
+      const line = event.split("\n").find((candidate) => candidate.startsWith("data: "));
+      if (!line) continue;
+      const data = line.slice(6);
+      if (data === "[DONE]") return;
+      onChunk(JSON.parse(data) as StreamChunk);
+    }
+  }
 }
 
 function formatTime(date: Date | undefined): string {
@@ -353,10 +475,6 @@ function ThreadSidebar({ threads, activeThreadId, onSelect, onCreate, onRename, 
   );
 }
 
-// ─── stable SSE connection ────────────────────────────────────────────────────
-
-const connection = fetchServerSentEvents("/api/trainer/chat");
-
 // ─── TrainerChat ──────────────────────────────────────────────────────────────
 
 interface TrainerChatProps {
@@ -371,8 +489,9 @@ interface TrainerChatProps {
 }
 
 function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBack, onOpenThreads, onImported, onCompacted }: TrainerChatProps) {
-  const { messages, sendMessage, status, isLoading, stop, error } = useChat({
-    connection,
+  const connectionRef = useRef(createTrainerStreamConnection(threadId));
+  const { messages, sendMessage, status, isLoading, stop, error, setMessages } = useChat({
+    connection: connectionRef.current,
     initialMessages,
     body: { threadId },
   });
@@ -389,6 +508,39 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
+
+  useEffect(() => {
+    const activeStream = loadActiveTrainerStream(threadId);
+    if (!activeStream) return;
+
+    const abortController = new AbortController();
+    let baseMessages = stripTrailingAssistant(initialMessages);
+    setMessages(baseMessages);
+
+    streamResumedChat(
+      activeStream.streamId,
+      (chunk) => {
+        baseMessages = applyResumedChunk(baseMessages, chunk);
+        setMessages(baseMessages);
+
+        if (chunk.type === "RUN_FINISHED" || chunk.type === "RUN_ERROR") {
+          clearActiveTrainerStream(threadId);
+          clearTrainerDraft(threadId);
+          const toSave = baseMessages
+            .filter((message) => message.role === "user" || message.role === "assistant")
+            .map(toTrainerMessage)
+            .filter((message) => message.content);
+          if (toSave.length > 0) saveTrainerHistory(threadId, toSave).catch(console.error);
+        }
+      },
+      abortController.signal,
+    ).catch((resumeError) => {
+      if (resumeError instanceof Error && resumeError.name === "AbortError") return;
+      console.error("Failed to resume trainer stream:", resumeError);
+    });
+
+    return () => abortController.abort();
+  }, [initialMessages, setMessages, threadId]);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -461,9 +613,16 @@ function TrainerChat({ threadId, activityId, initialMessages, initialInput, onBa
         .map(toTrainerMessage)
         .filter((m) => m.content);
       if (toSave.length > 0) saveTrainerHistory(threadId, toSave).catch(console.error);
+      clearTrainerDraft(threadId);
     }
     prevStatus.current = status;
   }, [status, messages, threadId]);
+
+  useEffect(() => {
+    if (status === "streaming" || status === "submitted") {
+      saveTrainerDraft(threadId, messages);
+    }
+  }, [messages, status, threadId]);
 
   const handleSend = useCallback(async () => {
     const text = inputRef.current.trim();
@@ -765,7 +924,10 @@ export function TrainerView({ initialMessage, activityId, onBack }: TrainerViewP
     }
     setInitialMessages(null);
     fetchTrainerHistory(activeThreadId)
-      .then((h) => setInitialMessages(h.messages.map(toUIMessage)))
+      .then((h) => {
+        const draft = loadTrainerDraft(activeThreadId);
+        setInitialMessages(draft ?? h.messages.map(toUIMessage));
+      })
       .catch(() => setInitialMessages([]));
   }, [activeThreadId]);
 
@@ -803,7 +965,8 @@ export function TrainerView({ initialMessage, activityId, onBack }: TrainerViewP
     setInitialMessages(null);
     fetchTrainerHistory(activeThreadId)
       .then((h) => {
-        setInitialMessages(h.messages.map(toUIMessage));
+        const draft = loadTrainerDraft(activeThreadId);
+        setInitialMessages(draft ?? h.messages.map(toUIMessage));
         setChatKey((k) => k + 1);
       })
       .catch(() => setInitialMessages([]));
