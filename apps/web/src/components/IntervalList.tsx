@@ -118,40 +118,56 @@ export function IntervalList({
 		key: string,
 		onClick: () => void,
 		trailing?: React.ReactNode,
-	) => (
-		<button
-			type="button"
-			key={key}
-			onClick={onClick}
-			className={`w-full grid grid-cols-[2.5rem_1fr_1fr_4.5rem_4.5rem_4.5rem_1.25rem] gap-2 px-3 py-2 text-xs rounded-lg transition-colors cursor-pointer ${
-				activeKey === key
-					? "bg-[#8b5cf6]/20 border border-[#8b5cf6]/40 text-[#f1f5f9]"
-					: "bg-[#1a1533]/30 border border-transparent hover:bg-[#8b5cf6]/10 hover:border-[rgba(139,92,246,0.15)] text-[#94a3b8] hover:text-[#f1f5f9]"
-			}`}
-		>
-			<span className="font-mono font-medium">{interval.index + 1}</span>
-			<span className="font-mono">
-				{formatElapsedTime(interval.startSeconds)}
-			</span>
-			<span className="font-mono">{formatElapsedTime(interval.duration)}</span>
-			<span className="text-right font-semibold text-[#8b5cf6]">
-				{interval.avgPower ?? "\u2014"}
-			</span>
-			<span className="text-right font-semibold text-[#ef4444]">
-				{interval.avgHeartRate ?? "\u2014"}
-			</span>
-			<span className="text-right font-semibold text-[#06b6d4]">
-				{interval.avgCadence ?? "\u2014"}
-			</span>
-			{trailing ?? (
-				<ChevronRight
-					className={`w-3 h-3 transition-colors ${
-						activeKey === key ? "text-[#8b5cf6]" : "text-[#94a3b8]/30"
-					}`}
-				/>
-			)}
-		</button>
-	);
+	) => {
+		const rowClassName = `w-full grid grid-cols-[2.5rem_1fr_1fr_4.5rem_4.5rem_4.5rem_1.25rem] gap-2 px-3 py-2 text-xs rounded-lg transition-colors cursor-pointer ${
+			activeKey === key
+				? "bg-[#8b5cf6]/20 border border-[#8b5cf6]/40 text-[#f1f5f9]"
+				: "bg-[#1a1533]/30 border border-transparent hover:bg-[#8b5cf6]/10 hover:border-[rgba(139,92,246,0.15)] text-[#94a3b8] hover:text-[#f1f5f9]"
+		}`;
+
+		const rowContents = (
+			<>
+				<span className="font-mono font-medium">{interval.index + 1}</span>
+				<span className="font-mono">
+					{formatElapsedTime(interval.startSeconds)}
+				</span>
+				<span className="font-mono">
+					{formatElapsedTime(interval.duration)}
+				</span>
+				<span className="text-right font-semibold text-[#8b5cf6]">
+					{interval.avgPower ?? "\u2014"}
+				</span>
+				<span className="text-right font-semibold text-[#ef4444]">
+					{interval.avgHeartRate ?? "\u2014"}
+				</span>
+				<span className="text-right font-semibold text-[#06b6d4]">
+					{interval.avgCadence ?? "\u2014"}
+				</span>
+				{trailing ? (
+					<span aria-hidden="true" />
+				) : (
+					<ChevronRight
+						className={`w-3 h-3 transition-colors ${
+							activeKey === key ? "text-[#8b5cf6]" : "text-[#94a3b8]/30"
+						}`}
+					/>
+				)}
+			</>
+		);
+
+		return (
+			<div key={key} className={trailing ? "relative" : undefined}>
+				<button type="button" onClick={onClick} className={rowClassName}>
+					{rowContents}
+				</button>
+				{trailing ? (
+					<div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+						<div className="pointer-events-auto">{trailing}</div>
+					</div>
+				) : null}
+			</div>
+		);
+	};
 
 	return (
 		<div className="px-6 pb-4">

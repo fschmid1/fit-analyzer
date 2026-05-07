@@ -2,7 +2,10 @@ import { Database } from "bun:sqlite";
 import { env } from "./env.js";
 
 const DB_PATH = env.DB_PATH;
-const DB_DIRECTORY_URL = new URL(".", Bun.pathToFileURL(DB_PATH));
+const DB_PATH_ABS = Bun.fileURLToPath(
+	new URL(DB_PATH, Bun.pathToFileURL(`${process.cwd()}/`)),
+);
+const DB_DIRECTORY_URL = new URL(".", Bun.pathToFileURL(DB_PATH_ABS));
 const DB_DIRECTORY_SENTINEL_URL = new URL(
 	".db-directory-ready",
 	DB_DIRECTORY_URL,
@@ -12,7 +15,7 @@ const DB_DIRECTORY_SENTINEL_URL = new URL(
 await Bun.write(DB_DIRECTORY_SENTINEL_URL, "");
 await Bun.file(DB_DIRECTORY_SENTINEL_URL).delete();
 
-const db = new Database(DB_PATH);
+const db = new Database(DB_PATH_ABS);
 
 // Enable WAL mode for better concurrent read performance
 db.exec("PRAGMA journal_mode = WAL");
@@ -68,8 +71,6 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_trainer_chats_user_activity
-    ON trainer_chats(user_id, activity_id);
 
   CREATE TABLE IF NOT EXISTS trainer_messages (
     id TEXT PRIMARY KEY,

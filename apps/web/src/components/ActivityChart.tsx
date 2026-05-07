@@ -45,7 +45,7 @@ interface ChartDataPoint {
 }
 
 interface ChartPointerEvent {
-	activeLabel?: number;
+	activeLabel?: number | string;
 }
 
 interface TooltipPayloadEntry {
@@ -56,7 +56,7 @@ interface TooltipPayloadEntry {
 
 interface CustomTooltipProps {
 	active?: boolean;
-	label?: number;
+	label?: number | string;
 	payload?: TooltipPayloadEntry[];
 }
 
@@ -183,15 +183,17 @@ const CustomTooltip = memo(function CustomTooltip({
 	label,
 }: CustomTooltipProps) {
 	if (!active || !payload || payload.length === 0) return null;
+	const formattedLabel =
+		typeof label === "number" ? formatElapsedTime(label) : formatElapsedTime(0);
 
 	return (
 		<div className="bg-[#1a1533]/95 backdrop-blur-xl border border-[rgba(139,92,246,0.2)] rounded-xl p-3 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
 			<p className="text-xs text-[#94a3b8] mb-2 font-medium">
-				{formatElapsedTime(label)}
+				{formattedLabel}
 			</p>
 			{payload.map(
 				(entry) =>
-					entry.value !== null && (
+					entry.value != null && (
 						<div
 							key={entry.dataKey ?? "unknown"}
 							className="flex items-center gap-2 text-sm"
@@ -322,7 +324,7 @@ export const ActivityChart = memo(function ActivityChart({
 	);
 
 	const handleMouseDown = useCallback((e: ChartPointerEvent) => {
-		if (e && e.activeLabel !== undefined) {
+		if (e && typeof e.activeLabel === "number") {
 			isDragging.current = true;
 			setDragStart(e.activeLabel);
 			setDragEnd(e.activeLabel);
@@ -332,7 +334,7 @@ export const ActivityChart = memo(function ActivityChart({
 	}, []);
 
 	const handleMouseMove = useCallback((e: ChartPointerEvent) => {
-		if (isDragging.current && e && e.activeLabel !== undefined) {
+		if (isDragging.current && e && typeof e.activeLabel === "number") {
 			setDragEnd(e.activeLabel);
 		}
 	}, []);

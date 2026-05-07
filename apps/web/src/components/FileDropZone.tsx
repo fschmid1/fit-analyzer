@@ -41,12 +41,13 @@ export function FileDropZone({ onFileParsed }: FileDropZoneProps) {
 	const handleDrop = useCallback(
 		(e: React.DragEvent) => {
 			e.preventDefault();
+			if (isParsing) return;
 			setIsDragging(false);
 
 			const file = e.dataTransfer.files[0];
 			if (file) handleFile(file);
 		},
-		[handleFile],
+		[handleFile, isParsing],
 	);
 
 	const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -59,9 +60,13 @@ export function FileDropZone({ onFileParsed }: FileDropZoneProps) {
 		setIsDragging(false);
 	}, []);
 
-	const handleClick = useCallback(() => inputRef.current?.click(), []);
+	const handleClick = useCallback(() => {
+		if (isParsing) return;
+		inputRef.current?.click();
+	}, [isParsing]);
 
 	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+		if (isParsing) return;
 		const file = e.target.files?.[0];
 		if (file) handleFile(file);
 	};
@@ -77,6 +82,7 @@ export function FileDropZone({ onFileParsed }: FileDropZoneProps) {
 			/>
 			<button
 				type="button"
+				disabled={isParsing}
 				onClick={handleClick}
 				onDrop={handleDrop}
 				onDragOver={handleDragOver}

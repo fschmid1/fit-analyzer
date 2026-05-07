@@ -526,17 +526,6 @@ function ThreadSidebar({
 				{threads.map((thread) => (
 					<div
 						key={thread.id}
-						onClick={() => {
-							onSelect(thread.id);
-							onClose();
-						}}
-						onKeyDown={(e) => {
-							if (e.key === "Enter" || e.key === " ") {
-								e.preventDefault();
-								onSelect(thread.id);
-								onClose();
-							}
-						}}
 						onContextMenu={(e) => handleContextMenu(thread, e)}
 						className={`group flex items-center gap-1.5 px-2 py-2 mx-1 my-0.5 rounded-lg cursor-pointer transition-colors ${
 							thread.id === activeThreadId
@@ -557,9 +546,17 @@ function ThreadSidebar({
 								className="flex-1 min-w-0 bg-[#1a1533] border border-[#8b5cf6]/40 rounded px-1.5 py-0.5 text-xs text-[#e2d9f3] outline-none"
 							/>
 						) : (
-							<span className="flex-1 min-w-0 text-xs truncate">
-								{thread.name}
-							</span>
+							<button
+								type="button"
+								onClick={() => {
+									onSelect(thread.id);
+									onClose();
+								}}
+								className="flex flex-1 min-w-0 items-center text-left"
+								aria-label={`Open thread ${thread.name}`}
+							>
+								<span className="min-w-0 text-xs truncate">{thread.name}</span>
+							</button>
 						)}
 
 						{thread.messageCount > 0 && editingId !== thread.id && (
@@ -785,12 +782,14 @@ function TrainerChat({
 	}, [adjustHeight]);
 
 	const isFirstRender = useRef(true);
+	const lastMessageId = messages[messages.length - 1]?.id;
 	useEffect(() => {
+		if (!isFirstRender.current && lastMessageId === undefined) return;
 		const behavior = isFirstRender.current ? "instant" : "smooth";
 		isFirstRender.current = false;
 		bottomRef.current?.scrollIntoView({ behavior });
 		setTimeout(updateScrollButtons, 120);
-	});
+	}, [lastMessageId, updateScrollButtons]);
 
 	const prevStatus = useRef(status);
 	useEffect(() => {
@@ -835,7 +834,6 @@ function TrainerChat({
 	);
 
 	const isGeneralChat = activityId === "general";
-	const lastMsgId = messages[messages.length - 1]?.id;
 
 	return (
 		<div className="flex-1 flex flex-col min-h-0 min-w-0">
@@ -950,7 +948,7 @@ function TrainerChat({
 
 					{messages.map((msg) => {
 						const isUser = msg.role === "user";
-						const isLastMsg = msg.id === lastMsgId;
+						const isLastMsg = msg.id === lastMessageId;
 						const isCurrentlyStreaming = isLastMsg && status === "streaming";
 
 						if (isUser) {
