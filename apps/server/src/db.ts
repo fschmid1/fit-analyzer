@@ -1,12 +1,16 @@
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
 import { env } from "./env.js";
 
 const DB_PATH = env.DB_PATH;
+const DB_DIRECTORY_URL = new URL(".", Bun.pathToFileURL(DB_PATH));
+const DB_DIRECTORY_SENTINEL_URL = new URL(
+	".db-directory-ready",
+	DB_DIRECTORY_URL,
+);
 
-// Ensure the data directory exists
-mkdirSync(dirname(DB_PATH), { recursive: true });
+// Ensure the data directory exists using Bun's file API.
+await Bun.write(DB_DIRECTORY_SENTINEL_URL, "");
+await Bun.file(DB_DIRECTORY_SENTINEL_URL).delete();
 
 const db = new Database(DB_PATH);
 
