@@ -33,17 +33,18 @@ export function computeAverages(records: ActivityRecord[]): SelectionStats {
 	return {
 		avgPower: validPower.length
 			? Math.round(
-					validPower.reduce((s, r) => s + r.power!, 0) / validPower.length,
+					validPower.reduce((s, r) => s + (r.power ?? 0), 0) /
+						validPower.length,
 				)
 			: null,
 		avgHeartRate: validHR.length
 			? Math.round(
-					validHR.reduce((s, r) => s + r.heartRate!, 0) / validHR.length,
+					validHR.reduce((s, r) => s + (r.heartRate ?? 0), 0) / validHR.length,
 				)
 			: null,
 		avgCadence: validCadence.length
 			? Math.round(
-					validCadence.reduce((s, r) => s + r.cadence!, 0) /
+					validCadence.reduce((s, r) => s + (r.cadence ?? 0), 0) /
 						validCadence.length,
 				)
 			: null,
@@ -84,8 +85,9 @@ export function computePeakPower(
 
 	// Initialize first window
 	for (let i = 0; i < windowSeconds && i < powerBySecond.length; i++) {
-		if (powerBySecond[i] !== null) {
-			windowSum += powerBySecond[i]!;
+		const power = powerBySecond[i];
+		if (power !== null) {
+			windowSum += power;
 			windowCount++;
 		}
 	}

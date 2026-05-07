@@ -174,7 +174,12 @@ export function StravaConnect({ onSynced }: StravaConnectProps) {
 				<div className="flex items-center gap-3">
 					{/* Strava logo-ish icon */}
 					<div className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#fc4c02]/10 shrink-0">
-						<svg viewBox="0 0 24 24" className="w-5 h-5 fill-[#fc4c02]">
+						<svg
+							viewBox="0 0 24 24"
+							className="w-5 h-5 fill-[#fc4c02]"
+							aria-hidden="true"
+						>
+							<title>Strava</title>
 							<path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
 						</svg>
 					</div>
@@ -195,114 +200,115 @@ export function StravaConnect({ onSynced }: StravaConnectProps) {
 				</div>
 
 				{/* Actions */}
-				{!loading && (
-					<>
-						{!status?.connected ? (
-							<button
-								onClick={handleConnect}
-								className="flex items-center justify-center gap-2 w-full px-4 py-2.5 text-sm font-medium text-white bg-[#fc4c02] hover:bg-[#e04400] rounded-xl transition-colors duration-200 cursor-pointer"
-							>
-								<Link2 className="w-4 h-4" />
-								Connect with Strava
-							</button>
-						) : (
-							<div className="flex flex-col gap-3">
-								{/* Sync controls */}
-								<div className="flex items-center gap-2">
-									<select
-										value={daysBack}
-										onChange={(e) =>
-											setDaysBack(Number(e.target.value) as DaysBack)
-										}
-										className="px-3 py-2 text-sm bg-[#0f0b1a] border border-[rgba(139,92,246,0.2)] text-[#f1f5f9] rounded-xl focus:outline-none focus:border-[rgba(139,92,246,0.5)] cursor-pointer"
-										disabled={syncing}
-									>
-										<option value={7}>Last 7 days</option>
-										<option value={30}>Last 30 days</option>
-										<option value={90}>Last 90 days</option>
-									</select>
+				{!loading &&
+					(!status?.connected ? (
+						<button
+							type="button"
+							onClick={handleConnect}
+							className="flex items-center justify-center gap-2 w-full px-4 py-2.5 text-sm font-medium text-white bg-[#fc4c02] hover:bg-[#e04400] rounded-xl transition-colors duration-200 cursor-pointer"
+						>
+							<Link2 className="w-4 h-4" />
+							Connect with Strava
+						</button>
+					) : (
+						<div className="flex flex-col gap-3">
+							{/* Sync controls */}
+							<div className="flex items-center gap-2">
+								<select
+									value={daysBack}
+									onChange={(e) =>
+										setDaysBack(Number(e.target.value) as DaysBack)
+									}
+									className="px-3 py-2 text-sm bg-[#0f0b1a] border border-[rgba(139,92,246,0.2)] text-[#f1f5f9] rounded-xl focus:outline-none focus:border-[rgba(139,92,246,0.5)] cursor-pointer"
+									disabled={syncing}
+								>
+									<option value={7}>Last 7 days</option>
+									<option value={30}>Last 30 days</option>
+									<option value={90}>Last 90 days</option>
+								</select>
 
-									<button
-										onClick={handleSync}
-										disabled={syncing}
-										className="flex items-center gap-2 flex-1 justify-center px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-									>
-										{syncing ? (
-											<>
-												<Loader2 className="w-4 h-4 animate-spin" />
-												Syncing…
-											</>
-										) : (
-											<>
-												<RefreshCw className="w-4 h-4" />
-												Sync Rides
-											</>
-										)}
-									</button>
-								</div>
+								<button
+									type="button"
+									onClick={handleSync}
+									disabled={syncing}
+									className="flex items-center gap-2 flex-1 justify-center px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									{syncing ? (
+										<>
+											<Loader2 className="w-4 h-4 animate-spin" />
+											Syncing…
+										</>
+									) : (
+										<>
+											<RefreshCw className="w-4 h-4" />
+											Sync Rides
+										</>
+									)}
+								</button>
+							</div>
 
-								<p className="text-xs text-[#94a3b8]">
-									Syncs Ride, VirtualRide, and EBikeRide activities.
-									Already-imported rides are skipped automatically.
-								</p>
+							<p className="text-xs text-[#94a3b8]">
+								Syncs Ride, VirtualRide, and EBikeRide activities.
+								Already-imported rides are skipped automatically.
+							</p>
 
-								{/* Webhook auto-sync */}
-								<div className="pt-2 border-t border-[rgba(139,92,246,0.1)] flex flex-col gap-2">
-									<div className="flex items-center justify-between">
-										<div>
-											<p className="text-xs font-medium text-[#f1f5f9]">
-												Auto-sync new rides
-											</p>
-											<p className="text-xs text-[#94a3b8] mt-0.5">
-												{webhookRegistered
-													? "Active — new rides are imported automatically."
-													: "Register a webhook to import rides the moment you save them on Strava."}
-											</p>
-										</div>
-										<button
-											onClick={
-												webhookRegistered
-													? handleUnregisterWebhook
-													: handleRegisterWebhook
-											}
-											disabled={webhookLoading}
-											className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 cursor-pointer disabled:opacity-50 shrink-0 ml-3 ${
-												webhookRegistered
-													? "text-[#94a3b8] hover:text-red-400 bg-transparent hover:bg-red-500/10"
-													: "text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
-											}`}
-										>
-											{webhookLoading ? (
-												<Loader2 className="w-3.5 h-3.5 animate-spin" />
-											) : webhookRegistered ? (
-												<WebhookOff className="w-3.5 h-3.5" />
-											) : (
-												<Webhook className="w-3.5 h-3.5" />
-											)}
-											{webhookRegistered ? "Disable" : "Enable"}
-										</button>
+							{/* Webhook auto-sync */}
+							<div className="pt-2 border-t border-[rgba(139,92,246,0.1)] flex flex-col gap-2">
+								<div className="flex items-center justify-between">
+									<div>
+										<p className="text-xs font-medium text-[#f1f5f9]">
+											Auto-sync new rides
+										</p>
+										<p className="text-xs text-[#94a3b8] mt-0.5">
+											{webhookRegistered
+												? "Active — new rides are imported automatically."
+												: "Register a webhook to import rides the moment you save them on Strava."}
+										</p>
 									</div>
-								</div>
-
-								{/* Disconnect */}
-								<div className="pt-1 border-t border-[rgba(139,92,246,0.1)]">
 									<button
-										onClick={handleDisconnect}
-										disabled={disconnecting}
-										className="flex items-center gap-1.5 text-xs text-[#94a3b8] hover:text-red-400 transition-colors duration-200 cursor-pointer disabled:opacity-50"
+										type="button"
+										onClick={
+											webhookRegistered
+												? handleUnregisterWebhook
+												: handleRegisterWebhook
+										}
+										disabled={webhookLoading}
+										className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 cursor-pointer disabled:opacity-50 shrink-0 ml-3 ${
+											webhookRegistered
+												? "text-[#94a3b8] hover:text-red-400 bg-transparent hover:bg-red-500/10"
+												: "text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
+										}`}
 									>
-										{disconnecting ? (
-											<Loader2 className="w-3 h-3 animate-spin" />
+										{webhookLoading ? (
+											<Loader2 className="w-3.5 h-3.5 animate-spin" />
+										) : webhookRegistered ? (
+											<WebhookOff className="w-3.5 h-3.5" />
 										) : (
-											<Link2Off className="w-3 h-3" />
+											<Webhook className="w-3.5 h-3.5" />
 										)}
-										Disconnect Strava
+										{webhookRegistered ? "Disable" : "Enable"}
 									</button>
 								</div>
 							</div>
-						)}
-					</>
-				)}
+
+							{/* Disconnect */}
+							<div className="pt-1 border-t border-[rgba(139,92,246,0.1)]">
+								<button
+									type="button"
+									onClick={handleDisconnect}
+									disabled={disconnecting}
+									className="flex items-center gap-1.5 text-xs text-[#94a3b8] hover:text-red-400 transition-colors duration-200 cursor-pointer disabled:opacity-50"
+								>
+									{disconnecting ? (
+										<Loader2 className="w-3 h-3 animate-spin" />
+									) : (
+										<Link2Off className="w-3 h-3" />
+									)}
+									Disconnect Strava
+								</button>
+							</div>
+						</div>
+					))}
 			</div>
 		</div>
 	);

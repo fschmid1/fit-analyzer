@@ -16,9 +16,9 @@
  */
 
 import { Database } from "bun:sqlite";
-import { readFileSync } from "fs";
-import { randomUUID } from "crypto";
-import { resolve } from "path";
+import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import type { TrainerMessage } from "@fit-analyzer/shared";
 
 // ── CLI args ─────────────────────────────────────────────────────────────────
@@ -159,7 +159,7 @@ db.transaction(() => {
      ON CONFLICT(user_id, activity_id) DO UPDATE SET updated_at = datetime('now')`,
 	).run(chatId, CHAT_NAME, USER_ID);
 
-	db.prepare(`DELETE FROM trainer_messages WHERE chat_id = ?`).run(chatId);
+	db.prepare("DELETE FROM trainer_messages WHERE chat_id = ?").run(chatId);
 
 	const insert = db.prepare(
 		`INSERT INTO trainer_messages (id, chat_id, role, content, created_at)

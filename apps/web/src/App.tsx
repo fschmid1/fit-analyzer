@@ -105,7 +105,7 @@ function App() {
 		}
 	}, [urlActivityId, navigate]);
 
-	const loadActivities = async () => {
+	const loadActivities = useCallback(async () => {
 		setHistoryLoading(true);
 		try {
 			const list = await fetchActivities();
@@ -115,7 +115,7 @@ function App() {
 		} finally {
 			setHistoryLoading(false);
 		}
-	};
+	}, []);
 
 	// Persist custom intervals to localStorage
 	useEffect(() => {
@@ -213,7 +213,7 @@ function App() {
 		resetAnalysisState();
 		navigate("/");
 		loadActivities();
-	}, [resetAnalysisState, navigate]);
+	}, [resetAnalysisState, navigate, loadActivities]);
 
 	const handleUploadNew = useCallback(() => {
 		navigate("/upload");
@@ -281,6 +281,10 @@ function App() {
 		() => [...lapIntervalObjects, ...customIntervalObjects],
 		[lapIntervalObjects, customIntervalObjects],
 	);
+	const chartIntervalRanges = useMemo(
+		() => [...intervalRanges, ...customIntervals],
+		[intervalRanges, customIntervals],
+	);
 
 	useEffect(() => {
 		if (!activityId) return;
@@ -341,7 +345,7 @@ function App() {
 				records={activity.records}
 				onSelectionChange={handleSelectionChange}
 				externalZoom={chartZoom}
-				intervalRanges={[...intervalRanges, ...customIntervals]}
+				intervalRanges={chartIntervalRanges}
 				onAddInterval={handleAddInterval}
 			/>
 

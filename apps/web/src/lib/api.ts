@@ -230,9 +230,7 @@ export async function saveTrainerHistory(
 	});
 }
 
-export async function compactTrainerHistory(
-	threadId: string,
-): Promise<{
+export async function compactTrainerHistory(threadId: string): Promise<{
 	thread: TrainerThread;
 	messages: TrainerMessage[];
 	compacted: boolean;

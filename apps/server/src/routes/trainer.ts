@@ -96,11 +96,11 @@ const renameThreadStmt = db.prepare(
 );
 
 const deleteThreadStmt = db.prepare(
-	`DELETE FROM trainer_chats WHERE id = ? AND user_id = ?`,
+	"DELETE FROM trainer_chats WHERE id = ? AND user_id = ?",
 );
 
 const deleteMessagesStmt = db.prepare(
-	`DELETE FROM trainer_messages WHERE chat_id = ?`,
+	"DELETE FROM trainer_messages WHERE chat_id = ?",
 );
 
 const touchThreadStmt = db.prepare(
@@ -302,20 +302,22 @@ trainer.post("/compact/:threadId", async (c) => {
 		.map((m) => `**${m.role === "user" ? "Athlete" : "Coach"}:** ${m.content}`)
 		.join("\n\n---\n\n");
 
-	const compactionPrompt =
-		"You are summarizing an older portion of a sports coaching conversation. " +
-		"Compress the following exchange into a concise but complete context summary using markdown. " +
-		"Preserve ALL important details:\n\n" +
-		"- Training data (power, HR, cadence, intervals, zones)\n" +
-		"- Coaching advice and recommendations given\n" +
-		"- Athlete goals, profile, and background\n" +
-		"- Issues discussed and solutions provided\n" +
-		"- Training plans, workouts, or progressions mentioned\n" +
-		"- Key insights and patterns identified\n\n" +
-		"Use markdown headers (`##`, `###`), bullet points, and **bold text** to highlight the most important information. " +
-		"Be thorough — this summary replaces the original messages.\n\n" +
-		"Messages to summarize:\n\n---\n\n" +
-		messagesText;
+	const compactionPrompt = `You are summarizing an older portion of a sports coaching conversation. Compress the following exchange into a concise but complete context summary using markdown. Preserve ALL important details:
+
+- Training data (power, HR, cadence, intervals, zones)
+- Coaching advice and recommendations given
+- Athlete goals, profile, and background
+- Issues discussed and solutions provided
+- Training plans, workouts, or progressions mentioned
+- Key insights and patterns identified
+
+Use markdown headers (\`##\`, \`###\`), bullet points, and **bold text** to highlight the most important information. Be thorough - this summary replaces the original messages.
+
+Messages to summarize:
+
+---
+
+${messagesText}`;
 
 	const response = await fetch(OPENROUTER_CHAT_COMPLETIONS_URL, {
 		method: "POST",
@@ -350,10 +352,11 @@ trainer.post("/compact/:threadId", async (c) => {
 	const summaryMessage: TrainerMessage = {
 		id: crypto.randomUUID(),
 		role: "assistant",
-		content:
-			"## 📋 Context Summary\n\n" +
-			"*The following is a compressed summary of the earlier conversation to preserve context:*\n\n" +
-			summary,
+		content: `## Context Summary
+
+*The following is a compressed summary of the earlier conversation to preserve context:*
+
+${summary}`,
 		createdAt: new Date(firstKeptAt - 1).toISOString(),
 	};
 
@@ -394,8 +397,8 @@ trainer.post("/compact/:threadId", async (c) => {
 trainer.post("/import", async (c) => {
 	const userId = getUserId(c);
 	const body = await c.req.parseBody();
-	const file = body["file"];
-	const threadId = body["threadId"] as string | undefined;
+	const file = body.file;
+	const threadId = body.threadId as string | undefined;
 
 	if (!file || typeof file === "string")
 		return c.json({ error: "No file uploaded" }, 400);
@@ -423,9 +426,13 @@ trainer.post("/import", async (c) => {
 		createThreadStmt.run(targetThreadId, "general", userId, "Imported Chat");
 	}
 
+	if (!targetThreadId) {
+		return c.json({ error: "Thread not found" }, 404);
+	}
+
 	db.transaction(() => {
-		deleteMessagesStmt.run(targetThreadId!);
-		touchThreadStmt.run(targetThreadId!);
+		deleteMessagesStmt.run(targetThreadId);
+		touchThreadStmt.run(targetThreadId);
 		for (const m of messages) {
 			insertMessageStmt.run(
 				m.id,
