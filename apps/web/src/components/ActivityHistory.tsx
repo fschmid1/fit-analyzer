@@ -20,7 +20,7 @@ function formatDuration(totalSeconds: number): string {
 }
 
 function formatDate(dateStr: string): string {
-	const date = new Date(dateStr + "T00:00:00");
+	const date = new Date(`${dateStr}T00:00:00`);
 	return date.toLocaleDateString("en-US", {
 		weekday: "short",
 		month: "short",
@@ -64,6 +64,7 @@ export function ActivityHistory({
 					</p>
 				</div>
 				<button
+					type="button"
 					onClick={onUploadNew}
 					className="px-6 py-3 text-sm font-medium text-white bg-[#8b5cf6] hover:bg-[#7c3aed] rounded-xl transition-colors duration-200 cursor-pointer"
 				>
@@ -86,6 +87,7 @@ export function ActivityHistory({
 					</p>
 				</div>
 				<button
+					type="button"
 					onClick={onUploadNew}
 					className="px-4 py-2 text-sm font-medium text-white bg-[#8b5cf6] hover:bg-[#7c3aed] rounded-xl transition-colors duration-200 cursor-pointer"
 				>
@@ -97,79 +99,72 @@ export function ActivityHistory({
 				{activities.map((activity) => (
 					<div
 						key={activity.id}
-						onClick={() => onSelect(activity.id)}
-						className="group flex items-center gap-4 p-4 bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-xl transition-all duration-200 cursor-pointer text-left w-full"
-						role="button"
-						tabIndex={0}
-						onKeyDown={(e) => {
-							if (e.key === "Enter" || e.key === " ") {
-								e.preventDefault();
-								onSelect(activity.id);
-							}
-						}}
+						className="group flex items-center gap-3 rounded-xl border border-[rgba(139,92,246,0.1)] bg-[#1a1533]/70 transition-all duration-200 hover:border-[rgba(139,92,246,0.25)] hover:bg-[#241e3d]"
 					>
-						{/* Date */}
-						<div className="flex-1 min-w-0">
-							<div className="flex items-center gap-2">
-								<p className="text-sm font-semibold text-[#f1f5f9] truncate">
-									{formatDate(activity.summary.date)}
-								</p>
-								{activity.stravaActivityId && (
-									<span title="Imported from Strava" className="shrink-0">
-										<svg
-											viewBox="0 0 24 24"
-											className="w-3.5 h-3.5 fill-[#fc4c02]"
-										>
-											<path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
-										</svg>
+						<button
+							type="button"
+							onClick={() => onSelect(activity.id)}
+							className="flex flex-1 items-center gap-4 p-4 text-left cursor-pointer"
+						>
+							<div className="flex-1 min-w-0">
+								<div className="flex items-center gap-2">
+									<p className="text-sm font-semibold text-[#f1f5f9] truncate">
+										{formatDate(activity.summary.date)}
+									</p>
+									{activity.stravaActivityId && (
+										<span title="Imported from Strava" className="shrink-0">
+											<svg
+												viewBox="0 0 24 24"
+												className="w-3.5 h-3.5 fill-[#fc4c02]"
+												aria-hidden="true"
+											>
+												<title>Imported from Strava</title>
+												<path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
+											</svg>
+										</span>
+									)}
+								</div>
+								<div className="flex items-center gap-4 mt-1.5">
+									<span className="flex items-center gap-1 text-xs text-[#94a3b8]">
+										<Clock className="w-3 h-3" />
+										{formatDuration(activity.summary.totalTimerTime)}
 									</span>
-								)}
+
+									{activity.summary.totalDistanceKm !== null && (
+										<span className="flex items-center gap-1 text-xs text-[#22c55e]">
+											<Route className="w-3 h-3" />
+											{activity.summary.totalDistanceKm} km
+										</span>
+									)}
+
+									{activity.summary.avgPower !== null && (
+										<span className="flex items-center gap-1 text-xs text-[#8b5cf6]">
+											<Zap className="w-3 h-3" />
+											{activity.summary.avgPower}W avg
+										</span>
+									)}
+
+									{activity.summary.maxPower !== null && (
+										<span className="text-xs text-[#8b5cf6]/70">
+											{activity.summary.maxPower}W max
+										</span>
+									)}
+
+									{activity.summary.avgHeartRate !== null && (
+										<span className="flex items-center gap-1 text-xs text-[#ef4444]">
+											<Heart className="w-3 h-3" />
+											{activity.summary.avgHeartRate} bpm
+										</span>
+									)}
+								</div>
 							</div>
-							<div className="flex items-center gap-4 mt-1.5">
-								{/* Duration */}
-								<span className="flex items-center gap-1 text-xs text-[#94a3b8]">
-									<Clock className="w-3 h-3" />
-									{formatDuration(activity.summary.totalTimerTime)}
-								</span>
+						</button>
 
-								{activity.summary.totalDistanceKm !== null && (
-									<span className="flex items-center gap-1 text-xs text-[#22c55e]">
-										<Route className="w-3 h-3" />
-										{activity.summary.totalDistanceKm} km
-									</span>
-								)}
-
-								{/* Avg Power */}
-								{activity.summary.avgPower !== null && (
-									<span className="flex items-center gap-1 text-xs text-[#8b5cf6]">
-										<Zap className="w-3 h-3" />
-										{activity.summary.avgPower}W avg
-									</span>
-								)}
-
-								{/* Max Power */}
-								{activity.summary.maxPower !== null && (
-									<span className="text-xs text-[#8b5cf6]/70">
-										{activity.summary.maxPower}W max
-									</span>
-								)}
-
-								{/* Avg HR */}
-								{activity.summary.avgHeartRate !== null && (
-									<span className="flex items-center gap-1 text-xs text-[#ef4444]">
-										<Heart className="w-3 h-3" />
-										{activity.summary.avgHeartRate} bpm
-									</span>
-								)}
-							</div>
-						</div>
-
-						{/* Delete button */}
 						<button
 							type="button"
 							onClick={(e) => handleDelete(e, activity.id)}
 							aria-label={`Delete activity from ${formatDate(activity.summary.date)}`}
-							className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 shrink-0 p-2 text-[#94a3b8] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all duration-200"
+							className="mr-3 shrink-0 rounded-lg p-2 text-[#94a3b8] opacity-100 transition-all duration-200 hover:bg-red-500/10 hover:text-red-400 sm:opacity-0 sm:group-hover:opacity-100"
 						>
 							{deletingId === activity.id ? (
 								<Loader2 className="w-4 h-4 animate-spin" />

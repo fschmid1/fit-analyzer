@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "fs";
-import { dirname } from "path";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { env } from "./env.js";
 
 const DB_PATH = env.DB_PATH;
@@ -49,10 +49,10 @@ for (const migration of migrations) {
 
 // Create index for user_id after migrations (idempotent)
 db.exec(
-	`CREATE INDEX IF NOT EXISTS idx_activities_user_id ON activities(user_id)`,
+	"CREATE INDEX IF NOT EXISTS idx_activities_user_id ON activities(user_id)",
 );
 db.exec(
-	`CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date)`,
+	"CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date)",
 );
 
 // Trainer chat history tables
@@ -92,7 +92,7 @@ try {
 
 	if (legacyChats.length > 0) {
 		const countStmt = db.prepare(
-			`SELECT COUNT(*) as c FROM trainer_messages WHERE chat_id = ?`,
+			"SELECT COUNT(*) as c FROM trainer_messages WHERE chat_id = ?",
 		);
 		const insertStmt = db.prepare(
 			`INSERT OR IGNORE INTO trainer_messages (id, chat_id, role, content, created_at)
@@ -126,12 +126,12 @@ try {
 
 // Migration: allow multiple threads per activity (drop unique index, re-add as non-unique)
 try {
-	db.exec(`DROP INDEX IF EXISTS idx_trainer_chats_user_activity`);
+	db.exec("DROP INDEX IF EXISTS idx_trainer_chats_user_activity");
 } catch {
 	/* ignore */
 }
 db.exec(
-	`CREATE INDEX IF NOT EXISTS idx_trainer_chats_user_activity ON trainer_chats(user_id, activity_id)`,
+	"CREATE INDEX IF NOT EXISTS idx_trainer_chats_user_activity ON trainer_chats(user_id, activity_id)",
 );
 
 // Migration: add name column to existing trainer_chats rows
@@ -171,7 +171,7 @@ db.exec(`
 
 // Migration: add strava_activity_id to activities for duplicate prevention
 try {
-	db.exec(`ALTER TABLE activities ADD COLUMN strava_activity_id TEXT`);
+	db.exec("ALTER TABLE activities ADD COLUMN strava_activity_id TEXT");
 } catch {
 	/* column already exists */
 }

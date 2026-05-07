@@ -59,7 +59,7 @@ export function FileDropZone({ onFileParsed }: FileDropZoneProps) {
 		setIsDragging(false);
 	}, []);
 
-	const handleClick = () => inputRef.current?.click();
+	const handleClick = useCallback(() => inputRef.current?.click(), []);
 
 	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const file = e.target.files?.[0];
@@ -68,7 +68,15 @@ export function FileDropZone({ onFileParsed }: FileDropZoneProps) {
 
 	return (
 		<div className="flex-1 flex items-center justify-center p-8">
-			<div
+			<input
+				ref={inputRef}
+				type="file"
+				accept=".fit"
+				onChange={handleInputChange}
+				className="hidden"
+			/>
+			<button
+				type="button"
 				onClick={handleClick}
 				onDrop={handleDrop}
 				onDragOver={handleDragOver}
@@ -84,14 +92,6 @@ export function FileDropZone({ onFileParsed }: FileDropZoneProps) {
 					}
         `}
 			>
-				<input
-					ref={inputRef}
-					type="file"
-					accept=".fit"
-					onChange={handleInputChange}
-					className="hidden"
-				/>
-
 				{isParsing ? (
 					<>
 						<Loader2 className="w-16 h-16 text-[#8b5cf6] animate-spin" />
@@ -127,7 +127,7 @@ export function FileDropZone({ onFileParsed }: FileDropZoneProps) {
 						<p className="text-sm text-red-400">{error}</p>
 					</div>
 				)}
-			</div>
+			</button>
 		</div>
 	);
 }

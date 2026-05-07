@@ -87,6 +87,7 @@ export function Header({
 				{/* Back to History button — shown on all pages except history */}
 				{showBack && (
 					<button
+						type="button"
 						onClick={onBackToHistory}
 						className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-all duration-200 cursor-pointer"
 						title="History"
@@ -99,6 +100,7 @@ export function Header({
 				{/* Upload button — shown in analysis view */}
 				{showUpload && (
 					<button
+						type="button"
 						onClick={onUploadNew}
 						className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-all duration-200 cursor-pointer"
 						title="Load New File"
@@ -111,6 +113,7 @@ export function Header({
 				{/* Trainer button — shown on all pages except the trainer itself */}
 				{showTrainer && (
 					<button
+						type="button"
 						onClick={onOpenTrainer}
 						className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#c4b5fd] hover:text-[#f1f5f9] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-lg transition-all duration-200 cursor-pointer"
 						title="Trainer"
@@ -123,6 +126,7 @@ export function Header({
 				{/* Settings button */}
 				{showSettings && (
 					<button
+						type="button"
 						onClick={() => navigate("/settings")}
 						className="flex items-center justify-center w-9 h-9 text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-all duration-200 cursor-pointer"
 						title="Settings"

@@ -32,8 +32,8 @@ export function IntervalList({
 	const [activeKey, setActiveKey] = useState<string | null>(null);
 
 	const intervalSeconds = useMemo(() => {
-		const mins = parseFloat(intervalMinutes);
-		if (isNaN(mins) || mins <= 0) return 0;
+		const mins = Number.parseFloat(intervalMinutes);
+		if (Number.isNaN(mins) || mins <= 0) return 0;
 		return Math.round(mins * 60);
 	}, [intervalMinutes]);
 
@@ -120,6 +120,7 @@ export function IntervalList({
 		trailing?: React.ReactNode,
 	) => (
 		<button
+			type="button"
 			key={key}
 			onClick={onClick}
 			className={`w-full grid grid-cols-[2.5rem_1fr_1fr_4.5rem_4.5rem_4.5rem_1.25rem] gap-2 px-3 py-2 text-xs rounded-lg transition-colors cursor-pointer ${
@@ -235,6 +236,7 @@ export function IntervalList({
 									`custom-${interval.index}`,
 									() => handleCustomClick(interval),
 									<button
+										type="button"
 										onClick={(e) => {
 											e.stopPropagation();
 											onRemoveCustomInterval(interval.index);

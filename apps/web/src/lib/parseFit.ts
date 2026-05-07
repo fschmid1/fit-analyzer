@@ -7,6 +7,14 @@ import type {
 } from "@fit-analyzer/shared";
 import { computePeakPower } from "./stats";
 
+type FitMessage = Record<string, unknown>;
+
+function asFitMessages(value: unknown): FitMessage[] {
+	return Array.isArray(value)
+		? value.filter((item): item is FitMessage => !!item)
+		: [];
+}
+
 export function parseFit(arrayBuffer: ArrayBuffer): ParsedActivity {
 	const stream = Stream.fromArrayBuffer(arrayBuffer);
 	const decoder = new Decoder(stream);
@@ -31,18 +39,15 @@ export function parseFit(arrayBuffer: ArrayBuffer): ParsedActivity {
 		console.warn("FIT decode warnings:", errors);
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const recordMesgs: any[] = messages.recordMesgs ?? [];
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const sessionMesgs: any[] = messages.sessionMesgs ?? [];
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const lapMesgs: any[] = messages.lapMesgs ?? [];
+	const recordMesgs = asFitMessages(messages.recordMesgs);
+	const sessionMesgs = asFitMessages(messages.sessionMesgs);
+	const lapMesgs = asFitMessages(messages.lapMesgs);
 
 	if (recordMesgs.length === 0) {
 		throw new Error("FIT file contains no record data");
 	}
 
-	const startTime = recordMesgs[0].timestamp as Date;
+	const startTime = recordMesgs[0]?.timestamp as Date;
 
 	const records: ActivityRecord[] = recordMesgs.map((msg) => {
 		const rawSpeed = msg.enhancedSpeed ?? msg.speed ?? null;

@@ -347,6 +347,7 @@ function ThinkingBlock({
 	return (
 		<div className="mb-3 rounded-lg border border-[rgba(139,92,246,0.15)] bg-[#0f0b1a]/60 overflow-hidden">
 			<button
+				type="button"
 				onClick={() => setOpen((o) => !o)}
 				className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#7c6fa0] hover:text-[#a78bfa] transition-colors cursor-pointer"
 			>
@@ -512,6 +513,7 @@ function ThreadSidebar({
 					Threads
 				</span>
 				<button
+					type="button"
 					onClick={onClose}
 					className="flex h-8 w-8 items-center justify-center rounded-lg border border-[rgba(139,92,246,0.1)] bg-[#1a1533]/70 text-[#94a3b8] md:hidden"
 					title="Close threads"
@@ -528,6 +530,13 @@ function ThreadSidebar({
 							onSelect(thread.id);
 							onClose();
 						}}
+						onKeyDown={(e) => {
+							if (e.key === "Enter" || e.key === " ") {
+								e.preventDefault();
+								onSelect(thread.id);
+								onClose();
+							}
+						}}
 						onContextMenu={(e) => handleContextMenu(thread, e)}
 						className={`group flex items-center gap-1.5 px-2 py-2 mx-1 my-0.5 rounded-lg cursor-pointer transition-colors ${
 							thread.id === activeThreadId
@@ -537,7 +546,6 @@ function ThreadSidebar({
 					>
 						{editingId === thread.id ? (
 							<input
-								autoFocus
 								value={editingName}
 								onChange={(e) => setEditingName(e.target.value)}
 								onBlur={commitEdit}
@@ -577,6 +585,7 @@ function ThreadSidebar({
 
 			<div className="p-2 border-t border-[rgba(139,92,246,0.08)]">
 				<button
+					type="button"
 					onClick={() => {
 						onCreate();
 						onClose();
@@ -598,6 +607,7 @@ function ThreadSidebar({
 						role="menu"
 					>
 						<button
+							type="button"
 							onClick={() => startEdit(contextMenu.threadId)}
 							className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-[#c4b5fd] hover:bg-[#8b5cf6]/15 transition-colors cursor-pointer"
 							role="menuitem"
@@ -607,6 +617,7 @@ function ThreadSidebar({
 						</button>
 						<div className="my-1 border-t border-[rgba(139,92,246,0.1)]" />
 						<button
+							type="button"
 							onClick={() => handleDelete(contextMenu.threadId)}
 							className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
 							role="menuitem"
@@ -779,7 +790,7 @@ function TrainerChat({
 		isFirstRender.current = false;
 		bottomRef.current?.scrollIntoView({ behavior });
 		setTimeout(updateScrollButtons, 120);
-	}, [messages, updateScrollButtons]);
+	});
 
 	const prevStatus = useRef(status);
 	useEffect(() => {
@@ -839,6 +850,7 @@ function TrainerChat({
 			{/* Sub-header */}
 			<div className="flex flex-wrap items-center gap-2 px-3 py-3 sm:gap-3 sm:px-6 sm:py-4 border-b border-[rgba(139,92,246,0.1)] bg-[#0f0b1a] shrink-0">
 				<button
+					type="button"
 					onClick={onOpenThreads}
 					className="flex items-center justify-center w-10 h-10 text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-all duration-200 cursor-pointer md:hidden"
 					title="Threads"
@@ -846,6 +858,7 @@ function TrainerChat({
 					<Menu className="w-4 h-4" />
 				</button>
 				<button
+					type="button"
 					onClick={onBack}
 					className="flex items-center gap-2 px-3 py-2 sm:py-1.5 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-all duration-200 cursor-pointer"
 				>
@@ -866,6 +879,7 @@ function TrainerChat({
 
 				<div className="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:w-auto sm:flex sm:items-center">
 					<button
+						type="button"
 						onClick={handleCompact}
 						disabled={
 							compactState === "loading" || isLoading || messages.length === 0
@@ -892,6 +906,7 @@ function TrainerChat({
 
 					{isGeneralChat && (
 						<button
+							type="button"
 							onClick={() => fileInputRef.current?.click()}
 							disabled={importState === "loading"}
 							title="Import ChatGPT markdown export"
@@ -1013,6 +1028,7 @@ function TrainerChat({
 					<div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-5 flex flex-col gap-1.5 z-10">
 						{showScrollTop && (
 							<button
+								type="button"
 								onClick={scrollToTop}
 								title="Scroll to top"
 								className="flex items-center justify-center w-8 h-8 rounded-lg bg-[#1a1533]/90 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.2)] hover:border-[rgba(139,92,246,0.4)] text-[#7c6fa0] hover:text-[#c4b5fd] transition-all duration-200 cursor-pointer backdrop-blur-sm shadow-lg"
@@ -1022,6 +1038,7 @@ function TrainerChat({
 						)}
 						{showScrollBottom && (
 							<button
+								type="button"
 								onClick={scrollToBottom}
 								title="Scroll to bottom"
 								className="flex items-center justify-center w-8 h-8 rounded-lg bg-[#1a1533]/90 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.2)] hover:border-[rgba(139,92,246,0.4)] text-[#7c6fa0] hover:text-[#c4b5fd] transition-all duration-200 cursor-pointer backdrop-blur-sm shadow-lg"
@@ -1053,6 +1070,7 @@ function TrainerChat({
 					/>
 					{isLoading ? (
 						<button
+							type="button"
 							onClick={stop}
 							title="Stop generation"
 							className="flex items-center justify-center w-8 h-8 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-400 transition-all duration-200 cursor-pointer shrink-0"
@@ -1061,6 +1079,7 @@ function TrainerChat({
 						</button>
 					) : (
 						<button
+							type="button"
 							onClick={handleSend}
 							disabled={!hasInput}
 							title="Send message"
@@ -1212,6 +1231,7 @@ export function TrainerView({
 					</div>
 					<p className="text-sm text-[#94a3b8]">No threads yet.</p>
 					<button
+						type="button"
 						onClick={handleCreateThread}
 						className="px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-lg transition-all duration-200 cursor-pointer"
 					>

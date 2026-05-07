@@ -44,6 +44,84 @@ interface ChartDataPoint {
 	gradient: number | null;
 }
 
+interface ChartPointerEvent {
+	activeLabel?: number;
+}
+
+interface TooltipPayloadEntry {
+	color?: string;
+	dataKey?: string;
+	value?: number | null;
+}
+
+interface CustomTooltipProps {
+	active?: boolean;
+	label?: number;
+	payload?: TooltipPayloadEntry[];
+}
+
+function findNearestElapsedIndex(
+	records: ActivityRecord[],
+	seconds: number,
+): number {
+	if (records.length === 0) return 0;
+
+	let left = 0;
+	let right = records.length - 1;
+
+	while (left <= right) {
+		const mid = Math.floor((left + right) / 2);
+		const value = records[mid]?.elapsedSeconds ?? 0;
+
+		if (value === seconds) return mid;
+		if (value < seconds) {
+			left = mid + 1;
+		} else {
+			right = mid - 1;
+		}
+	}
+
+	if (left >= records.length) return records.length - 1;
+	if (right < 0) return 0;
+
+	const leftDiff = Math.abs((records[left]?.elapsedSeconds ?? 0) - seconds);
+	const rightDiff = Math.abs((records[right]?.elapsedSeconds ?? 0) - seconds);
+
+	return leftDiff < rightDiff ? left : right;
+}
+
+function findStartIndex(data: ChartDataPoint[], seconds: number): number {
+	let left = 0;
+	let right = data.length;
+
+	while (left < right) {
+		const mid = Math.floor((left + right) / 2);
+		if ((data[mid]?.elapsedSeconds ?? 0) < seconds) {
+			left = mid + 1;
+		} else {
+			right = mid;
+		}
+	}
+
+	return left;
+}
+
+function findEndIndex(data: ChartDataPoint[], seconds: number): number {
+	let left = 0;
+	let right = data.length;
+
+	while (left < right) {
+		const mid = Math.floor((left + right) / 2);
+		if ((data[mid]?.elapsedSeconds ?? 0) <= seconds) {
+			left = mid + 1;
+		} else {
+			right = mid;
+		}
+	}
+
+	return left;
+}
+
 // Stable config objects (hoisted outside component to avoid re-creation)
 const CHART_MARGIN = { top: 5, right: 10, left: 10, bottom: 5 };
 const AXIS_TICK = { fontSize: 11, fill: "#94a3b8" };
@@ -97,13 +175,13 @@ const GRADIENT_ACTIVE_DOT = {
 	stroke: "#1a1533",
 	strokeWidth: 2,
 };
+const DEFAULT_INITIAL_WINDOW_SECONDS = 60 * 60;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const CustomTooltip = memo(function CustomTooltip({
 	active,
 	payload,
 	label,
-}: any) {
+}: CustomTooltipProps) {
 	if (!active || !payload || payload.length === 0) return null;
 
 	return (
@@ -112,16 +190,15 @@ const CustomTooltip = memo(function CustomTooltip({
 				{formatElapsedTime(label)}
 			</p>
 			{payload.map(
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				(entry: any) =>
+				(entry) =>
 					entry.value !== null && (
 						<div
-							key={entry.dataKey}
+							key={entry.dataKey ?? "unknown"}
 							className="flex items-center gap-2 text-sm"
 						>
 							<div
 								className="w-2 h-2 rounded-full"
-								style={{ backgroundColor: entry.color }}
+								style={{ backgroundColor: entry.color ?? "#94a3b8" }}
 							/>
 							<span className="text-[#94a3b8] capitalize">
 								{entry.dataKey === "heartRate"
@@ -161,39 +238,55 @@ export const ActivityChart = memo(function ActivityChart({
 	intervalRanges,
 	onAddInterval,
 }: ActivityChartProps) {
-	const data: ChartDataPoint[] = useMemo(
-		() =>
-			records.map((r) => ({
+	const {
+		data,
+		hasPower,
+		hasHeartRate,
+		hasCadence,
+		hasSpeed,
+		hasGradient,
+		fullRange,
+	} = useMemo(() => {
+		let hasPower = false;
+		let hasHeartRate = false;
+		let hasCadence = false;
+		let hasSpeed = false;
+		let hasGradient = false;
+
+		const data = records.map((r) => {
+			if (r.power !== null) hasPower = true;
+			if (r.heartRate !== null) hasHeartRate = true;
+			if (r.cadence !== null) hasCadence = true;
+			if ((r.speed ?? null) !== null) hasSpeed = true;
+			if ((r.gradient ?? null) !== null) hasGradient = true;
+
+			return {
 				elapsedSeconds: r.elapsedSeconds,
 				power: r.power,
 				heartRate: r.heartRate,
 				cadence: r.cadence,
 				speed: r.speed ?? null,
 				gradient: r.gradient ?? null,
-			})),
-		[records],
-	);
+			};
+		});
 
-	const hasPower = useMemo(
-		() => records.some((r) => r.power !== null),
-		[records],
-	);
-	const hasHeartRate = useMemo(
-		() => records.some((r) => r.heartRate !== null),
-		[records],
-	);
-	const hasCadence = useMemo(
-		() => records.some((r) => r.cadence !== null),
-		[records],
-	);
-	const hasSpeed = useMemo(
-		() => records.some((r) => (r.speed ?? null) !== null),
-		[records],
-	);
-	const hasGradient = useMemo(
-		() => records.some((r) => (r.gradient ?? null) !== null),
-		[records],
-	);
+		const firstPoint = data[0];
+		const lastPoint = data[data.length - 1];
+		const fullRange: [number, number] | null =
+			firstPoint && lastPoint
+				? [firstPoint.elapsedSeconds, lastPoint.elapsedSeconds]
+				: null;
+
+		return {
+			data,
+			hasPower,
+			hasHeartRate,
+			hasCadence,
+			hasSpeed,
+			hasGradient,
+			fullRange,
+		};
+	}, [records]);
 
 	// --- Series visibility toggles ---
 	const [showPower, setShowPower] = useState(true);
@@ -211,11 +304,9 @@ export const ActivityChart = memo(function ActivityChart({
 
 	const visibleData: ChartDataPoint[] = useMemo(() => {
 		if (!currentZoom) return data;
-		return data.filter(
-			(d) =>
-				d.elapsedSeconds >= currentZoom[0] &&
-				d.elapsedSeconds <= currentZoom[1],
-		);
+		const startIndex = findStartIndex(data, currentZoom[0]);
+		const endIndex = findEndIndex(data, currentZoom[1]);
+		return data.slice(startIndex, endIndex);
 	}, [data, currentZoom]);
 
 	// --- Rubber-band (marquee) selection state ---
@@ -226,44 +317,25 @@ export const ActivityChart = memo(function ActivityChart({
 
 	// Map an elapsedSeconds value to the nearest data index (in the full records array)
 	const secondsToIndex = useCallback(
-		(seconds: number): number => {
-			let closest = 0;
-			let minDiff = Infinity;
-			for (let i = 0; i < records.length; i++) {
-				const diff = Math.abs(records[i].elapsedSeconds - seconds);
-				if (diff < minDiff) {
-					minDiff = diff;
-					closest = i;
-				}
-			}
-			return closest;
-		},
+		(seconds: number): number => findNearestElapsedIndex(records, seconds),
 		[records],
 	);
 
-	const handleMouseDown = useCallback(
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		(e: any) => {
-			if (e && e.activeLabel !== undefined) {
-				isDragging.current = true;
-				setDragStart(e.activeLabel);
-				setDragEnd(e.activeLabel);
-				setSelection(null);
-				onSelectionChange(null);
-			}
-		},
-		[onSelectionChange],
-	);
+	const handleMouseDown = useCallback((e: ChartPointerEvent) => {
+		if (e && e.activeLabel !== undefined) {
+			isDragging.current = true;
+			setDragStart(e.activeLabel);
+			setDragEnd(e.activeLabel);
+			setSelection(null);
+			selectionChangeRef.current(null);
+		}
+	}, []);
 
-	const handleMouseMove = useCallback(
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		(e: any) => {
-			if (isDragging.current && e && e.activeLabel !== undefined) {
-				setDragEnd(e.activeLabel);
-			}
-		},
-		[],
-	);
+	const handleMouseMove = useCallback((e: ChartPointerEvent) => {
+		if (isDragging.current && e && e.activeLabel !== undefined) {
+			setDragEnd(e.activeLabel);
+		}
+	}, []);
 
 	const handleMouseUp = useCallback(() => {
 		if (isDragging.current && dragStart !== null && dragEnd !== null) {
@@ -323,13 +395,30 @@ export const ActivityChart = memo(function ActivityChart({
 		if (externalZoom) {
 			setZoomStack([externalZoom]);
 			setSelection(null);
-			onSelectionChange(null);
+			selectionChangeRef.current(null);
 		}
-	}, [externalZoom]); // intentionally exclude onSelectionChange to avoid loops
+	}, [externalZoom]);
+
+	useEffect(() => {
+		if (!fullRange || externalZoom) return;
+
+		const [fullMin, fullMax] = fullRange;
+		if (fullMax - fullMin <= DEFAULT_INITIAL_WINDOW_SECONDS) {
+			setZoomStack([]);
+			return;
+		}
+
+		setZoomStack([
+			[fullMin, fullMin + DEFAULT_INITIAL_WINDOW_SECONDS] as [number, number],
+		]);
+	}, [fullRange, externalZoom]);
 
 	// --- Ctrl + Mouse Wheel zoom / scroll to pan ---
 	const chartContainerRef = useRef<HTMLDivElement>(null);
 	const zoomStackRef = useRef<[number, number][]>([]);
+	const wheelFrameRef = useRef<number | null>(null);
+	const pendingZoomRef = useRef<[number, number][] | null>(null);
+	const selectionChangeRef = useRef(onSelectionChange);
 
 	// Keep ref in sync with state for synchronous access in wheel handler
 	useEffect(() => {
@@ -337,13 +426,24 @@ export const ActivityChart = memo(function ActivityChart({
 	}, [zoomStack]);
 
 	useEffect(() => {
+		selectionChangeRef.current = onSelectionChange;
+	}, [onSelectionChange]);
+
+	useEffect(() => {
 		const container = chartContainerRef.current;
-		if (!container) return;
+		if (!container || !fullRange) return;
+
+		const flushPendingZoom = () => {
+			wheelFrameRef.current = null;
+			if (pendingZoomRef.current) {
+				setZoomStack(pendingZoomRef.current);
+				pendingZoomRef.current = null;
+			}
+		};
 
 		const handleWheel = (e: WheelEvent) => {
-			const allSeconds = data.map((d) => d.elapsedSeconds);
-			const fullMin = allSeconds[0];
-			const fullMax = allSeconds[allSeconds.length - 1];
+			const [fullMin, fullMax] = fullRange;
+			const currentStack = pendingZoomRef.current ?? zoomStackRef.current;
 
 			if (e.ctrlKey) {
 				// Ctrl + scroll = zoom in/out
@@ -358,22 +458,21 @@ export const ActivityChart = memo(function ActivityChart({
 				// Clamp cursor ratio to the plot area
 				const ratio = Math.max(0, Math.min(1, (mouseX - plotLeft) / plotWidth));
 
-				setZoomStack((prev) => {
-					const current =
-						prev.length > 0
-							? prev[prev.length - 1]
-							: ([fullMin, fullMax] as [number, number]);
-					const span = current[1] - current[0];
-					const center = current[0] + span * ratio;
+				const current =
+					currentStack.length > 0
+						? currentStack[currentStack.length - 1]
+						: ([fullMin, fullMax] as [number, number]);
+				if (!current) return;
+				const span = current[1] - current[0];
+				const center = current[0] + span * ratio;
 
-					const zoomFactor = e.deltaY < 0 ? 0.7 : 1.4; // scroll up = zoom in, down = zoom out
-					let newSpan = span * zoomFactor;
+				const zoomFactor = e.deltaY < 0 ? 0.7 : 1.4; // scroll up = zoom in, down = zoom out
+				let newSpan = span * zoomFactor;
 
-					// Don't zoom out beyond full range
-					if (newSpan >= fullMax - fullMin) {
-						return [];
-					}
-
+				// Don't zoom out beyond full range
+				if (newSpan >= fullMax - fullMin) {
+					pendingZoomRef.current = [];
+				} else {
 					// Don't zoom in too far (minimum ~5 seconds visible)
 					if (newSpan < 5) newSpan = 5;
 
@@ -394,56 +493,88 @@ export const ActivityChart = memo(function ActivityChart({
 
 					// Replace top of stack (or push new) for smooth wheel zooming
 					const newZoom: [number, number] = [newStart, newEnd];
-					if (prev.length === 0) return [newZoom];
-					return [...prev.slice(0, -1), newZoom];
-				});
+					pendingZoomRef.current =
+						currentStack.length === 0
+							? [newZoom]
+							: [...currentStack.slice(0, -1), newZoom];
+				}
 
 				setSelection(null);
-				onSelectionChange(null);
+				selectionChangeRef.current(null);
 			} else {
 				// Regular scroll = pan left/right (only when zoomed in)
-				if (zoomStackRef.current.length === 0) return; // not zoomed in, let page scroll normally
+				if (currentStack.length === 0) return; // not zoomed in, let page scroll normally
 				e.preventDefault();
 
-				setZoomStack((prev) => {
-					if (prev.length === 0) return prev;
+				const current = currentStack[currentStack.length - 1];
+				if (!current) return;
+				const span = current[1] - current[0];
+				// Use deltaY (vertical scroll) or deltaX (horizontal scroll/trackpad) for panning
+				const delta =
+					Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+				const panAmount = span * 0.05 * Math.sign(delta); // 5% of visible range per scroll tick
 
-					const current = prev[prev.length - 1];
-					const span = current[1] - current[0];
-					// Use deltaY (vertical scroll) or deltaX (horizontal scroll/trackpad) for panning
-					const delta =
-						Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-					const panAmount = span * 0.05 * Math.sign(delta); // 5% of visible range per scroll tick
+				let newStart = current[0] + panAmount;
+				let newEnd = current[1] + panAmount;
 
-					let newStart = current[0] + panAmount;
-					let newEnd = current[1] + panAmount;
+				// Clamp to full data range
+				if (newStart < fullMin) {
+					newStart = fullMin;
+					newEnd = fullMin + span;
+				}
+				if (newEnd > fullMax) {
+					newEnd = fullMax;
+					newStart = fullMax - span;
+				}
 
-					// Clamp to full data range
-					if (newStart < fullMin) {
-						newStart = fullMin;
-						newEnd = fullMin + span;
-					}
-					if (newEnd > fullMax) {
-						newEnd = fullMax;
-						newStart = fullMax - span;
-					}
+				const newZoom: [number, number] = [newStart, newEnd];
+				pendingZoomRef.current = [...currentStack.slice(0, -1), newZoom];
+			}
 
-					const newZoom: [number, number] = [newStart, newEnd];
-					return [...prev.slice(0, -1), newZoom];
-				});
+			if (wheelFrameRef.current === null) {
+				wheelFrameRef.current = requestAnimationFrame(flushPendingZoom);
 			}
 		};
 
 		container.addEventListener("wheel", handleWheel, { passive: false });
-		return () => container.removeEventListener("wheel", handleWheel);
-	}, [data, onSelectionChange]);
+		return () => {
+			container.removeEventListener("wheel", handleWheel);
+			if (wheelFrameRef.current !== null) {
+				cancelAnimationFrame(wheelFrameRef.current);
+				wheelFrameRef.current = null;
+			}
+			pendingZoomRef.current = null;
+		};
+	}, [fullRange]);
+
+	const overlayAxisId = useMemo(() => {
+		if (hasPower && showPower) return "power";
+		if (
+			(hasHeartRate && showHeartRate) ||
+			(hasCadence && showCadence) ||
+			(hasSpeed && showSpeed)
+		) {
+			return "hrCad";
+		}
+		return "gradient";
+	}, [
+		hasPower,
+		showPower,
+		hasHeartRate,
+		showHeartRate,
+		hasCadence,
+		showCadence,
+		hasSpeed,
+		showSpeed,
+	]);
 
 	// Compute Y-axis domains based on VISIBLE data
 	const powerDomain = useMemo(() => {
 		if (!hasPower || !showPower) return [0, 400];
 		const powers = visibleData
 			.filter((r) => r.power !== null)
-			.map((r) => r.power!);
+			.map((r) => r.power)
+			.filter((value): value is number => value !== null);
 		if (powers.length === 0) return [0, 400];
 		return [0, Math.ceil((Math.max(...powers) * 1.1) / 50) * 50];
 	}, [visibleData, hasPower, showPower]);
@@ -454,15 +585,22 @@ export const ActivityChart = memo(function ActivityChart({
 			values.push(
 				...visibleData
 					.filter((r) => r.heartRate !== null)
-					.map((r) => r.heartRate!),
+					.map((r) => r.heartRate)
+					.filter((value): value is number => value !== null),
 			);
 		if (hasCadence && showCadence)
 			values.push(
-				...visibleData.filter((r) => r.cadence !== null).map((r) => r.cadence!),
+				...visibleData
+					.filter((r) => r.cadence !== null)
+					.map((r) => r.cadence)
+					.filter((value): value is number => value !== null),
 			);
 		if (hasSpeed && showSpeed)
 			values.push(
-				...visibleData.filter((r) => r.speed !== null).map((r) => r.speed!),
+				...visibleData
+					.filter((r) => r.speed !== null)
+					.map((r) => r.speed)
+					.filter((value): value is number => value !== null),
 			);
 		if (values.length === 0) return [0, 200];
 		return [
@@ -483,7 +621,8 @@ export const ActivityChart = memo(function ActivityChart({
 		if (!hasGradient || !showGradient) return [-20, 20];
 		const vals = visibleData
 			.filter((r) => r.gradient !== null)
-			.map((r) => r.gradient!);
+			.map((r) => r.gradient)
+			.filter((value): value is number => value !== null);
 		if (vals.length === 0) return [-20, 20];
 		const min = Math.floor((Math.min(...vals, 0) * 1.2) / 5) * 5;
 		const max = Math.ceil((Math.max(...vals, 0) * 1.2) / 5) * 5;
@@ -512,6 +651,7 @@ export const ActivityChart = memo(function ActivityChart({
 					<div className="flex items-center gap-6 ml-12">
 						{hasPower && (
 							<button
+								type="button"
 								onClick={() => setShowPower((v) => !v)}
 								className={`flex items-center gap-1.5 cursor-pointer transition-opacity ${showPower ? "opacity-100" : "opacity-40"}`}
 							>
@@ -525,6 +665,7 @@ export const ActivityChart = memo(function ActivityChart({
 						)}
 						{hasHeartRate && (
 							<button
+								type="button"
 								onClick={() => setShowHeartRate((v) => !v)}
 								className={`flex items-center gap-1.5 cursor-pointer transition-opacity ${showHeartRate ? "opacity-100" : "opacity-40"}`}
 							>
@@ -538,6 +679,7 @@ export const ActivityChart = memo(function ActivityChart({
 						)}
 						{hasCadence && (
 							<button
+								type="button"
 								onClick={() => setShowCadence((v) => !v)}
 								className={`flex items-center gap-1.5 cursor-pointer transition-opacity ${showCadence ? "opacity-100" : "opacity-40"}`}
 							>
@@ -551,6 +693,7 @@ export const ActivityChart = memo(function ActivityChart({
 						)}
 						{hasSpeed && (
 							<button
+								type="button"
 								onClick={() => setShowSpeed((v) => !v)}
 								className={`flex items-center gap-1.5 cursor-pointer transition-opacity ${showSpeed ? "opacity-100" : "opacity-40"}`}
 							>
@@ -564,6 +707,7 @@ export const ActivityChart = memo(function ActivityChart({
 						)}
 						{hasGradient && (
 							<button
+								type="button"
 								onClick={() => setShowGradient((v) => !v)}
 								className={`flex items-center gap-1.5 cursor-pointer transition-opacity ${showGradient ? "opacity-100" : "opacity-40"}`}
 							>
@@ -582,6 +726,7 @@ export const ActivityChart = memo(function ActivityChart({
 						{zoomStack.length > 0 && (
 							<>
 								<button
+									type="button"
 									onClick={handleZoomOut}
 									className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/60 hover:bg-[#8b5cf6]/20 border border-[rgba(139,92,246,0.2)] rounded-lg transition-colors cursor-pointer"
 								>
@@ -590,6 +735,7 @@ export const ActivityChart = memo(function ActivityChart({
 								</button>
 								{zoomStack.length > 1 && (
 									<button
+										type="button"
 										onClick={handleResetZoom}
 										className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/60 hover:bg-[#8b5cf6]/20 border border-[rgba(139,92,246,0.2)] rounded-lg transition-colors cursor-pointer"
 									>
@@ -603,6 +749,7 @@ export const ActivityChart = memo(function ActivityChart({
 						{selection ? (
 							<>
 								<button
+									type="button"
 									onClick={handleZoomIn}
 									className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#f1f5f9] bg-[#8b5cf6]/30 hover:bg-[#8b5cf6]/40 border border-[#8b5cf6]/40 rounded-lg transition-colors cursor-pointer"
 								>
@@ -611,6 +758,7 @@ export const ActivityChart = memo(function ActivityChart({
 								</button>
 								{onAddInterval && (
 									<button
+										type="button"
 										onClick={handleAddInterval}
 										className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#f59e0b] bg-[#f59e0b]/10 hover:bg-[#f59e0b]/20 border border-[#f59e0b]/30 rounded-lg transition-colors cursor-pointer"
 									>
@@ -619,6 +767,7 @@ export const ActivityChart = memo(function ActivityChart({
 									</button>
 								)}
 								<button
+									type="button"
 									onClick={clearSelection}
 									className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/60 hover:bg-[#8b5cf6]/20 border border-[rgba(139,92,246,0.2)] rounded-lg transition-colors cursor-pointer"
 								>
@@ -813,41 +962,24 @@ export const ActivityChart = memo(function ActivityChart({
 							)}
 
 							{/* Interval highlight overlays */}
-							{intervalRanges &&
-								intervalRanges.map((range, i) => (
-									<ReferenceArea
-										key={`interval-${i}`}
-										yAxisId={
-											hasPower && showPower
-												? "power"
-												: (hasHeartRate && showHeartRate) ||
-														(hasCadence && showCadence) ||
-														(hasSpeed && showSpeed)
-													? "hrCad"
-													: "gradient"
-										}
-										x1={range[0]}
-										x2={range[1]}
-										fill="#f59e0b"
-										fillOpacity={0.1}
-										stroke="#f59e0b"
-										strokeOpacity={0.4}
-										strokeDasharray="6 3"
-									/>
-								))}
+							{intervalRanges?.map((range) => (
+								<ReferenceArea
+									key={`${range[0]}-${range[1]}`}
+									yAxisId={overlayAxisId}
+									x1={range[0]}
+									x2={range[1]}
+									fill="#f59e0b"
+									fillOpacity={0.1}
+									stroke="#f59e0b"
+									strokeOpacity={0.4}
+									strokeDasharray="6 3"
+								/>
+							))}
 
 							{/* Rubber-band selection overlay */}
 							{refAreaLeft !== null && refAreaRight !== null && (
 								<ReferenceArea
-									yAxisId={
-										hasPower && showPower
-											? "power"
-											: (hasHeartRate && showHeartRate) ||
-													(hasCadence && showCadence) ||
-													(hasSpeed && showSpeed)
-												? "hrCad"
-												: "gradient"
-									}
+									yAxisId={overlayAxisId}
 									x1={refAreaLeft}
 									x2={refAreaRight}
 									fill="#8b5cf6"
