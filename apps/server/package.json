@@ -1,24 +1,25 @@
 {
-  "name": "@fit-analyzer/server",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "bun --watch src/index.ts",
-    "build": "rm -rf public && mkdir -p public && cp -R ../web/dist/. public && bun build src/index.ts --outdir dist --target bun",
-    "start": "bun dist/index.js"
-  },
-  "dependencies": {
-    "@fit-analyzer/shared": "workspace:*",
-    "@t3-oss/env-core": "^0.13.11",
-    "@tanstack/ai": "^0.9.2",
-    "@tanstack/ai-openrouter": "^0.7.0",
-    "hono": "^4.7.0",
-    "resumable-stream": "^2.2.12",
-    "zod": "^4.3.6"
-  },
-  "devDependencies": {
-    "@types/bun": "^1.2.0",
-    "typescript": "^5.0.0"
-  }
+	"name": "@fit-analyzer/server",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"scripts": {
+		"dev": "bun --watch src/index.ts",
+		"build": "rm -rf public && mkdir -p public && cp -R ../web/dist/. public && bun build src/index.ts --outdir dist --target bun",
+		"start": "bun dist/index.js",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@fit-analyzer/shared": "workspace:*",
+		"@t3-oss/env-core": "^0.13.11",
+		"@tanstack/ai": "^0.9.2",
+		"@tanstack/ai-openrouter": "^0.7.0",
+		"hono": "^4.7.0",
+		"resumable-stream": "^2.2.12",
+		"zod": "^4.3.6"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.2.0",
+		"typescript": "^5.0.0"
+	}
 }

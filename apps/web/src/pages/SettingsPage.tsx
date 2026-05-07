@@ -3,37 +3,35 @@ import { WaxedChainReminderSettings } from "../components/WaxedChainReminderSett
 import type { UserInfo } from "../lib/api";
 
 interface SettingsPageProps {
-    user?: UserInfo | null;
-    onActivitiesChanged?: () => void;
+	user?: UserInfo | null;
+	onActivitiesChanged?: () => void;
 }
 
 export function SettingsPage({ onActivitiesChanged }: SettingsPageProps) {
-    return (
-        <div className="flex-1 p-6 animate-[fadeIn_0.4s_ease-out]">
-            <div className="max-w-6xl">
-                <h2 className="text-2xl font-bold text-[#f1f5f9] mb-1">
-                    Settings
-                </h2>
-                <p className="text-sm text-[#94a3b8] mb-6">
-                    Manage integrations and preferences
-                </p>
+	return (
+		<div className="flex-1 p-6 animate-[fadeIn_0.4s_ease-out]">
+			<div className="max-w-6xl">
+				<h2 className="text-2xl font-bold text-[#f1f5f9] mb-1">Settings</h2>
+				<p className="text-sm text-[#94a3b8] mb-6">
+					Manage integrations and preferences
+				</p>
 
-                <div className="grid gap-8 xl:grid-cols-2 xl:items-start">
-                    <section>
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8] mb-3">
-                            Integrations
-                        </h3>
-                        <StravaConnect onSynced={onActivitiesChanged} />
-                    </section>
+				<div className="grid gap-8 xl:grid-cols-2 xl:items-start">
+					<section>
+						<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8] mb-3">
+							Integrations
+						</h3>
+						<StravaConnect onSynced={onActivitiesChanged} />
+					</section>
 
-                    <section>
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8] mb-3">
-                            Maintenance
-                        </h3>
-                        <WaxedChainReminderSettings />
-                    </section>
-                </div>
-            </div>
-        </div>
-    );
+					<section>
+						<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8] mb-3">
+							Maintenance
+						</h3>
+						<WaxedChainReminderSettings />
+					</section>
+				</div>
+			</div>
+		</div>
+	);
 }

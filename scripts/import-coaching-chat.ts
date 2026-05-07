@@ -26,69 +26,74 @@ import type { TrainerMessage } from "@fit-analyzer/shared";
 const args = process.argv.slice(2);
 
 function getFlag(name: string, fallback: string): string {
-  const flag = args.find((a) => a.startsWith(`--${name}=`));
-  return flag ? flag.slice(`--${name}=`.length) : fallback;
+	const flag = args.find((a) => a.startsWith(`--${name}=`));
+	return flag ? flag.slice(`--${name}=`.length) : fallback;
 }
 
 const ROOT = resolve(import.meta.dir, "..");
-const mdFile  = args.find((a) => !a.startsWith("--")) ?? "Cycling coach.md";
+const mdFile = args.find((a) => !a.startsWith("--")) ?? "Cycling coach.md";
 const MD_FILE = resolve(ROOT, mdFile);
-const DB_FILE = resolve(ROOT, getFlag("db", "apps/server/data/fit-analyzer.db"));
+const DB_FILE = resolve(
+	ROOT,
+	getFlag("db", "apps/server/data/fit-analyzer.db"),
+);
 const USER_ID = getFlag("user", "dev");
 const CHAT_NAME = getFlag("name", "general");
-const DRY_RUN  = args.includes("--dry-run");
+const DRY_RUN = args.includes("--dry-run");
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Strip <details>…</details> reasoning blocks from assistant messages */
 function stripDetails(text: string): string {
-  return text.replace(/<details[\s\S]*?<\/details>/gi, "").trim();
+	return text.replace(/<details[\s\S]*?<\/details>/gi, "").trim();
 }
 
 /** Parse a ChatGPT markdown export into TrainerMessages */
 function parseMarkdown(raw: string): TrainerMessage[] {
-  const sections = raw.split(/\n---\n/);
+	const sections = raw.split(/\n---\n/);
 
-  // Derive a base timestamp from the file header ("Created: DD/MM/YYYY, HH:MM:SS")
-  const header = sections[0] ?? "";
-  const m = header.match(/Created:\s*(\d{2})\/(\d{2})\/(\d{4}),\s*(\d{2}):(\d{2}):(\d{2})/);
-  const baseTime = m
-    ? new Date(`${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:${m[6]}`).getTime()
-    : Date.now();
+	// Derive a base timestamp from the file header ("Created: DD/MM/YYYY, HH:MM:SS")
+	const header = sections[0] ?? "";
+	const m = header.match(
+		/Created:\s*(\d{2})\/(\d{2})\/(\d{4}),\s*(\d{2}):(\d{2}):(\d{2})/,
+	);
+	const baseTime = m
+		? new Date(`${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:${m[6]}`).getTime()
+		: Date.now();
 
-  const messages: TrainerMessage[] = [];
-  let idx = 0;
+	const messages: TrainerMessage[] = [];
+	let idx = 0;
 
-  for (const section of sections) {
-    const trimmed = section.trim();
+	for (const section of sections) {
+		const trimmed = section.trim();
 
-    let role: "user" | "assistant" | null = null;
-    let contentStart = 0;
+		let role: "user" | "assistant" | null = null;
+		let contentStart = 0;
 
-    if (/^###\s+User/.test(trimmed)) {
-      role = "user";
-      contentStart = trimmed.indexOf("\n") + 1;
-    } else if (/^###\s+Assistant/.test(trimmed)) {
-      role = "assistant";
-      contentStart = trimmed.indexOf("\n") + 1;
-    } else {
-      continue; // preamble / separators
-    }
+		if (/^###\s+User/.test(trimmed)) {
+			role = "user";
+			contentStart = trimmed.indexOf("\n") + 1;
+		} else if (/^###\s+Assistant/.test(trimmed)) {
+			role = "assistant";
+			contentStart = trimmed.indexOf("\n") + 1;
+		} else {
+			continue; // preamble / separators
+		}
 
-    let content = trimmed.slice(contentStart).trim();
-    if (role === "assistant") content = stripDetails(content);
-    if (!content) continue;
+		let content = trimmed.slice(contentStart).trim();
+		if (role === "assistant") content = stripDetails(content);
+		if (!content) continue;
 
-    messages.push({
-      id: randomUUID(),
-      role,
-      content,
-      createdAt: new Date(baseTime + idx * 30_000).toISOString(),
-    });
-    idx++;
-  }
+		messages.push({
+			id: randomUUID(),
+			role,
+			content,
+			createdAt: new Date(baseTime + idx * 30_000).toISOString(),
+		});
+		idx++;
+	}
 
-  return messages;
+	return messages;
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -104,14 +109,18 @@ const messages = parseMarkdown(raw);
 
 const userCount = messages.filter((m) => m.role === "user").length;
 const assistantCount = messages.filter((m) => m.role === "assistant").length;
-console.log(`Parsed : ${messages.length} messages (${userCount} user, ${assistantCount} assistant)`);
+console.log(
+	`Parsed : ${messages.length} messages (${userCount} user, ${assistantCount} assistant)`,
+);
 
 if (DRY_RUN) {
-  console.log("\nSample messages:");
-  for (const msg of messages.slice(0, 3)) {
-    console.log(`  [${msg.role}] ${msg.content.slice(0, 80).replace(/\n/g, " ")}…`);
-  }
-  process.exit(0);
+	console.log("\nSample messages:");
+	for (const msg of messages.slice(0, 3)) {
+		console.log(
+			`  [${msg.role}] ${msg.content.slice(0, 80).replace(/\n/g, " ")}…`,
+		);
+	}
+	process.exit(0);
 }
 
 const db = new Database(DB_FILE);
@@ -144,21 +153,21 @@ db.exec(`
 const chatId = `${USER_ID}:${CHAT_NAME}`;
 
 db.transaction(() => {
-  db.prepare(
-    `INSERT INTO trainer_chats (id, activity_id, user_id, updated_at)
+	db.prepare(
+		`INSERT INTO trainer_chats (id, activity_id, user_id, updated_at)
      VALUES (?, ?, ?, datetime('now'))
-     ON CONFLICT(user_id, activity_id) DO UPDATE SET updated_at = datetime('now')`
-  ).run(chatId, CHAT_NAME, USER_ID);
+     ON CONFLICT(user_id, activity_id) DO UPDATE SET updated_at = datetime('now')`,
+	).run(chatId, CHAT_NAME, USER_ID);
 
-  db.prepare(`DELETE FROM trainer_messages WHERE chat_id = ?`).run(chatId);
+	db.prepare(`DELETE FROM trainer_messages WHERE chat_id = ?`).run(chatId);
 
-  const insert = db.prepare(
-    `INSERT INTO trainer_messages (id, chat_id, role, content, created_at)
-     VALUES (?, ?, ?, ?, ?)`
-  );
-  for (const msg of messages) {
-    insert.run(msg.id, chatId, msg.role, msg.content, msg.createdAt);
-  }
+	const insert = db.prepare(
+		`INSERT INTO trainer_messages (id, chat_id, role, content, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+	);
+	for (const msg of messages) {
+		insert.run(msg.id, chatId, msg.role, msg.content, msg.createdAt);
+	}
 })();
 
 db.close();

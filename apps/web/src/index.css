@@ -1,65 +1,65 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg-primary: #0f0b1a;
-  --color-bg-surface: #1a1533;
-  --color-bg-elevated: #241e3d;
-  --color-accent-power: #8b5cf6;
-  --color-accent-hr: #ef4444;
-  --color-accent-cadence: #06b6d4;
-  --color-text-primary: #f1f5f9;
-  --color-text-secondary: #94a3b8;
-  --color-border-subtle: rgba(139, 92, 246, 0.1);
+	--color-bg-primary: #0f0b1a;
+	--color-bg-surface: #1a1533;
+	--color-bg-elevated: #241e3d;
+	--color-accent-power: #8b5cf6;
+	--color-accent-hr: #ef4444;
+	--color-accent-cadence: #06b6d4;
+	--color-text-primary: #f1f5f9;
+	--color-text-secondary: #94a3b8;
+	--color-border-subtle: rgba(139, 92, 246, 0.1);
 }
 
 * {
-  box-sizing: border-box;
+	box-sizing: border-box;
 }
 
 body {
-  margin: 0;
-  font-family: "Inter", system-ui, -apple-system, sans-serif;
-  background-color: #0f0b1a;
-  color: #f1f5f9;
-  min-height: 100vh;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+	margin: 0;
+	font-family: "Inter", system-ui, -apple-system, sans-serif;
+	background-color: #0f0b1a;
+	color: #f1f5f9;
+	min-height: 100vh;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
 }
 
 #root {
-  min-height: 100vh;
+	min-height: 100vh;
 }
 
 /* Recharts overrides for dark theme */
 .recharts-cartesian-grid line {
-  stroke: rgba(139, 92, 246, 0.06);
+	stroke: rgba(139, 92, 246, 0.06);
 }
 
 .recharts-brush-slide {
-  fill: rgba(139, 92, 246, 0.15);
-  fill-opacity: 1;
+	fill: rgba(139, 92, 246, 0.15);
+	fill-opacity: 1;
 }
 
 .recharts-brush-traveller rect {
-  fill: #8b5cf6;
-  rx: 3;
+	fill: #8b5cf6;
+	rx: 3;
 }
 
 .recharts-brush {
-  rx: 6;
+	rx: 6;
 }
 
 .recharts-tooltip-cursor {
-  stroke: rgba(139, 92, 246, 0.3);
+	stroke: rgba(139, 92, 246, 0.3);
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+	from {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
 }
