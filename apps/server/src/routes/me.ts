@@ -1,6 +1,10 @@
 import { Hono } from "hono";
 import type { UpdateWaxedChainReminderSettingsBody } from "@fit-analyzer/shared";
 import {
+	getCoachModelSettings,
+	updateCoachModelSettings,
+} from "../lib/coachModelSettings.js";
+import {
 	getWaxedChainReminderSettings,
 	resetWaxedChainReminderProgress,
 	sendTestWaxedChainReminder,
@@ -43,6 +47,7 @@ me.get("/settings", (c) => {
 
 	return c.json({
 		waxedChainReminder: getWaxedChainReminderSettings(userId),
+		coachModel: getCoachModelSettings(userId),
 	});
 });
 
@@ -55,32 +60,48 @@ me.patch("/settings", async (c) => {
 		return c.json({ error: "Not authenticated" }, 401);
 	}
 
-	const body = await c.req.json<UpdateWaxedChainReminderSettingsBody>();
-	const thresholdKm = Number(body.thresholdKm);
-	const ntfyTopic = body.ntfyTopic?.trim() ?? "";
+	const body = await c.req.json<
+		Partial<UpdateWaxedChainReminderSettingsBody> & { coachModel?: string }
+	>();
 
-	if (typeof body.enabled !== "boolean") {
-		return c.json({ error: "enabled must be a boolean" }, 400);
+	if (typeof body.coachModel === "string" && body.coachModel.trim()) {
+		updateCoachModelSettings(userId, { coachModel: body.coachModel.trim() });
 	}
 
-	if (!Number.isFinite(thresholdKm) || thresholdKm <= 0) {
-		return c.json({ error: "thresholdKm must be a positive number" }, 400);
+	if (
+		body.enabled !== undefined ||
+		body.thresholdKm !== undefined ||
+		body.ntfyTopic !== undefined
+	) {
+		const thresholdKm = Number(body.thresholdKm);
+		const ntfyTopic = body.ntfyTopic?.trim() ?? "";
+
+		if (typeof body.enabled !== "boolean") {
+			return c.json({ error: "enabled must be a boolean" }, 400);
+		}
+
+		if (!Number.isFinite(thresholdKm) || thresholdKm <= 0) {
+			return c.json({ error: "thresholdKm must be a positive number" }, 400);
+		}
+
+		if (body.enabled && !ntfyTopic) {
+			return c.json(
+				{ error: "ntfyTopic is required when reminders are enabled" },
+				400,
+			);
+		}
+
+		updateWaxedChainReminderSettings(userId, {
+			enabled: body.enabled,
+			thresholdKm,
+			ntfyTopic,
+		});
 	}
 
-	if (body.enabled && !ntfyTopic) {
-		return c.json(
-			{ error: "ntfyTopic is required when reminders are enabled" },
-			400,
-		);
-	}
-
-	const settings = updateWaxedChainReminderSettings(userId, {
-		enabled: body.enabled,
-		thresholdKm,
-		ntfyTopic,
+	return c.json({
+		waxedChainReminder: getWaxedChainReminderSettings(userId),
+		coachModel: getCoachModelSettings(userId),
 	});
-
-	return c.json({ waxedChainReminder: settings });
 });
 
 // POST /me/settings/waxed-chain/reset — reset persisted reminder progress

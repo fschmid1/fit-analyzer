@@ -129,6 +129,14 @@ export interface UpdateWaxedChainReminderSettingsBody {
 	ntfyTopic: string;
 }
 
+export interface CoachModelSettings {
+	coachModel: string;
+}
+
+export interface UpdateCoachModelSettingsBody {
+	coachModel: string;
+}
+
 // --- Trainer chat types ---
 
 /** A single persisted trainer chat message */

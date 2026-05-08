@@ -13,6 +13,7 @@ import {
 	hasActiveTrainerStream,
 	startTrainerStreamProducer,
 } from "../lib/trainerStreamRegistry.js";
+import { getCoachModelSettings } from "../lib/coachModelSettings.js";
 
 const SYSTEM_PROMPT =
 	"You are an expert endurance sports coach specialising in cycling and triathlon. " +
@@ -20,7 +21,6 @@ const SYSTEM_PROMPT =
 	"When the user shares their activity summary and interval data, analyse power, heart rate and cadence trends " +
 	"and give practical training advice.";
 
-const KIMI_MODEL = "moonshotai/kimi-k2.5";
 const OPENROUTER_CHAT_COMPLETIONS_URL =
 	"https://openrouter.ai/api/v1/chat/completions";
 const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 20;
@@ -125,13 +125,14 @@ trainer.post("/chat", async (c) => {
 	const body: TrainerChatRequestBody = await c.req.json();
 	const streamId = getStringBodyValue(body.streamId) ?? crypto.randomUUID();
 	const modelMessages = convertMessagesToModelMessages(body.messages ?? []);
+	const model = getCoachModelSettings(userId).coachModel;
 
 	if (!hasActiveTrainerStream(streamId)) {
 		startTrainerStreamProducer(
 			streamId,
 			createOpenRouterTrainerStream({
 				apiKey,
-				model: KIMI_MODEL,
+				model,
 				systemPrompt: SYSTEM_PROMPT,
 				messages: modelMessages,
 				metadata: getKimiRequestMetadata(body, userId),
@@ -319,6 +320,8 @@ Messages to summarize:
 
 ${messagesText}`;
 
+	const model = getCoachModelSettings(userId).coachModel;
+
 	const response = await fetch(OPENROUTER_CHAT_COMPLETIONS_URL, {
 		method: "POST",
 		headers: {
@@ -326,7 +329,7 @@ ${messagesText}`;
 			"Content-Type": "application/json",
 		},
 		body: JSON.stringify({
-			model: KIMI_MODEL,
+			model,
 			messages: [{ role: "user", content: compactionPrompt }],
 			metadata: {
 				app: "fit-analyzer",

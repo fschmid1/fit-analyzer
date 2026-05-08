@@ -28,6 +28,7 @@ import {
 	deleteThread,
 	fetchThreads,
 	fetchTrainerHistory,
+	fetchUserSettings,
 	importTrainerChat,
 	renameThread,
 	saveTrainerHistory,
@@ -670,6 +671,7 @@ function TrainerChat({
 		"idle" | "loading" | "done" | "error"
 	>("idle");
 	const [compactError, setCompactError] = useState<string | null>(null);
+	const [coachModelName, setCoachModelName] = useState<string>("");
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const bottomRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -714,6 +716,26 @@ function TrainerChat({
 
 		return () => abortController.abort();
 	}, [initialMessages, setMessages, threadId]);
+
+	useEffect(() => {
+		fetchUserSettings()
+			.then((data) => {
+				const id = data.coachModel?.coachModel;
+				if (!id) return;
+				// Extract display name from model id (last segment, capitalized)
+				const segments = id.split("/");
+				const name = segments[segments.length - 1] ?? "";
+				setCoachModelName(
+					name
+						.split("-")
+						.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+						.join(" "),
+				);
+			})
+			.catch(() => {
+				/* ignore */
+			});
+	}, []);
 
 	const handleFileChange = useCallback(
 		async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -873,7 +895,9 @@ function TrainerChat({
 						{status === "submitted" && "Sending…"}
 						{status === "streaming" && "Responding…"}
 						{(status === "ready" || status === "error") &&
-							"Kimi 2.5 with OpenRouter cache"}
+							(coachModelName
+								? `${coachModelName} with OpenRouter cache`
+								: "Coach")}
 					</span>
 				</div>
 

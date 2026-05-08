@@ -170,9 +170,19 @@ db.exec(`
     waxed_chain_reminder_km INTEGER NOT NULL DEFAULT 300,
     waxed_chain_ntfy_topic TEXT NOT NULL DEFAULT '',
     waxed_chain_accumulated_km REAL NOT NULL DEFAULT 0,
-    waxed_chain_last_notified_at TEXT
+    waxed_chain_last_notified_at TEXT,
+    coach_model TEXT NOT NULL DEFAULT 'moonshotai/kimi-k2.5'
   )
 `);
+
+// Migration: add coach_model to existing user_settings rows
+try {
+	db.exec(
+		`ALTER TABLE user_settings ADD COLUMN coach_model TEXT NOT NULL DEFAULT 'moonshotai/kimi-k2.5'`,
+	);
+} catch {
+	/* column already exists */
+}
 
 // Migration: add strava_activity_id to activities for duplicate prevention
 try {

@@ -13,6 +13,8 @@ export type {
 	UpdateIntervalsBody,
 	WaxedChainReminderSettings,
 	UpdateWaxedChainReminderSettingsBody,
+	CoachModelSettings,
+	UpdateCoachModelSettingsBody,
 	TrainerMessage,
 	TrainerThread,
 	TrainerChatHistory,

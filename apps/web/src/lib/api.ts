@@ -7,6 +7,7 @@ import type {
 	TrainerChatHistory,
 	TrainerThread,
 	WaxedChainReminderSettings,
+	CoachModelSettings,
 } from "@fit-analyzer/shared";
 
 const API_BASE = "/api";
@@ -19,6 +20,7 @@ export interface UserInfo {
 
 export interface UserSettingsResponse {
 	waxedChainReminder: WaxedChainReminderSettings;
+	coachModel: CoachModelSettings;
 }
 
 export async function fetchCurrentUser(): Promise<UserInfo | null> {
@@ -59,6 +61,28 @@ export async function updateWaxedChainReminderSettings(input: {
 	}
 
 	return (data as UserSettingsResponse).waxedChainReminder;
+}
+
+export async function updateCoachModelSettings(input: {
+	coachModel: string;
+}): Promise<CoachModelSettings> {
+	const res = await fetch(`${API_BASE}/me/settings`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ coachModel: input.coachModel }),
+	});
+
+	const data = await res
+		.json()
+		.catch(() => ({ error: "Failed to update settings" }));
+
+	if (!res.ok) {
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to update settings",
+		);
+	}
+
+	return (data as UserSettingsResponse).coachModel;
 }
 
 export async function resetWaxedChainReminderProgress(): Promise<WaxedChainReminderSettings> {

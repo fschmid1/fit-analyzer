@@ -1,5 +1,6 @@
 import { StravaConnect } from "../components/StravaConnect";
 import { WaxedChainReminderSettings } from "../components/WaxedChainReminderSettings";
+import { CoachModelSettings } from "../components/CoachModelSettings";
 import type { UserInfo } from "../lib/api";
 
 interface SettingsPageProps {
@@ -29,6 +30,13 @@ export function SettingsPage({ onActivitiesChanged }: SettingsPageProps) {
 							Maintenance
 						</h3>
 						<WaxedChainReminderSettings />
+					</section>
+
+					<section className="xl:col-span-2">
+						<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8] mb-3">
+							Trainer
+						</h3>
+						<CoachModelSettings />
 					</section>
 				</div>
 			</div>
