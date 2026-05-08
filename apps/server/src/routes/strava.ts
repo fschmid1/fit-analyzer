@@ -152,7 +152,7 @@ const updateTokenStmt = db.prepare(
 );
 
 const checkStravaActivityStmt = db.prepare<{ id: string }, [string, string]>(
-	`SELECT id FROM activities WHERE user_id = ? AND strava_activity_id = ?`,
+	"SELECT id FROM activities WHERE user_id = ? AND strava_activity_id = ?",
 );
 
 const insertActivityStmt = db.prepare(
@@ -351,8 +351,7 @@ async function importSingleActivity(
 
 	// Fetch streams
 	const streamsRes = await fetch(
-		`https://www.strava.com/api/v3/activities/${stravaActivityId}/streams` +
-			`?keys=time,watts,heartrate,cadence,velocity_smooth,grade_smooth&key_by_type=true`,
+		`https://www.strava.com/api/v3/activities/${stravaActivityId}/streams?keys=time,watts,heartrate,cadence,velocity_smooth,grade_smooth&key_by_type=true`,
 		{ headers: { Authorization: `Bearer ${accessToken}` } },
 	);
 	const streams: StravaStreams = streamsRes.ok
@@ -560,7 +559,7 @@ strava.delete("/disconnect", (c) => {
 		return c.json({ error: "Unauthorized" }, 401);
 	}
 
-	db.prepare(`DELETE FROM strava_tokens WHERE user_id = ?`).run(userId);
+	db.prepare("DELETE FROM strava_tokens WHERE user_id = ?").run(userId);
 	console.log(`[strava] Disconnected user ${userId}`);
 	return c.json({ ok: true });
 });
@@ -575,7 +574,7 @@ strava.post("/sync", async (c) => {
 	}
 
 	const daysBack = Number(c.req.query("daysBack") ?? "30");
-	if (isNaN(daysBack) || daysBack < 1 || daysBack > 365) {
+	if (Number.isNaN(daysBack) || daysBack < 1 || daysBack > 365) {
 		return c.json({ error: "daysBack must be between 1 and 365" }, 400);
 	}
 

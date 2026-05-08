@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import type { TrainerMessage } from "@fit-analyzer/shared";
 
 /** Strip <details>…</details> reasoning blocks from assistant text */

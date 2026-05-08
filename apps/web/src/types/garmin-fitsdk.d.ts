@@ -30,9 +30,9 @@ declare module "@garmin/fitsdk" {
 		};
 	}
 
-	export class Utils {
-		static FIT_EPOCH_MS: number;
-		static convertDateTimeToDate(fitTimestamp: number): Date;
-		static convertDateToDateTime(date: Date): number;
-	}
+	export const Utils: {
+		FIT_EPOCH_MS: number;
+		convertDateTimeToDate(fitTimestamp: number): Date;
+		convertDateToDateTime(date: Date): number;
+	};
 }

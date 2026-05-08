@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertCircle, BellRing, CheckCircle2, Loader2 } from "lucide-react";
-import type { WaxedChainReminderSettings } from "@fit-analyzer/shared";
+import type { WaxedChainReminderSettings as WaxedChainReminderSettingsData } from "@fit-analyzer/shared";
 import {
 	fetchUserSettings,
 	resetWaxedChainReminderProgress,
@@ -18,9 +18,8 @@ function formatLastNotifiedAt(value: string | null): string {
 }
 
 export function WaxedChainReminderSettings() {
-	const [settings, setSettings] = useState<WaxedChainReminderSettings | null>(
-		null,
-	);
+	const [settings, setSettings] =
+		useState<WaxedChainReminderSettingsData | null>(null);
 	const [enabled, setEnabled] = useState(false);
 	const [thresholdKm, setThresholdKm] = useState("300");
 	const [ntfyTopic, setNtfyTopic] = useState("");
@@ -194,8 +193,8 @@ export function WaxedChainReminderSettings() {
 
 				{!loading && (
 					<>
-						<label className="flex items-center justify-between gap-4 rounded-xl border border-[rgba(139,92,246,0.12)] bg-[#0f0b1a]/70 px-4 py-3">
-							<div>
+						<div className="flex items-center justify-between gap-4 rounded-xl border border-[rgba(139,92,246,0.12)] bg-[#0f0b1a]/70 px-4 py-3">
+							<div id="waxed-chain-reminders-label">
 								<p className="text-sm font-medium text-[#f1f5f9]">
 									Enable reminders
 								</p>
@@ -207,6 +206,7 @@ export function WaxedChainReminderSettings() {
 								type="button"
 								role="switch"
 								aria-checked={enabled}
+								aria-labelledby="waxed-chain-reminders-label"
 								onClick={() => setEnabled((value) => !value)}
 								className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200 cursor-pointer ${
 									enabled ? "bg-emerald-500/70" : "bg-[#241b3d]"
@@ -218,7 +218,7 @@ export function WaxedChainReminderSettings() {
 									}`}
 								/>
 							</button>
-						</label>
+						</div>
 
 						<div className="grid gap-3 sm:grid-cols-2">
 							<label className="flex flex-col gap-1.5">

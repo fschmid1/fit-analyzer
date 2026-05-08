@@ -90,7 +90,9 @@ export function createTrainerStreamConsumer(
 				if (closed) return;
 
 				while (index < entry.chunks.length) {
-					controller.enqueue(entry.chunks[index]!);
+					const chunk = entry.chunks[index];
+					if (chunk === undefined) break;
+					controller.enqueue(chunk);
 					index++;
 				}
 
@@ -105,7 +107,10 @@ export function createTrainerStreamConsumer(
 
 			waiter = () => {
 				if (!closed) {
-					entry.waiters.add(waiter!);
+					const currentWaiter = waiter;
+					if (currentWaiter) {
+						entry.waiters.add(currentWaiter);
+					}
 				}
 				flush();
 			};

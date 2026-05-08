@@ -17,7 +17,7 @@ export function formatCopyBoxText(
 ): string {
 	const lines: string[] = [];
 
-	const weekday = new Date(summary.date + "T00:00:00").toLocaleDateString(
+	const weekday = new Date(`${summary.date}T00:00:00`).toLocaleDateString(
 		"en-US",
 		{ weekday: "long" },
 	);

@@ -46,11 +46,11 @@ const insertStmt = db.prepare(
 );
 
 const updateIntervalsStmt = db.prepare(
-	`UPDATE activities SET intervals = ?, interval_minutes = ?, custom_ranges = ? WHERE id = ? AND user_id = ?`,
+	"UPDATE activities SET intervals = ?, interval_minutes = ?, custom_ranges = ? WHERE id = ? AND user_id = ?",
 );
 
 const updateSummaryStmt = db.prepare(
-	`UPDATE activities SET summary = ? WHERE id = ? AND user_id = ?`,
+	"UPDATE activities SET summary = ? WHERE id = ? AND user_id = ?",
 );
 
 const deleteStmt = db.prepare(

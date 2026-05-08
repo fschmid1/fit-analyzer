@@ -9,7 +9,7 @@ import {
 type Deferred = (chunk: StreamChunk | null) => void;
 
 function createQueue() {
-	let buffer: StreamChunk[] = [];
+	const buffer: StreamChunk[] = [];
 	let waiters: Deferred[] = [];
 
 	return {
