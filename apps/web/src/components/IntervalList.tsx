@@ -253,6 +253,7 @@ export function IntervalList({
 									() => handleCustomClick(interval),
 									<button
 										type="button"
+										aria-label={`Remove custom interval ${interval.index + 1}`}
 										onClick={(e) => {
 											e.stopPropagation();
 											onRemoveCustomInterval(interval.index);

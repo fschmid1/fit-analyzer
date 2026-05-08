@@ -41,8 +41,8 @@ export function FileDropZone({ onFileParsed }: FileDropZoneProps) {
 	const handleDrop = useCallback(
 		(e: React.DragEvent) => {
 			e.preventDefault();
-			if (isParsing) return;
 			setIsDragging(false);
+			if (isParsing) return;
 
 			const file = e.dataTransfer.files[0];
 			if (file) handleFile(file);

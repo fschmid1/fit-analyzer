@@ -558,7 +558,8 @@ export const ActivityChart = memo(function ActivityChart({
 		) {
 			return "hrCad";
 		}
-		return "gradient";
+		if (hasGradient && showGradient) return "gradient";
+		return null;
 	}, [
 		hasPower,
 		showPower,
@@ -568,6 +569,8 @@ export const ActivityChart = memo(function ActivityChart({
 		showCadence,
 		hasSpeed,
 		showSpeed,
+		hasGradient,
+		showGradient,
 	]);
 
 	// Compute Y-axis domains based on VISIBLE data
@@ -849,7 +852,6 @@ export const ActivityChart = memo(function ActivityChart({
 									axisLine={AXIS_LINE}
 									tickLine={false}
 									width={45}
-									label={POWER_LABEL}
 								/>
 							)}
 
@@ -865,7 +867,6 @@ export const ActivityChart = memo(function ActivityChart({
 									axisLine={AXIS_LINE}
 									tickLine={false}
 									width={55}
-									label={HR_CAD_LABEL}
 								/>
 							)}
 
@@ -879,7 +880,6 @@ export const ActivityChart = memo(function ActivityChart({
 									axisLine={{ stroke: "rgba(16, 185, 129, 0.2)" }}
 									tickLine={false}
 									width={40}
-									label={GRADIENT_LABEL}
 									tickFormatter={(v) => `${v}%`}
 								/>
 							)}
@@ -967,7 +967,7 @@ export const ActivityChart = memo(function ActivityChart({
 							{intervalRanges?.map((range) => (
 								<ReferenceArea
 									key={`${range[0]}-${range[1]}`}
-									yAxisId={overlayAxisId}
+									yAxisId={overlayAxisId ?? undefined}
 									x1={range[0]}
 									x2={range[1]}
 									fill="#f59e0b"
@@ -981,7 +981,7 @@ export const ActivityChart = memo(function ActivityChart({
 							{/* Rubber-band selection overlay */}
 							{refAreaLeft !== null && refAreaRight !== null && (
 								<ReferenceArea
-									yAxisId={overlayAxisId}
+									yAxisId={overlayAxisId ?? undefined}
 									x1={refAreaLeft}
 									x2={refAreaRight}
 									fill="#8b5cf6"
