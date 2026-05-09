@@ -60,18 +60,14 @@ function SwipeableRow({
 			if (!active) {
 				let nextOpen = isOpen;
 				if (Math.abs(mx) > minSwipe || Math.abs(vx) > velocityThreshold) {
-					nextOpen = dx > 0;
+					nextOpen = dx < 0;
 					setIsOpen(nextOpen);
 				}
-				springApi.start({ x: nextOpen ? 80 : 0 });
+				springApi.start({ x: nextOpen ? -80 : 0 });
 			} else {
-				if (isOpen && dx < 0) {
-					const clamped = Math.max(-80, Math.min(mx + 80, 80));
-					springApi.start({ x: clamped, immediate: true });
-				} else {
-					const clamped = Math.max(-80, Math.min(mx, 80));
-					springApi.start({ x: clamped, immediate: true });
-				}
+				const targetX = isOpen ? mx - 80 : mx;
+				const clamped = Math.max(-80, Math.min(targetX, 0));
+				springApi.start({ x: clamped, immediate: true });
 			}
 		},
 		{
