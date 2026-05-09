@@ -148,6 +148,13 @@ try {
 	/* column already exists */
 }
 
+// Migration: add coach_model column to existing trainer_chats rows
+try {
+	db.exec("ALTER TABLE trainer_chats ADD COLUMN coach_model TEXT");
+} catch {
+	/* column already exists */
+}
+
 // Strava OAuth token storage
 db.exec(`
   CREATE TABLE IF NOT EXISTS strava_tokens (

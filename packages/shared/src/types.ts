@@ -152,6 +152,7 @@ export interface TrainerThread {
 	id: string;
 	name: string;
 	activityId: string;
+	coachModel: string | null;
 	createdAt: string;
 	updatedAt: string;
 	messageCount: number;

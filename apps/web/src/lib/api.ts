@@ -228,6 +228,17 @@ export async function renameThread(
 	});
 }
 
+export async function updateThreadModel(
+	threadId: string,
+	coachModel: string,
+): Promise<void> {
+	await fetch(`${API_BASE}/trainer/threads/${threadId}`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ coachModel }),
+	});
+}
+
 export async function deleteThread(threadId: string): Promise<void> {
 	await fetch(`${API_BASE}/trainer/threads/${threadId}`, { method: "DELETE" });
 }
@@ -267,6 +278,15 @@ export async function compactTrainerHistory(threadId: string): Promise<{
 		throw new Error((err as { error?: string }).error ?? "Compaction failed");
 	}
 	return res.json();
+}
+
+export async function forkThread(threadId: string): Promise<TrainerThread> {
+	const res = await fetch(`${API_BASE}/trainer/fork/${threadId}`, {
+		method: "POST",
+	});
+	if (!res.ok) throw new Error("Failed to fork thread");
+	const data = await res.json();
+	return data.thread;
 }
 
 // ─── Strava ───────────────────────────────────────────────────────────────────
