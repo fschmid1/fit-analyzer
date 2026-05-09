@@ -14,6 +14,7 @@ import {
 	startTrainerStreamProducer,
 } from "../lib/trainerStreamRegistry.js";
 import { getCoachModelSettings } from "../lib/coachModelSettings.js";
+import { AVAILABLE_MODELS } from "@fit-analyzer/shared";
 
 const SYSTEM_PROMPT =
 	"You are an expert endurance sports coach specialising in cycling and triathlon. " +
@@ -61,7 +62,7 @@ function getKimiRequestMetadata(body: TrainerChatRequestBody, userId: string) {
 // ─── Prepared statements ─────────────────────────────────────────────────────
 
 const getThreadsStmt = db.prepare(
-	`SELECT c.id, c.name, c.activity_id as activityId,
+	`SELECT c.id, c.name, c.activity_id as activityId, c.coach_model as coachModel,
             c.created_at as createdAt, c.updated_at as updatedAt,
             COUNT(m.id) as messageCount
      FROM trainer_chats c
@@ -72,7 +73,7 @@ const getThreadsStmt = db.prepare(
 );
 
 const getThreadByIdStmt = db.prepare(
-	`SELECT id, name, activity_id as activityId, user_id as userId,
+	`SELECT id, name, activity_id as activityId, coach_model as coachModel, user_id as userId,
             created_at as createdAt, updated_at as updatedAt
      FROM trainer_chats
      WHERE id = ? AND user_id = ?`,
@@ -86,12 +87,17 @@ const getMessagesStmt = db.prepare(
 );
 
 const createThreadStmt = db.prepare(
-	`INSERT INTO trainer_chats (id, activity_id, user_id, name, created_at, updated_at)
-     VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
+	`INSERT INTO trainer_chats (id, activity_id, user_id, name, coach_model, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
 );
 
 const renameThreadStmt = db.prepare(
 	`UPDATE trainer_chats SET name = ?, updated_at = datetime('now')
+     WHERE id = ? AND user_id = ?`,
+);
+
+const updateThreadModelStmt = db.prepare(
+	`UPDATE trainer_chats SET coach_model = ?, updated_at = datetime('now')
      WHERE id = ? AND user_id = ?`,
 );
 
@@ -112,6 +118,17 @@ const insertMessageStmt = db.prepare(
      VALUES (?, ?, ?, ?, ?)`,
 );
 
+function resolveThreadModel(
+	thread: { coachModel: string | null } | undefined,
+	userId: string,
+): string {
+	if (thread?.coachModel) {
+		const known = AVAILABLE_MODELS.find((m) => m.id === thread.coachModel);
+		if (known) return known.id;
+	}
+	return getCoachModelSettings(userId).coachModel;
+}
+
 const trainer = new Hono();
 
 // ─── Chat streaming ───────────────────────────────────────────────────────────
@@ -125,7 +142,14 @@ trainer.post("/chat", async (c) => {
 	const body: TrainerChatRequestBody = await c.req.json();
 	const streamId = getStringBodyValue(body.streamId) ?? crypto.randomUUID();
 	const modelMessages = convertMessagesToModelMessages(body.messages ?? []);
-	const model = getCoachModelSettings(userId).coachModel;
+
+	const threadId = getStringBodyValue(body.threadId);
+	const thread = threadId
+		? (getThreadByIdStmt.get(threadId, userId) as
+				| { coachModel: string | null }
+				| undefined)
+		: undefined;
+	const model = resolveThreadModel(thread, userId);
 
 	if (!hasActiveTrainerStream(streamId)) {
 		startTrainerStreamProducer(
@@ -181,8 +205,13 @@ trainer.post("/threads/:activityId", async (c) => {
 	const { activityId } = c.req.param();
 	const body = await c.req.json().catch(() => ({}));
 	const name: string = (body.name as string | undefined)?.trim() || "Thread 1";
+	const model: string | undefined = (
+		body.coachModel as string | undefined
+	)?.trim();
 	const threadId = crypto.randomUUID();
-	createThreadStmt.run(threadId, activityId, userId, name);
+	const coachModel =
+		model && AVAILABLE_MODELS.find((m) => m.id === model) ? model : null;
+	createThreadStmt.run(threadId, activityId, userId, name, coachModel);
 	const thread = getThreadByIdStmt.get(threadId, userId);
 	return c.json({ thread });
 });
@@ -191,9 +220,19 @@ trainer.patch("/threads/:threadId", async (c) => {
 	const userId = getUserId(c);
 	const { threadId } = c.req.param();
 	const body = await c.req.json();
-	const name: string = (body.name as string | undefined)?.trim() ?? "";
-	if (!name) return c.json({ error: "Name is required" }, 400);
-	renameThreadStmt.run(name, threadId, userId);
+	const name: string | undefined = (body.name as string | undefined)?.trim();
+	const model: string | undefined = (
+		body.coachModel as string | undefined
+	)?.trim();
+	if (!name && !model)
+		return c.json({ error: "Name or coachModel is required" }, 400);
+	if (name) renameThreadStmt.run(name, threadId, userId);
+	if (model) {
+		const coachModel = AVAILABLE_MODELS.find((m) => m.id === model)
+			? model
+			: null;
+		updateThreadModelStmt.run(coachModel, threadId, userId);
+	}
 	return c.json({ ok: true });
 });
 
@@ -257,7 +296,12 @@ trainer.post("/compact/:threadId", async (c) => {
 	const { threadId } = c.req.param();
 
 	const sourceThread = getThreadByIdStmt.get(threadId, userId) as
-		| { id: string; name: string; activityId: string }
+		| {
+				id: string;
+				name: string;
+				activityId: string;
+				coachModel: string | null;
+		  }
 		| undefined;
 	if (!sourceThread) return c.json({ error: "Thread not found" }, 404);
 
@@ -320,7 +364,7 @@ Messages to summarize:
 
 ${messagesText}`;
 
-	const model = getCoachModelSettings(userId).coachModel;
+	const model = resolveThreadModel(sourceThread, userId);
 
 	const response = await fetch(OPENROUTER_CHAT_COMPLETIONS_URL, {
 		method: "POST",
@@ -402,7 +446,12 @@ trainer.post("/fork/:threadId", async (c) => {
 	const { threadId } = c.req.param();
 
 	const sourceThread = getThreadByIdStmt.get(threadId, userId) as
-		| { id: string; name: string; activityId: string }
+		| {
+				id: string;
+				name: string;
+				activityId: string;
+				coachModel: string | null;
+		  }
 		| undefined;
 	if (!sourceThread) return c.json({ error: "Thread not found" }, 404);
 
@@ -418,7 +467,13 @@ trainer.post("/fork/:threadId", async (c) => {
 	}));
 
 	db.transaction(() => {
-		createThreadStmt.run(forkId, sourceThread.activityId, userId, forkName);
+		createThreadStmt.run(
+			forkId,
+			sourceThread.activityId,
+			userId,
+			forkName,
+			sourceThread.coachModel,
+		);
 		for (const m of newMessages) {
 			insertMessageStmt.run(m.id, forkId, m.role, m.content, m.createdAt);
 		}
@@ -428,6 +483,7 @@ trainer.post("/fork/:threadId", async (c) => {
 		id: string;
 		name: string;
 		activityId: string;
+		coachModel: string | null;
 		createdAt: string;
 		updatedAt: string;
 	};

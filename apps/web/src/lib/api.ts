@@ -228,6 +228,17 @@ export async function renameThread(
 	});
 }
 
+export async function updateThreadModel(
+	threadId: string,
+	coachModel: string,
+): Promise<void> {
+	await fetch(`${API_BASE}/trainer/threads/${threadId}`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ coachModel }),
+	});
+}
+
 export async function deleteThread(threadId: string): Promise<void> {
 	await fetch(`${API_BASE}/trainer/threads/${threadId}`, { method: "DELETE" });
 }

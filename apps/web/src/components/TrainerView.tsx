@@ -23,7 +23,10 @@ import {
 } from "lucide-react";
 import type { UIMessage } from "@tanstack/ai-react";
 import type { TrainerMessage, TrainerThread } from "@fit-analyzer/shared";
-import { getCoachModelDisplayName } from "@fit-analyzer/shared";
+import {
+	AVAILABLE_MODELS,
+	getCoachModelDisplayName,
+} from "@fit-analyzer/shared";
 import {
 	compactTrainerHistory,
 	createThread,
@@ -35,6 +38,7 @@ import {
 	importTrainerChat,
 	renameThread,
 	saveTrainerHistory,
+	updateThreadModel,
 } from "../lib/api";
 import { createTrainerStreamConnection } from "../lib/trainerStreamConnection";
 import {
@@ -653,6 +657,111 @@ function ThreadSidebar({
 	);
 }
 
+// ─── ModelPicker ──────────────────────────────────────────────────────────────
+
+interface ModelPickerProps {
+	currentModel: string | null;
+	defaultModel: string | null;
+	onChange: (modelId: string) => void;
+}
+
+function ModelPicker({
+	currentModel,
+	defaultModel,
+	onChange,
+}: ModelPickerProps) {
+	const [open, setOpen] = useState(false);
+	const containerRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (!open) return;
+		const handleClick = (e: MouseEvent) => {
+			if (
+				containerRef.current &&
+				!containerRef.current.contains(e.target as Node)
+			) {
+				setOpen(false);
+			}
+		};
+		const handleKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") setOpen(false);
+		};
+		window.addEventListener("pointerdown", handleClick);
+		window.addEventListener("keydown", handleKey);
+		return () => {
+			window.removeEventListener("pointerdown", handleClick);
+			window.removeEventListener("keydown", handleKey);
+		};
+	}, [open]);
+
+	const activeModel = currentModel ?? defaultModel ?? AVAILABLE_MODELS[0].id;
+	const activeName = getCoachModelDisplayName(activeModel);
+	const activeIndex =
+		AVAILABLE_MODELS.findIndex((m) => m.id === activeModel) + 1;
+
+	return (
+		<div ref={containerRef} className="relative">
+			<button
+				type="button"
+				onClick={() => setOpen((o) => !o)}
+				className="flex items-center gap-1.5 px-2 py-1 text-xs text-[#94a3b8] hover:text-[#c4b5fd] bg-[#1a1533]/60 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-all duration-200 cursor-pointer"
+				title={activeModel}
+			>
+				<span className="truncate max-w-[10rem]">{activeName}</span>
+				<ChevronDown
+					className={`w-3 h-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+				/>
+			</button>
+
+			{open &&
+				createPortal(
+					<div
+						className="fixed z-[80] w-64 py-1 rounded-lg bg-[#1a1533] border border-[rgba(139,92,246,0.2)] shadow-xl shadow-black/40 overflow-hidden"
+						style={(() => {
+							const rect = containerRef.current?.getBoundingClientRect();
+							if (!rect) return {};
+							const dropdownHeight = AVAILABLE_MODELS.length * 32 + 8;
+							const spaceBelow = window.innerHeight - rect.bottom;
+							const openUpward =
+								spaceBelow < dropdownHeight && rect.top > dropdownHeight;
+							return {
+								left: rect.left,
+								top: openUpward
+									? rect.top - dropdownHeight - 6
+									: rect.bottom + 6,
+							};
+						})()}
+						onPointerDown={(e) => e.stopPropagation()}
+						role="menu"
+					>
+						{AVAILABLE_MODELS.map((model, index) => (
+							<button
+								key={model.id}
+								type="button"
+								onClick={() => {
+									onChange(model.id);
+									setOpen(false);
+								}}
+								className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors cursor-pointer ${
+									model.id === activeModel
+										? "bg-[#8b5cf6]/15 text-[#e2d9f3]"
+										: "text-[#c4b5fd] hover:bg-[#8b5cf6]/15"
+								}`}
+								role="menuitem"
+							>
+								<span className="flex-1 text-left truncate">{model.name}</span>
+								<span className="text-[10px] text-[#4a4468] tabular-nums shrink-0">
+									⌘{index + 1}
+								</span>
+							</button>
+						))}
+					</div>,
+					document.body,
+				)}
+		</div>
+	);
+}
+
 // ─── TrainerChat ──────────────────────────────────────────────────────────────
 
 interface TrainerChatProps {
@@ -664,6 +773,9 @@ interface TrainerChatProps {
 	onOpenThreads: () => void;
 	onImported: () => void;
 	onCompacted: (newThread: TrainerThread) => void;
+	threadModel: string | null;
+	defaultModel: string | null;
+	onModelChange: (modelId: string) => void;
 }
 
 function TrainerChat({
@@ -675,6 +787,9 @@ function TrainerChat({
 	onOpenThreads,
 	onImported,
 	onCompacted,
+	threadModel,
+	defaultModel,
+	onModelChange,
 }: TrainerChatProps) {
 	const connectionRef = useRef(createTrainerStreamConnection(threadId));
 	const { messages, sendMessage, status, isLoading, stop, error, setMessages } =
@@ -694,13 +809,15 @@ function TrainerChat({
 		"idle" | "loading" | "done" | "error"
 	>("idle");
 	const [compactError, setCompactError] = useState<string | null>(null);
-	const [coachModelName, setCoachModelName] = useState<string>("");
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const bottomRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [showScrollTop, setShowScrollTop] = useState(false);
 	const [showScrollBottom, setShowScrollBottom] = useState(false);
+
+	const activeModel = threadModel ?? defaultModel ?? AVAILABLE_MODELS[0].id;
+	const coachModelName = getCoachModelDisplayName(activeModel);
 
 	useEffect(() => {
 		const activeStream = loadActiveTrainerStream(threadId);
@@ -739,18 +856,6 @@ function TrainerChat({
 
 		return () => abortController.abort();
 	}, [initialMessages, setMessages, threadId]);
-
-	useEffect(() => {
-		fetchUserSettings()
-			.then((data) => {
-				const id = data.coachModel?.coachModel;
-				if (!id) return;
-				setCoachModelName(getCoachModelDisplayName(id));
-			})
-			.catch(() => {
-				/* ignore */
-			});
-	}, []);
 
 	const handleFileChange = useCallback(
 		async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1091,7 +1196,7 @@ function TrainerChat({
 
 			{/* Input bar */}
 			<div className="px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-6 sm:pb-6 sm:pt-3 border-t border-[rgba(139,92,246,0.1)] bg-[#0f0b1a] shrink-0">
-				<div className="flex gap-2 sm:gap-3 items-end bg-[#1a1533]/60 border border-[rgba(139,92,246,0.15)] rounded-lg px-3 py-2.5 sm:px-4 sm:py-3">
+				<div className="flex flex-col gap-2 bg-[#1a1533]/60 border border-[rgba(139,92,246,0.15)] rounded-lg px-3 py-2.5 sm:px-4 sm:py-3">
 					<textarea
 						ref={textareaRef}
 						defaultValue={initialInput}
@@ -1107,26 +1212,35 @@ function TrainerChat({
 						className="flex-1 resize-none bg-transparent text-sm text-[#f1f5f9] placeholder-[#4a4468] outline-none leading-relaxed"
 						style={{ maxHeight: "200px" }}
 					/>
-					{isLoading ? (
-						<button
-							type="button"
-							onClick={stop}
-							title="Stop generation"
-							className="flex items-center justify-center w-8 h-8 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-400 transition-all duration-200 cursor-pointer shrink-0"
-						>
-							<Square className="w-3.5 h-3.5 fill-current" />
-						</button>
-					) : (
-						<button
-							type="button"
-							onClick={handleSend}
-							disabled={!hasInput}
-							title="Send message"
-							className="flex items-center justify-center w-8 h-8 rounded-lg bg-[#8b5cf6]/20 hover:bg-[#8b5cf6]/30 border border-[#8b5cf6]/30 text-[#8b5cf6] transition-all duration-200 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
-						>
-							<Send className="w-3.5 h-3.5" />
-						</button>
-					)}
+					<div className="flex items-center gap-2">
+						<ModelPicker
+							currentModel={threadModel}
+							defaultModel={defaultModel}
+							onChange={onModelChange}
+						/>
+						<div className="ml-auto">
+							{isLoading ? (
+								<button
+									type="button"
+									onClick={stop}
+									title="Stop generation"
+									className="flex items-center justify-center w-8 h-8 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-400 transition-all duration-200 cursor-pointer shrink-0"
+								>
+									<Square className="w-3.5 h-3.5 fill-current" />
+								</button>
+							) : (
+								<button
+									type="button"
+									onClick={handleSend}
+									disabled={!hasInput}
+									title="Send message"
+									className="flex items-center justify-center w-8 h-8 rounded-lg bg-[#8b5cf6]/20 hover:bg-[#8b5cf6]/30 border border-[#8b5cf6]/30 text-[#8b5cf6] transition-all duration-200 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+								>
+									<Send className="w-3.5 h-3.5" />
+								</button>
+							)}
+						</div>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -1150,6 +1264,7 @@ export function TrainerView({
 	const [threadsOpen, setThreadsOpen] = useState(false);
 	const [currentInitialInput, setCurrentInitialInput] =
 		useState(initialMessage);
+	const [defaultModel, setDefaultModel] = useState<string | null>(null);
 	const initialized = useRef(false);
 
 	// Load threads for this activity
@@ -1177,6 +1292,17 @@ export function TrainerView({
 		loadThreads();
 	}, [loadThreads]);
 
+	useEffect(() => {
+		fetchUserSettings()
+			.then((data) => {
+				const id = data.coachModel?.coachModel;
+				if (id) setDefaultModel(id);
+			})
+			.catch(() => {
+				/* ignore */
+			});
+	}, []);
+
 	// When active thread changes, load its messages
 	useEffect(() => {
 		if (!activeThreadId) {
@@ -1197,6 +1323,8 @@ export function TrainerView({
 		setCurrentInitialInput(""); // only pre-fill on first open
 	}, []);
 
+	const activeThread = threads.find((t) => t.id === activeThreadId);
+
 	const handleCreateThread = useCallback(async () => {
 		const name = `Thread ${threads.length + 1}`;
 		const thread = await createThread(activityId, name);
@@ -1210,6 +1338,18 @@ export function TrainerView({
 			await renameThread(threadId, name);
 			setThreads((prev) =>
 				prev.map((t) => (t.id === threadId ? { ...t, name } : t)),
+			);
+		},
+		[],
+	);
+
+	const handleModelChange = useCallback(
+		async (threadId: string, modelId: string) => {
+			await updateThreadModel(threadId, modelId);
+			setThreads((prev) =>
+				prev.map((t) =>
+					t.id === threadId ? { ...t, coachModel: modelId } : t,
+				),
 			);
 		},
 		[],
@@ -1309,6 +1449,9 @@ export function TrainerView({
 				onOpenThreads={() => setThreadsOpen(true)}
 				onImported={handleImported}
 				onCompacted={handleCompacted}
+				threadModel={activeThread?.coachModel ?? null}
+				defaultModel={defaultModel}
+				onModelChange={(modelId) => handleModelChange(activeThreadId, modelId)}
 			/>
 		);
 	})();
