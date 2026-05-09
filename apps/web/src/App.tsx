@@ -374,7 +374,7 @@ function App() {
 	) : null;
 
 	return (
-		<div className="min-h-screen flex flex-col bg-[#0f0b1a]">
+		<div className="h-dvh flex flex-col bg-[#0f0b1a] overflow-hidden">
 			<Header
 				onBackToHistory={handleBackToHistory}
 				onUploadNew={handleUploadNew}
