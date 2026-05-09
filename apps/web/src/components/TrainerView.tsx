@@ -750,9 +750,6 @@ function ModelPicker({
 								role="menuitem"
 							>
 								<span className="flex-1 text-left truncate">{model.name}</span>
-								<span className="text-[10px] text-[#4a4468] tabular-nums shrink-0">
-									⌘{index + 1}
-								</span>
 							</button>
 						))}
 					</div>,
