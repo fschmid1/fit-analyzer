@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import type { UIMessage } from "@tanstack/ai-react";
 import type { TrainerMessage, TrainerThread } from "@fit-analyzer/shared";
+import { getCoachModelDisplayName } from "@fit-analyzer/shared";
 import {
 	compactTrainerHistory,
 	createThread,
@@ -722,15 +723,7 @@ function TrainerChat({
 			.then((data) => {
 				const id = data.coachModel?.coachModel;
 				if (!id) return;
-				// Extract display name from model id (last segment, capitalized)
-				const segments = id.split("/");
-				const name = segments[segments.length - 1] ?? "";
-				setCoachModelName(
-					name
-						.split("-")
-						.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-						.join(" "),
-				);
+				setCoachModelName(getCoachModelDisplayName(id));
 			})
 			.catch(() => {
 				/* ignore */

@@ -20,3 +20,9 @@ export type {
 	TrainerChatHistory,
 	SaveTrainerHistoryBody,
 } from "./types.js";
+
+export {
+	AVAILABLE_MODELS,
+	getCoachModelDisplayName,
+} from "./coachModels.js";
+export type { AvailableModelId } from "./coachModels.js";

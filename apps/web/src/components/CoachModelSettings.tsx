@@ -1,12 +1,10 @@
-import type { CoachModelSettings as CoachModelSettingsData } from "@fit-analyzer/shared";
+import {
+	AVAILABLE_MODELS,
+	type CoachModelSettings as CoachModelSettingsData,
+} from "@fit-analyzer/shared";
 import { AlertCircle, Bot, CheckCircle2, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { fetchUserSettings, updateCoachModelSettings } from "../lib/api";
-
-const AVAILABLE_MODELS = [
-	{ id: "moonshotai/kimi-k2.6", name: "Kimi K2.6" },
-	{ id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro" },
-];
 
 export function CoachModelSettings() {
 	const [settings, setSettings] = useState<CoachModelSettingsData | null>(null);
