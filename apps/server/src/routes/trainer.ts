@@ -395,6 +395,48 @@ ${summary}`,
 	});
 });
 
+// ─── Fork ─────────────────────────────────────────────────────────────────────
+
+trainer.post("/fork/:threadId", async (c) => {
+	const userId = getUserId(c);
+	const { threadId } = c.req.param();
+
+	const sourceThread = getThreadByIdStmt.get(threadId, userId) as
+		| { id: string; name: string; activityId: string }
+		| undefined;
+	if (!sourceThread) return c.json({ error: "Thread not found" }, 404);
+
+	const allMessages = getMessagesStmt.all(threadId) as TrainerMessage[];
+
+	const forkId = crypto.randomUUID();
+	const forkName = `${sourceThread.name} \u00b7 Copy`;
+
+	// Give every message a fresh ID so the fork can diverge independently
+	const newMessages = allMessages.map((m) => ({
+		...m,
+		id: crypto.randomUUID(),
+	}));
+
+	db.transaction(() => {
+		createThreadStmt.run(forkId, sourceThread.activityId, userId, forkName);
+		for (const m of newMessages) {
+			insertMessageStmt.run(m.id, forkId, m.role, m.content, m.createdAt);
+		}
+	})();
+
+	const forkThread = getThreadByIdStmt.get(forkId, userId) as {
+		id: string;
+		name: string;
+		activityId: string;
+		createdAt: string;
+		updatedAt: string;
+	};
+
+	return c.json({
+		thread: { ...forkThread, messageCount: newMessages.length },
+	});
+});
+
 // ─── Import ───────────────────────────────────────────────────────────────────
 
 trainer.post("/import", async (c) => {

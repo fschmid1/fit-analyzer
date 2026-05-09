@@ -9,6 +9,7 @@ import {
 	Brain,
 	ChevronDown,
 	ChevronRight,
+	GitFork,
 	Menu,
 	Minimize2,
 	MoreVertical,
@@ -30,6 +31,7 @@ import {
 	fetchThreads,
 	fetchTrainerHistory,
 	fetchUserSettings,
+	forkThread,
 	importTrainerChat,
 	renameThread,
 	saveTrainerHistory,
@@ -388,6 +390,7 @@ interface ThreadSidebarProps {
 	onCreate: () => void;
 	onRename: (id: string, name: string) => void;
 	onDelete: (id: string) => void;
+	onFork: (id: string) => void;
 	open: boolean;
 	onClose: () => void;
 }
@@ -399,7 +402,7 @@ interface ContextMenu {
 }
 
 const CONTEXT_MENU_WIDTH = 160;
-const CONTEXT_MENU_HEIGHT = 104;
+const CONTEXT_MENU_HEIGHT = 136;
 const CONTEXT_MENU_MARGIN = 8;
 
 function getContextMenuPosition(x: number, y: number) {
@@ -426,6 +429,7 @@ function ThreadSidebar({
 	onCreate,
 	onRename,
 	onDelete,
+	onFork,
 	open,
 	onClose,
 }: ThreadSidebarProps) {
@@ -502,6 +506,14 @@ function ThreadSidebar({
 			onDelete(threadId);
 		},
 		[onDelete],
+	);
+
+	const handleFork = useCallback(
+		(threadId: string) => {
+			setContextMenu(null);
+			onFork(threadId);
+		},
+		[onFork],
 	);
 
 	return (
@@ -613,6 +625,16 @@ function ThreadSidebar({
 						>
 							<Pencil className="w-3.5 h-3.5" />
 							Rename
+						</button>
+						<div className="my-1 border-t border-[rgba(139,92,246,0.1)]" />
+						<button
+							type="button"
+							onClick={() => handleFork(contextMenu.threadId)}
+							className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-[#c4b5fd] hover:bg-[#8b5cf6]/15 transition-colors cursor-pointer"
+							role="menuitem"
+						>
+							<GitFork className="w-3.5 h-3.5" />
+							Fork
 						</button>
 						<div className="my-1 border-t border-[rgba(139,92,246,0.1)]" />
 						<button
@@ -1207,6 +1229,12 @@ export function TrainerView({
 		[activeThreadId],
 	);
 
+	const handleForkThread = useCallback(async (threadId: string) => {
+		const newThread = await forkThread(threadId);
+		setThreads((prev) => [...prev, newThread]);
+		setActiveThreadId(newThread.id);
+	}, []);
+
 	const handleImported = useCallback(() => {
 		if (!activeThreadId) return;
 		setInitialMessages(null);
@@ -1294,6 +1322,7 @@ export function TrainerView({
 				onCreate={handleCreateThread}
 				onRename={handleRenameThread}
 				onDelete={handleDeleteThread}
+				onFork={handleForkThread}
 				open={threadsOpen}
 				onClose={() => setThreadsOpen(false)}
 			/>

@@ -269,6 +269,15 @@ export async function compactTrainerHistory(threadId: string): Promise<{
 	return res.json();
 }
 
+export async function forkThread(threadId: string): Promise<TrainerThread> {
+	const res = await fetch(`${API_BASE}/trainer/fork/${threadId}`, {
+		method: "POST",
+	});
+	if (!res.ok) throw new Error("Failed to fork thread");
+	const data = await res.json();
+	return data.thread;
+}
+
 // ─── Strava ───────────────────────────────────────────────────────────────────
 
 export interface StravaStatus {
