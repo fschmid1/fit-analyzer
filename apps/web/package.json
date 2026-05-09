@@ -12,9 +12,11 @@
 	"dependencies": {
 		"@fit-analyzer/shared": "workspace:*",
 		"@garmin/fitsdk": "^21.195.0",
+		"@react-spring/web": "^10.0.3",
 		"@tailwindcss/vite": "^4.2.2",
 		"@tanstack/ai-client": "^0.7.6",
 		"@tanstack/ai-react": "^0.7.7",
+		"@use-gesture/react": "^10.3.1",
 		"lucide-react": "^1.6.0",
 		"react": "^18.2.0",
 		"react-dom": "^18.2.0",

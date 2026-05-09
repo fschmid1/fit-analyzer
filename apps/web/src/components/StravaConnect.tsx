@@ -18,6 +18,7 @@ import {
 	unregisterStravaWebhook,
 	type StravaStatus,
 } from "../lib/api";
+import { AnimatedButton } from "./AnimatedButton";
 
 interface StravaConnectProps {
 	onSynced?: () => void;
@@ -202,14 +203,13 @@ export function StravaConnect({ onSynced }: StravaConnectProps) {
 				{/* Actions */}
 				{!loading &&
 					(!status?.connected ? (
-						<button
-							type="button"
+						<AnimatedButton
 							onClick={handleConnect}
 							className="flex items-center justify-center gap-2 w-full px-4 py-2.5 text-sm font-medium text-white bg-[#fc4c02] hover:bg-[#e04400] rounded-xl transition-colors duration-200 cursor-pointer"
 						>
 							<Link2 className="w-4 h-4" />
 							Connect with Strava
-						</button>
+						</AnimatedButton>
 					) : (
 						<div className="flex flex-col gap-3">
 							{/* Sync controls */}
@@ -227,11 +227,10 @@ export function StravaConnect({ onSynced }: StravaConnectProps) {
 									<option value={90}>Last 90 days</option>
 								</select>
 
-								<button
-									type="button"
+								<AnimatedButton
 									onClick={handleSync}
 									disabled={syncing}
-									className="flex items-center gap-2 flex-1 justify-center px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+									className="flex items-center gap-2 flex-1 justify-center px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-[color,background-color,border-color] duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									{syncing ? (
 										<>
@@ -244,7 +243,7 @@ export function StravaConnect({ onSynced }: StravaConnectProps) {
 											Sync Rides
 										</>
 									)}
-								</button>
+								</AnimatedButton>
 							</div>
 
 							<p className="text-xs text-[#94a3b8]">
@@ -265,15 +264,14 @@ export function StravaConnect({ onSynced }: StravaConnectProps) {
 												: "Register a webhook to import rides the moment you save them on Strava."}
 										</p>
 									</div>
-									<button
-										type="button"
+									<AnimatedButton
 										onClick={
 											webhookRegistered
 												? handleUnregisterWebhook
 												: handleRegisterWebhook
 										}
 										disabled={webhookLoading}
-										className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 cursor-pointer disabled:opacity-50 shrink-0 ml-3 ${
+										className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-[color,background-color,border-color] duration-200 cursor-pointer disabled:opacity-50 shrink-0 ml-3 ${
 											webhookRegistered
 												? "text-[#94a3b8] hover:text-red-400 bg-transparent hover:bg-red-500/10"
 												: "text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
@@ -287,14 +285,13 @@ export function StravaConnect({ onSynced }: StravaConnectProps) {
 											<Webhook className="w-3.5 h-3.5" />
 										)}
 										{webhookRegistered ? "Disable" : "Enable"}
-									</button>
+									</AnimatedButton>
 								</div>
 							</div>
 
 							{/* Disconnect */}
 							<div className="pt-1 border-t border-[rgba(139,92,246,0.1)]">
-								<button
-									type="button"
+								<AnimatedButton
 									onClick={handleDisconnect}
 									disabled={disconnecting}
 									className="flex items-center gap-1.5 text-xs text-[#94a3b8] hover:text-red-400 transition-colors duration-200 cursor-pointer disabled:opacity-50"
@@ -305,7 +302,7 @@ export function StravaConnect({ onSynced }: StravaConnectProps) {
 										<Link2Off className="w-3 h-3" />
 									)}
 									Disconnect Strava
-								</button>
+								</AnimatedButton>
 							</div>
 						</div>
 					))}

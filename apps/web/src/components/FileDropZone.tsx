@@ -1,4 +1,6 @@
 import { useState, useRef, useCallback } from "react";
+import { useDrag } from "@use-gesture/react";
+import { useSpring, animated } from "@react-spring/web";
 import { Upload, FileWarning, Loader2 } from "lucide-react";
 import { parseFit } from "../lib/parseFit";
 import type { ParsedActivity } from "@fit-analyzer/shared";
@@ -12,6 +14,33 @@ export function FileDropZone({ onFileParsed }: FileDropZoneProps) {
 	const [isParsing, setIsParsing] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const inputRef = useRef<HTMLInputElement>(null);
+	const dropRef = useRef<HTMLButtonElement>(null);
+
+	const [springStyle, springApi] = useSpring(() => ({
+		scale: 1,
+		config: { friction: 22, tension: 300 },
+	}));
+
+	// Tap gesture feedback for better mobile feel + drag drop feedback
+	useDrag(
+		({ down }) => {
+			if (!dropRef.current || isParsing) return;
+			if (down) {
+				setIsDragging(true);
+				springApi.start({ scale: 0.97, immediate: true });
+			} else {
+				setIsDragging(false);
+				springApi.start({ scale: 1 });
+			}
+		},
+		{
+			target: dropRef,
+			axis: "x",
+			rubberband: false,
+			filterTaps: true,
+			preventDefault: false,
+		},
+	);
 
 	const handleFile = useCallback(
 		async (file: File) => {
@@ -22,6 +51,7 @@ export function FileDropZone({ onFileParsed }: FileDropZoneProps) {
 
 			setError(null);
 			setIsParsing(true);
+			springApi.start({ scale: 1 });
 
 			try {
 				const arrayBuffer = await file.arrayBuffer();
@@ -35,7 +65,7 @@ export function FileDropZone({ onFileParsed }: FileDropZoneProps) {
 				setIsParsing(false);
 			}
 		},
-		[onFileParsed],
+		[onFileParsed, springApi],
 	);
 
 	const handleDrop = useCallback(
@@ -80,20 +110,22 @@ export function FileDropZone({ onFileParsed }: FileDropZoneProps) {
 				onChange={handleInputChange}
 				className="hidden"
 			/>
-			<button
+			<animated.button
+				ref={dropRef}
 				type="button"
 				disabled={isParsing}
 				onClick={handleClick}
 				onDrop={handleDrop}
 				onDragOver={handleDragOver}
 				onDragLeave={handleDragLeave}
+				style={springStyle}
 				className={`
           relative w-full max-w-lg aspect-square flex flex-col items-center justify-center gap-6
           rounded-3xl border-2 border-dashed cursor-pointer
-          transition-all duration-300 ease-out
+          transition-colors duration-300 ease-out
           ${
 						isDragging
-							? "border-[#8b5cf6] bg-[#8b5cf6]/10 shadow-[0_0_60px_rgba(139,92,246,0.2)] scale-[1.02]"
+							? "border-[#8b5cf6] bg-[#8b5cf6]/10 shadow-[0_0_60px_rgba(139,92,246,0.2)]"
 							: "border-[rgba(139,92,246,0.2)] bg-[#1a1533]/30 hover:border-[rgba(139,92,246,0.4)] hover:bg-[#1a1533]/50"
 					}
         `}
@@ -108,7 +140,7 @@ export function FileDropZone({ onFileParsed }: FileDropZoneProps) {
 				) : (
 					<>
 						<div
-							className={`flex items-center justify-center w-20 h-20 rounded-2xl transition-all duration-300 ${
+							className={`flex items-center justify-center w-20 h-20 rounded-2xl transition-colors duration-300 ${
 								isDragging ? "bg-[#8b5cf6]/30" : "bg-[#8b5cf6]/10"
 							}`}
 						>
@@ -133,7 +165,7 @@ export function FileDropZone({ onFileParsed }: FileDropZoneProps) {
 						<p className="text-sm text-red-400">{error}</p>
 					</div>
 				)}
-			</button>
+			</animated.button>
 		</div>
 	);
 }

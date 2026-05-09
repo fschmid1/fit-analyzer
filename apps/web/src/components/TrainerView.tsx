@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useChat } from "@tanstack/ai-react";
+import { useDrag } from "@use-gesture/react";
 import type { StreamChunk } from "@tanstack/ai";
 import {
 	ArrowDown,
@@ -395,6 +396,7 @@ interface ThreadSidebarProps {
 	onRename: (id: string, name: string) => void;
 	onDelete: (id: string) => void;
 	onFork: (id: string) => void;
+	onCompact: (id: string) => void;
 	open: boolean;
 	onClose: () => void;
 }
@@ -434,13 +436,50 @@ function ThreadSidebar({
 	onRename,
 	onDelete,
 	onFork,
+	onCompact,
 	open,
 	onClose,
 }: ThreadSidebarProps) {
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [editingName, setEditingName] = useState("");
 	const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
+	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 	const contextMenuRef = useRef<HTMLDivElement>(null);
+	const sidebarRef = useRef<HTMLDivElement>(null);
+
+	// Swipe-to-close on mobile
+	useDrag(
+		({ active, movement: [mx], direction: [dx], velocity: [vx] }) => {
+			if (!sidebarRef.current || !open) return;
+			const minSwipe = 60;
+			const velocityThreshold = 0.4;
+
+			if (!active) {
+				if (
+					dx < 0 &&
+					(Math.abs(mx) > minSwipe || Math.abs(vx) > velocityThreshold)
+				) {
+					onClose();
+				}
+				sidebarRef.current.style.transition =
+					"transform 0.2s cubic-bezier(0.32, 0.72, 0, 1)";
+				sidebarRef.current.style.transform = "translateX(0px)";
+				requestAnimationFrame(() => {
+					if (sidebarRef.current) sidebarRef.current.style.transition = "";
+				});
+			} else {
+				sidebarRef.current.style.transition = "none";
+				sidebarRef.current.style.transform = `translateX(${Math.min(mx, 0)}px)`;
+			}
+		},
+		{
+			target: sidebarRef,
+			axis: "x",
+			bounds: { left: -240, right: 0 },
+			rubberband: true,
+			preventDefault: true,
+		},
+	);
 
 	// Close context menu on outside click or Escape
 	useEffect(() => {
@@ -504,9 +543,14 @@ function ThreadSidebar({
 		setEditingId(null);
 	}, [editingId, editingName, onRename]);
 
-	const handleDelete = useCallback(
+	const handleDelete = useCallback((threadId: string) => {
+		setContextMenu(null);
+		setConfirmDeleteId(threadId);
+	}, []);
+
+	const confirmDelete = useCallback(
 		(threadId: string) => {
-			setContextMenu(null);
+			setConfirmDeleteId(null);
 			onDelete(threadId);
 		},
 		[onDelete],
@@ -520,8 +564,17 @@ function ThreadSidebar({
 		[onFork],
 	);
 
+	const handleCompact = useCallback(
+		(threadId: string) => {
+			setContextMenu(null);
+			onCompact(threadId);
+		},
+		[onCompact],
+	);
+
 	return (
 		<div
+			ref={sidebarRef}
 			className={`fixed inset-y-0 left-0 z-[60] flex w-72 max-w-[82vw] shrink-0 flex-col overflow-hidden border-r border-[rgba(139,92,246,0.1)] bg-[#080612] shadow-2xl shadow-black/40 transition-transform duration-200 md:static md:z-auto md:w-52 md:max-w-none md:translate-x-0 md:shadow-none ${
 				open ? "translate-x-0" : "-translate-x-full"
 			}`}
@@ -643,6 +696,16 @@ function ThreadSidebar({
 						<div className="my-1 border-t border-[rgba(139,92,246,0.1)]" />
 						<button
 							type="button"
+							onClick={() => handleCompact(contextMenu.threadId)}
+							className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-[#c4b5fd] hover:bg-[#8b5cf6]/15 transition-colors cursor-pointer"
+							role="menuitem"
+						>
+							<Minimize2 className="w-3.5 h-3.5" />
+							Compact
+						</button>
+						<div className="my-1 border-t border-[rgba(139,92,246,0.1)]" />
+						<button
+							type="button"
 							onClick={() => handleDelete(contextMenu.threadId)}
 							className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
 							role="menuitem"
@@ -650,6 +713,33 @@ function ThreadSidebar({
 							<Trash2 className="w-3.5 h-3.5" />
 							Delete
 						</button>
+					</div>,
+					document.body,
+				)}
+			{confirmDeleteId &&
+				createPortal(
+					<div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60">
+						<div className="w-72 rounded-lg bg-[#1a1533] border border-[rgba(139,92,246,0.2)] shadow-xl shadow-black/40 p-4">
+							<p className="text-sm text-[#c4b5fd] mb-4">
+								Are you sure you want to delete this thread?
+							</p>
+							<div className="flex justify-end gap-2">
+								<button
+									type="button"
+									onClick={() => setConfirmDeleteId(null)}
+									className="px-3 py-1.5 text-xs text-[#94a3b8] hover:text-[#c4b5fd] rounded-lg hover:bg-[#241e3d] transition-colors cursor-pointer"
+								>
+									Cancel
+								</button>
+								<button
+									type="button"
+									onClick={() => confirmDelete(confirmDeleteId)}
+									className="px-3 py-1.5 text-xs text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-lg transition-colors cursor-pointer"
+								>
+									Delete
+								</button>
+							</div>
+						</div>
 					</div>,
 					document.body,
 				)}
@@ -769,7 +859,6 @@ interface TrainerChatProps {
 	onBack: () => void;
 	onOpenThreads: () => void;
 	onImported: () => void;
-	onCompacted: (newThread: TrainerThread) => void;
 	threadModel: string | null;
 	defaultModel: string | null;
 	onModelChange: (modelId: string) => void;
@@ -783,7 +872,6 @@ function TrainerChat({
 	onBack,
 	onOpenThreads,
 	onImported,
-	onCompacted,
 	threadModel,
 	defaultModel,
 	onModelChange,
@@ -802,10 +890,6 @@ function TrainerChat({
 		"idle" | "loading" | "done" | "error"
 	>("idle");
 	const [importError, setImportError] = useState<string | null>(null);
-	const [compactState, setCompactState] = useState<
-		"idle" | "loading" | "done" | "error"
-	>("idle");
-	const [compactError, setCompactError] = useState<string | null>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const bottomRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -874,21 +958,6 @@ function TrainerChat({
 		},
 		[threadId, onImported],
 	);
-
-	const handleCompact = useCallback(async () => {
-		setCompactState("loading");
-		setCompactError(null);
-		try {
-			const result = await compactTrainerHistory(threadId);
-			setCompactState("done");
-			setTimeout(() => setCompactState("idle"), 3000);
-			if (result.compacted) onCompacted(result.thread);
-		} catch (err) {
-			setCompactError(err instanceof Error ? err.message : "Compaction failed");
-			setCompactState("error");
-			setTimeout(() => setCompactState("idle"), 5000);
-		}
-	}, [threadId, onCompacted]);
 
 	const updateScrollButtons = useCallback(() => {
 		const el = scrollRef.current;
@@ -1012,33 +1081,7 @@ function TrainerChat({
 				</div>
 
 				<div className="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:w-auto sm:flex sm:items-center">
-					<button
-						type="button"
-						onClick={handleCompact}
-						disabled={
-							compactState === "loading" || isLoading || messages.length === 0
-						}
-						title="Fork and compact conversation with Kimi K2.5"
-						className={`flex min-w-0 items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 text-xs font-medium rounded-lg border transition-all duration-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
-							compactState === "done"
-								? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-								: compactState === "error"
-									? "bg-rose-500/10 border-rose-500/20 text-rose-400"
-									: compactState === "loading"
-										? "bg-[#8b5cf6]/10 border-[#8b5cf6]/20 text-[#c4b5fd] cursor-wait"
-										: "bg-[#8b5cf6]/10 border-[#8b5cf6]/20 text-[#c4b5fd] hover:bg-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
-						}`}
-					>
-						<Minimize2 className="w-3.5 h-3.5" />
-						<span className="truncate">
-							{compactState === "loading" && "Compacting…"}
-							{compactState === "done" && "Compacted!"}
-							{compactState === "error" && (compactError ?? "Error")}
-							{compactState === "idle" && "Compact"}
-						</span>
-					</button>
-
-					{isGeneralChat && (
+					{isGeneralChat && messages.length === 0 && (
 						<button
 							type="button"
 							onClick={() => fileInputRef.current?.click()}
@@ -1377,10 +1420,12 @@ export function TrainerView({
 			.catch(() => setInitialMessages([]));
 	}, [activeThreadId]);
 
-	const handleCompacted = useCallback((newThread: TrainerThread) => {
-		setThreads((prev) => [...prev, newThread]);
-		setActiveThreadId(newThread.id);
-		// activeThreadId change triggers the useEffect to fetch new thread's messages
+	const handleCompactThread = useCallback(async (threadId: string) => {
+		const result = await compactTrainerHistory(threadId);
+		if (result.compacted && result.thread) {
+			setThreads((prev) => [...prev, result.thread]);
+			setActiveThreadId(result.thread.id);
+		}
 	}, []);
 
 	// ── render ──────────────────────────────────────────────────────────────────
@@ -1438,7 +1483,6 @@ export function TrainerView({
 				onBack={onBack}
 				onOpenThreads={() => setThreadsOpen(true)}
 				onImported={handleImported}
-				onCompacted={handleCompacted}
 				threadModel={activeThread?.coachModel ?? null}
 				defaultModel={defaultModel}
 				onModelChange={(modelId) => handleModelChange(activeThreadId, modelId)}
@@ -1456,6 +1500,7 @@ export function TrainerView({
 				onRename={handleRenameThread}
 				onDelete={handleDeleteThread}
 				onFork={handleForkThread}
+				onCompact={handleCompactThread}
 				open={threadsOpen}
 				onClose={() => setThreadsOpen(false)}
 			/>

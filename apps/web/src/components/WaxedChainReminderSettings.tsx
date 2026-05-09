@@ -7,13 +7,12 @@ import {
 	sendWaxedChainReminderTest,
 	updateWaxedChainReminderSettings,
 } from "../lib/api";
+import { AnimatedButton } from "./AnimatedButton";
 
 function formatLastNotifiedAt(value: string | null): string {
 	if (!value) return "No reminder sent yet";
-
 	const date = new Date(value);
 	if (Number.isNaN(date.getTime())) return "No reminder sent yet";
-
 	return `Last reminder sent ${date.toLocaleString()}`;
 }
 
@@ -58,17 +57,14 @@ export function WaxedChainReminderSettings() {
 
 	const handleSave = async () => {
 		const parsedThresholdKm = Number(thresholdKm);
-
 		setSaving(true);
 		setNotification(null);
-
 		try {
 			const nextSettings = await updateWaxedChainReminderSettings({
 				enabled,
 				thresholdKm: parsedThresholdKm,
 				ntfyTopic,
 			});
-
 			setSettings(nextSettings);
 			setEnabled(nextSettings.enabled);
 			setThresholdKm(String(nextSettings.thresholdKm));
@@ -91,7 +87,6 @@ export function WaxedChainReminderSettings() {
 	const handleReset = async () => {
 		setResetting(true);
 		setNotification(null);
-
 		try {
 			const nextSettings = await resetWaxedChainReminderProgress();
 			setSettings(nextSettings);
@@ -115,7 +110,6 @@ export function WaxedChainReminderSettings() {
 	const handleSendTest = async () => {
 		setSendingTest(true);
 		setNotification(null);
-
 		try {
 			await sendWaxedChainReminderTest();
 			setNotification({
@@ -264,11 +258,10 @@ export function WaxedChainReminderSettings() {
 								The `ntfy` host and token are read from the server environment.
 							</p>
 							<div className="flex items-center gap-2">
-								<button
-									type="button"
+								<AnimatedButton
 									onClick={handleSendTest}
 									disabled={isSendTestDisabled}
-									className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 hover:border-amber-500/40 rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+									className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 hover:border-amber-500/40 rounded-xl transition-[color,background-color,border-color] duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									{sendingTest ? (
 										<>
@@ -278,12 +271,11 @@ export function WaxedChainReminderSettings() {
 									) : (
 										"Send test"
 									)}
-								</button>
-								<button
-									type="button"
+								</AnimatedButton>
+								<AnimatedButton
 									onClick={handleReset}
 									disabled={isResetDisabled}
-									className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-[#94a3b8] bg-transparent hover:bg-red-500/10 border border-[rgba(139,92,246,0.15)] hover:border-red-500/30 rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+									className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-[#94a3b8] bg-transparent hover:bg-red-500/10 border border-[rgba(139,92,246,0.15)] hover:border-red-500/30 rounded-xl transition-[color,background-color,border-color] duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									{resetting ? (
 										<>
@@ -293,12 +285,11 @@ export function WaxedChainReminderSettings() {
 									) : (
 										"Reset counter"
 									)}
-								</button>
-								<button
-									type="button"
+								</AnimatedButton>
+								<AnimatedButton
 									onClick={handleSave}
 									disabled={isSaveDisabled}
-									className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+									className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-[color,background-color,border-color] duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									{saving ? (
 										<>
@@ -308,7 +299,7 @@ export function WaxedChainReminderSettings() {
 									) : (
 										"Save"
 									)}
-								</button>
+								</AnimatedButton>
 							</div>
 						</div>
 					</>

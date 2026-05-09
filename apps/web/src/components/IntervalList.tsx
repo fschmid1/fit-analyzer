@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useDrag } from "@use-gesture/react";
 import { Timer, Zap, Heart, Gauge, ChevronRight, X } from "lucide-react";
 import type { ActivityRecord, LapMarker, Interval } from "@fit-analyzer/shared";
 import { computeIntervals, computeAverages } from "../lib/stats";
@@ -14,6 +15,112 @@ interface IntervalListProps {
 	customIntervals: [number, number][];
 	onRemoveCustomInterval: (index: number) => void;
 	initialIntervalMinutes?: string;
+}
+
+interface SwipeableIntervalRowProps {
+	interval: Interval;
+	activeKey: string | null;
+	rowKey: string;
+	onClick: () => void;
+	trailing?: React.ReactNode;
+}
+
+function SwipeableIntervalRow({
+	interval,
+	activeKey,
+	rowKey,
+	onClick,
+	trailing,
+}: SwipeableIntervalRowProps) {
+	const rowRef = useRef<HTMLDivElement>(null);
+
+	useDrag(
+		({ active, movement: [mx], direction: [dx], velocity: [vx] }) => {
+			if (!rowRef.current) return;
+			const minSwipe = 40;
+			const velocityThreshold = 0.3;
+
+			if (!active) {
+				const shouldOpen =
+					Math.abs(mx) > minSwipe || Math.abs(vx) > velocityThreshold;
+				const targetX = shouldOpen && dx > 0 ? 48 : 0;
+				rowRef.current.style.transition =
+					"transform 0.2s cubic-bezier(0.32, 0.72, 0, 1)";
+				rowRef.current.style.transform = `translateX(${targetX}px)`;
+				requestAnimationFrame(() => {
+					if (rowRef.current) rowRef.current.style.transition = "";
+				});
+			} else {
+				rowRef.current.style.transition = "none";
+				const clamped = Math.max(-80, Math.min(mx, 80));
+				rowRef.current.style.transform = `translateX(${clamped}px)`;
+			}
+		},
+		{
+			target: rowRef,
+			axis: "x",
+			bounds: { left: -80, right: 80 },
+			rubberband: true,
+			preventDefault: true,
+		},
+	);
+
+	const rowClassName = `w-full grid grid-cols-[2.5rem_1fr_1fr_4.5rem_4.5rem_4.5rem_1.25rem] gap-2 px-3 py-2 text-xs rounded-lg transition-colors cursor-pointer ${
+		activeKey === rowKey
+			? "bg-[#8b5cf6]/20 border border-[#8b5cf6]/40 text-[#f1f5f9]"
+			: "bg-[#1a1533]/30 border border-transparent hover:bg-[#8b5cf6]/10 hover:border-[rgba(139,92,246,0.15)] text-[#94a3b8] hover:text-[#f1f5f9]"
+	}`;
+
+	return (
+		<div className="relative overflow-hidden rounded-lg">
+			{/* Action layer shown when swiped */}
+			{trailing && (
+				<div className="absolute inset-y-0 right-0 flex items-center justify-end pr-3 bg-red-500/5">
+					<div className="pointer-events-auto">{trailing}</div>
+				</div>
+			)}
+			{/* Swipeable content */}
+			<div
+				ref={rowRef}
+				style={{ touchAction: "pan-y" }}
+				className="relative z-10"
+			>
+				<button type="button" onClick={onClick} className={rowClassName}>
+					<span className="font-mono font-medium">{interval.index + 1}</span>
+					<span className="font-mono">
+						{formatElapsedTime(interval.startSeconds)}
+					</span>
+					<span className="font-mono">
+						{formatElapsedTime(interval.duration)}
+					</span>
+					<span className="text-right font-semibold text-[#8b5cf6]">
+						{interval.avgPower ?? "\u2014"}
+					</span>
+					<span className="text-right font-semibold text-[#ef4444]">
+						{interval.avgHeartRate ?? "\u2014"}
+					</span>
+					<span className="text-right font-semibold text-[#06b6d4]">
+						{interval.avgCadence ?? "\u2014"}
+					</span>
+					{trailing ? (
+						<span aria-hidden="true" />
+					) : (
+						<ChevronRight
+							className={`w-3 h-3 transition-colors ${
+								activeKey === rowKey ? "text-[#8b5cf6]" : "text-[#94a3b8]/30"
+							}`}
+						/>
+					)}
+				</button>
+				{/* Desktop trailing button */}
+				{trailing && (
+					<div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+						<div className="pointer-events-auto">{trailing}</div>
+					</div>
+				)}
+			</div>
+		</div>
+	);
 }
 
 export function IntervalList({
@@ -113,62 +220,6 @@ export function IntervalList({
 		</div>
 	);
 
-	const renderRow = (
-		interval: Interval,
-		key: string,
-		onClick: () => void,
-		trailing?: React.ReactNode,
-	) => {
-		const rowClassName = `w-full grid grid-cols-[2.5rem_1fr_1fr_4.5rem_4.5rem_4.5rem_1.25rem] gap-2 px-3 py-2 text-xs rounded-lg transition-colors cursor-pointer ${
-			activeKey === key
-				? "bg-[#8b5cf6]/20 border border-[#8b5cf6]/40 text-[#f1f5f9]"
-				: "bg-[#1a1533]/30 border border-transparent hover:bg-[#8b5cf6]/10 hover:border-[rgba(139,92,246,0.15)] text-[#94a3b8] hover:text-[#f1f5f9]"
-		}`;
-
-		const rowContents = (
-			<>
-				<span className="font-mono font-medium">{interval.index + 1}</span>
-				<span className="font-mono">
-					{formatElapsedTime(interval.startSeconds)}
-				</span>
-				<span className="font-mono">
-					{formatElapsedTime(interval.duration)}
-				</span>
-				<span className="text-right font-semibold text-[#8b5cf6]">
-					{interval.avgPower ?? "\u2014"}
-				</span>
-				<span className="text-right font-semibold text-[#ef4444]">
-					{interval.avgHeartRate ?? "\u2014"}
-				</span>
-				<span className="text-right font-semibold text-[#06b6d4]">
-					{interval.avgCadence ?? "\u2014"}
-				</span>
-				{trailing ? (
-					<span aria-hidden="true" />
-				) : (
-					<ChevronRight
-						className={`w-3 h-3 transition-colors ${
-							activeKey === key ? "text-[#8b5cf6]" : "text-[#94a3b8]/30"
-						}`}
-					/>
-				)}
-			</>
-		);
-
-		return (
-			<div key={key} className={trailing ? "relative" : undefined}>
-				<button type="button" onClick={onClick} className={rowClassName}>
-					{rowContents}
-				</button>
-				{trailing ? (
-					<div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
-						<div className="pointer-events-auto">{trailing}</div>
-					</div>
-				) : null}
-			</div>
-		);
-	};
-
 	return (
 		<div className="px-6 pb-4">
 			<div className="bg-[#1a1533]/40 backdrop-blur-md border border-[rgba(139,92,246,0.1)] rounded-2xl p-4">
@@ -218,11 +269,15 @@ export function IntervalList({
 				{lapIntervals.length > 0 && (
 					<div className="space-y-1 max-h-64 overflow-y-auto pr-1 scrollbar-thin">
 						{tableHeader}
-						{lapIntervals.map((interval) =>
-							renderRow(interval, `lap-${interval.index}`, () =>
-								handleLapClick(interval),
-							),
-						)}
+						{lapIntervals.map((interval) => (
+							<SwipeableIntervalRow
+								key={`lap-${interval.index}`}
+								interval={interval}
+								activeKey={activeKey}
+								rowKey={`lap-${interval.index}`}
+								onClick={() => handleLapClick(interval)}
+							/>
+						))}
 					</div>
 				)}
 
@@ -246,24 +301,28 @@ export function IntervalList({
 						</p>
 						<div className="space-y-1 max-h-48 overflow-y-auto pr-1 scrollbar-thin">
 							{lapIntervals.length === 0 && tableHeader}
-							{customIntervalItems.map((interval) =>
-								renderRow(
-									interval,
-									`custom-${interval.index}`,
-									() => handleCustomClick(interval),
-									<button
-										type="button"
-										aria-label={`Remove custom interval ${interval.index + 1}`}
-										onClick={(e) => {
-											e.stopPropagation();
-											onRemoveCustomInterval(interval.index);
-										}}
-										className="w-3 h-3 text-[#94a3b8]/40 hover:text-[#ef4444] transition-colors cursor-pointer"
-									>
-										<X className="w-3 h-3" />
-									</button>,
-								),
-							)}
+							{customIntervalItems.map((interval) => (
+								<SwipeableIntervalRow
+									key={`custom-${interval.index}`}
+									interval={interval}
+									activeKey={activeKey}
+									rowKey={`custom-${interval.index}`}
+									onClick={() => handleCustomClick(interval)}
+									trailing={
+										<button
+											type="button"
+											aria-label={`Remove custom interval ${interval.index + 1}`}
+											onClick={(e: React.MouseEvent) => {
+												e.stopPropagation();
+												onRemoveCustomInterval(interval.index);
+											}}
+											className="w-3 h-3 text-[#94a3b8]/40 hover:text-[#ef4444] transition-colors cursor-pointer"
+										>
+											<X className="w-3 h-3" />
+										</button>
+									}
+								/>
+							))}
 						</div>
 					</div>
 				)}

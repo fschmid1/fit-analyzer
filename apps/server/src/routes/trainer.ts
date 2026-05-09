@@ -2,10 +2,12 @@ import type {
 	SaveTrainerHistoryBody,
 	TrainerMessage,
 } from "@fit-analyzer/shared";
+import { AVAILABLE_MODELS } from "@fit-analyzer/shared";
 import { convertMessagesToModelMessages } from "@tanstack/ai";
 import { Hono } from "hono";
 import { db } from "../db.js";
 import { env } from "../env.js";
+import { getCoachModelSettings } from "../lib/coachModelSettings.js";
 import { createOpenRouterTrainerStream } from "../lib/openRouterTrainerStream.js";
 import { parseCoachingMarkdown } from "../lib/parseCoachingMarkdown.js";
 import {
@@ -13,8 +15,6 @@ import {
 	hasActiveTrainerStream,
 	startTrainerStreamProducer,
 } from "../lib/trainerStreamRegistry.js";
-import { getCoachModelSettings } from "../lib/coachModelSettings.js";
-import { AVAILABLE_MODELS } from "@fit-analyzer/shared";
 
 const SYSTEM_PROMPT =
 	"You are an expert endurance sports coach specialising in cycling and triathlon. " +
