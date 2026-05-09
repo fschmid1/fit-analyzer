@@ -14,7 +14,8 @@ This repository is a VERY EARLY WIP. Proposing sweeping changes that improve lon
 
 1. Performance first.
 2. Reliability first.
-3. Keep behavior predictable under load and during failures (session restarts, reconnects, partial streams).
+3. Mobile support first.
+4. Keep behavior predictable under load and during failures (session restarts, reconnects, partial streams).
 
 If a tradeoff is required, choose correctness and robustness over short-term convenience.
 
