@@ -996,14 +996,7 @@ function TrainerChat({
 				>
 					<Menu className="w-4 h-4" />
 				</button>
-				<button
-					type="button"
-					onClick={onBack}
-					className="flex items-center gap-2 px-3 py-2 sm:py-1.5 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-all duration-200 cursor-pointer"
-				>
-					<ArrowLeft className="w-4 h-4" />
-					<span>{isGeneralChat ? "Back" : "Activity"}</span>
-				</button>
+
 				<div className="flex min-w-0 flex-1 flex-col">
 					<span className="truncate text-sm font-semibold text-[#f1f5f9]">
 						{isGeneralChat ? "Cycling Coach" : "AI Trainer"}
