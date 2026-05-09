@@ -79,6 +79,8 @@ function SwipeableRow({
 			axis: "x",
 			bounds: { left: -80, right: 80 },
 			rubberband: true,
+			preventScroll: true,
+			preventScrollAxis: "y",
 		},
 	);
 
@@ -228,7 +230,7 @@ export function ActivityHistory({
 	}
 
 	return (
-		<div className="flex-1 flex flex-col p-6 animate-[fadeIn_0.4s_ease-out]">
+		<div className="flex-1 flex flex-col p-6 overflow-y-auto animate-[fadeIn_0.4s_ease-out]">
 			<div className="flex items-center justify-between mb-6">
 				<div>
 					<h2 className="text-2xl font-bold text-[#f1f5f9]">
