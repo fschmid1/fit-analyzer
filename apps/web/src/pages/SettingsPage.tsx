@@ -10,7 +10,7 @@ interface SettingsPageProps {
 
 export function SettingsPage({ onActivitiesChanged }: SettingsPageProps) {
 	return (
-		<div className="flex-1 p-6 animate-[fadeIn_0.4s_ease-out]">
+		<div className="flex-1 overflow-y-auto p-6 animate-[fadeIn_0.4s_ease-out]">
 			<div className="max-w-6xl">
 				<h2 className="text-2xl font-bold text-[#f1f5f9] mb-1">Settings</h2>
 				<p className="text-sm text-[#94a3b8] mb-6">
