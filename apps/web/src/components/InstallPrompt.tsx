@@ -78,7 +78,6 @@ export function InstallPrompt() {
 			movement: [_, my],
 			velocity: [__, vy],
 			direction: [___, dy],
-			cancel,
 		}) => {
 			const threshold = 80;
 			const velocityThreshold = 0.5;
@@ -98,7 +97,6 @@ export function InstallPrompt() {
 					});
 				}
 			}
-			if (cancel) cancel();
 		},
 		{
 			target: containerRef,

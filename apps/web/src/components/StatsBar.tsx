@@ -1,6 +1,5 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { useSpring, animated } from "@react-spring/web";
-import { useDrag } from "@use-gesture/react";
 import { Zap, Heart, Gauge, Clock } from "lucide-react";
 import type { ActivityRecord } from "@fit-analyzer/shared";
 import { computeAverages } from "../lib/stats";

@@ -43,7 +43,7 @@ function SwipeableIntervalRow({
 			if (!active) {
 				const shouldOpen =
 					Math.abs(mx) > minSwipe || Math.abs(vx) > velocityThreshold;
-				const targetX = shouldOpen && dx > 0 ? 48 : 0;
+				const targetX = shouldOpen && dx < 0 ? -48 : 0;
 				rowRef.current.style.transition =
 					"transform 0.2s cubic-bezier(0.32, 0.72, 0, 1)";
 				rowRef.current.style.transform = `translateX(${targetX}px)`;

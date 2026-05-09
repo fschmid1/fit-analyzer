@@ -615,19 +615,19 @@ export const ActivityChart = memo(function ActivityChart({
 				const current =
 					zoomStack.length > 0 ? zoomStack[zoomStack.length - 1] : fullRange;
 				const span = current[1] - current[0];
-				return [0, fullRange[1] - fullRange[0] / span];
+				return [0, (fullRange[1] - fullRange[0]) / span];
 			},
 		},
 	);
 
 	// Touch drag-to-pan
 	useDrag(
-		({ active, movement: [mx], initial: [ix], memo }) => {
+		({ active, movement: [mx], memo }) => {
 			if (!chartContainerRef.current || !fullRange) return;
 			const [fullMin, fullMax] = fullRange;
-			const current =
-				zoomStack.length > 0 ? zoomStack[zoomStack.length - 1] : null;
-			if (!current) return; // not zoomed in, nothing to pan
+			if (!memo) memo = zoomStack;
+			const current = memo.length > 0 ? memo[memo.length - 1] : null;
+			if (!current) return memo; // not zoomed in, nothing to pan
 			const span = current[1] - current[0];
 			const rect = chartContainerRef.current.getBoundingClientRect();
 			const plotLeft = 55;
@@ -651,7 +651,6 @@ export const ActivityChart = memo(function ActivityChart({
 			if (active) {
 				// preview pan
 				const nextZoom: [number, number] = [newStart, newEnd];
-				if (!memo) memo = zoomStack;
 				setZoomStack([...memo.slice(0, -1), nextZoom]);
 				return memo;
 			}

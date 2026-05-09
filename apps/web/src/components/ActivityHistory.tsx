@@ -53,7 +53,7 @@ function SwipeableRow({
 	}));
 
 	useDrag(
-		({ active, movement: [mx], direction: [dx], velocity: [vx], cancel }) => {
+		({ active, movement: [mx], direction: [dx], velocity: [vx] }) => {
 			const minSwipe = 60;
 			const velocityThreshold = 0.3;
 
@@ -73,7 +73,6 @@ function SwipeableRow({
 					springApi.start({ x: clamped, immediate: true });
 				}
 			}
-			if (cancel) cancel();
 		},
 		{
 			target: swipeRef,
@@ -102,7 +101,7 @@ function SwipeableRow({
 			<animated.div
 				ref={swipeRef}
 				style={{ touchAction: "pan-y", ...springStyle }}
-				className="relative z-10 flex items-center gap-3 bg-[#1a1533]/70"
+				className="relative z-10 flex items-center gap-3 bg-[#1a1533]"
 			>
 				<AnimatedButton
 					onClick={() => onSelect(activity.id)}
@@ -165,7 +164,7 @@ function SwipeableRow({
 				<AnimatedButton
 					onClick={() => onDelete(activity.id)}
 					aria-label={`Delete activity from ${formatDate(activity.summary.date)}`}
-					className="mr-3 shrink-0 rounded-lg p-2 text-[#94a3b8] opacity-100 transition-opacity duration-200 hover:bg-red-500/10 hover:text-red-400 sm:opacity-0 sm:group-hover:opacity-100"
+					className="mr-3 hidden shrink-0 rounded-lg p-2 text-[#94a3b8] transition-opacity duration-200 hover:bg-red-500/10 hover:text-red-400 sm:flex sm:opacity-0 sm:group-hover:opacity-100"
 				>
 					{isDeleting ? (
 						<Loader2 className="w-4 h-4 animate-spin" />
@@ -190,7 +189,11 @@ export function ActivityHistory({
 	const handleDelete = useCallback(
 		async (id: string) => {
 			setDeletingId(id);
-			onDelete(id);
+			try {
+				await onDelete(id);
+			} finally {
+				setDeletingId(null);
+			}
 		},
 		[onDelete],
 	);

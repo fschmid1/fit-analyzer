@@ -21,6 +21,7 @@ export function AnimatedButton({
 			onPointerDown={() => api.start({ scale: 0.96, immediate: true })}
 			onPointerUp={() => api.start({ scale: 1 })}
 			onPointerLeave={() => api.start({ scale: 1 })}
+			onPointerCancel={() => api.start({ scale: 1 })}
 			{...props}
 		>
 			{children}
