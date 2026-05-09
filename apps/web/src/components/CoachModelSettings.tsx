@@ -5,6 +5,7 @@ import {
 import { AlertCircle, Bot, CheckCircle2, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { fetchUserSettings, updateCoachModelSettings } from "../lib/api";
+import { AnimatedButton } from "./AnimatedButton";
 
 export function CoachModelSettings() {
 	const [settings, setSettings] = useState<CoachModelSettingsData | null>(null);
@@ -120,11 +121,10 @@ export function CoachModelSettings() {
 						</label>
 
 						<div className="flex items-center justify-end gap-2 pt-1 border-t border-[rgba(139,92,246,0.1)]">
-							<button
-								type="button"
+							<AnimatedButton
 								onClick={handleSave}
 								disabled={!isDirty || saving}
-								className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+								className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-[color,background-color,border-color] duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								{saving ? (
 									<>
@@ -134,7 +134,7 @@ export function CoachModelSettings() {
 								) : (
 									"Save"
 								)}
-							</button>
+							</AnimatedButton>
 						</div>
 					</>
 				)}

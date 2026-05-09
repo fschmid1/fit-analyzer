@@ -18,5 +18,8 @@
 	"pnpm": {
 		"onlyBuiltDependencies": ["esbuild"]
 	},
-	"workspaces": ["apps/*", "packages/*"]
+	"workspaces": ["apps/*", "packages/*"],
+	"dependencies": {
+		"@react-spring/web": "^10.0.3"
+	}
 }

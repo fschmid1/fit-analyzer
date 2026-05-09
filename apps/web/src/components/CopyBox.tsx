@@ -1,7 +1,33 @@
 import { useState, useMemo } from "react";
+import { useSpring, animated } from "@react-spring/web";
 import { Clipboard, Check, BotMessageSquare } from "lucide-react";
 import type { ActivitySummary, Interval } from "@fit-analyzer/shared";
 import { formatCopyBoxText } from "../lib/formatters";
+
+function AnimatedButton({
+	className,
+	children,
+	...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+	const [spring, api] = useSpring(() => ({
+		scale: 1,
+		config: { friction: 22, tension: 300 },
+	}));
+
+	return (
+		<animated.button
+			type="button"
+			className={className}
+			style={spring}
+			onPointerDown={() => api.start({ scale: 0.96, immediate: true })}
+			onPointerUp={() => api.start({ scale: 1 })}
+			onPointerLeave={() => api.start({ scale: 1 })}
+			{...props}
+		>
+			{children}
+		</animated.button>
+	);
+}
 
 interface CopyBoxProps {
 	summary: ActivitySummary;
@@ -23,7 +49,6 @@ export function CopyBox({ summary, intervals, onSendToTrainer }: CopyBoxProps) {
 			setCopied(true);
 			setTimeout(() => setCopied(false), 2000);
 		} catch {
-			// Fallback for older browsers
 			const textarea = document.createElement("textarea");
 			textarea.value = text;
 			document.body.appendChild(textarea);
@@ -43,18 +68,16 @@ export function CopyBox({ summary, intervals, onSendToTrainer }: CopyBoxProps) {
 						Activity Summary
 					</p>
 					<div className="flex items-center gap-2">
-						<button
-							type="button"
+						<AnimatedButton
 							onClick={() => onSendToTrainer(text)}
-							className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 cursor-pointer bg-[#8b5cf6]/10 text-[#8b5cf6] hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
+							className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-[background-color,border-color,color] duration-200 cursor-pointer bg-[#8b5cf6]/10 text-[#8b5cf6] hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
 						>
 							<BotMessageSquare className="w-3.5 h-3.5" />
 							Send to Trainer
-						</button>
-						<button
-							type="button"
+						</AnimatedButton>
+						<AnimatedButton
 							onClick={handleCopy}
-							className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 cursor-pointer ${
+							className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-[background-color,border-color,color] duration-200 cursor-pointer ${
 								copied
 									? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
 									: "bg-[#8b5cf6]/10 text-[#8b5cf6] hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
@@ -71,7 +94,7 @@ export function CopyBox({ summary, intervals, onSendToTrainer }: CopyBoxProps) {
 									Copy
 								</>
 							)}
-						</button>
+						</AnimatedButton>
 					</div>
 				</div>
 				<pre className="p-4 text-sm font-mono text-[#c4b5fd] leading-relaxed overflow-x-auto select-all">

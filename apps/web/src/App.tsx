@@ -326,7 +326,7 @@ function App() {
 
 	// Analysis view content extracted for use in the Route element
 	const analysisContent = activity ? (
-		<div className="flex-1 flex flex-col pt-6 animate-[fadeIn_0.4s_ease-out]">
+		<div className="flex-1 flex flex-col overflow-y-auto pt-6 animate-[fadeIn_0.4s_ease-out]">
 			{/* Date header */}
 			<div className="px-6 mb-4">
 				<h2 className="text-2xl font-bold text-[#f1f5f9]">

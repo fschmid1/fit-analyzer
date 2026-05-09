@@ -1,4 +1,5 @@
 import { memo, useCallback, useMemo, useState, useRef, useEffect } from "react";
+import { usePinch, useDrag } from "@use-gesture/react";
 import {
 	ComposedChart,
 	Area,
@@ -415,6 +416,12 @@ export const ActivityChart = memo(function ActivityChart({
 		]);
 	}, [fullRange, externalZoom]);
 
+	// --- Detect touch device for UI hints ---
+	const [isTouchDevice, setIsTouchDevice] = useState(false);
+	useEffect(() => {
+		setIsTouchDevice("ontouchstart" in window || navigator.maxTouchPoints > 0);
+	}, []);
+
 	// --- Ctrl + Mouse Wheel zoom / scroll to pan ---
 	const chartContainerRef = useRef<HTMLDivElement>(null);
 	const zoomStackRef = useRef<[number, number][]>([]);
@@ -548,6 +555,117 @@ export const ActivityChart = memo(function ActivityChart({
 			pendingZoomRef.current = null;
 		};
 	}, [fullRange]);
+
+	// --- Touch pinch-to-zoom and drag-to-pan ---
+	usePinch(
+		({ origin: [ox], offset: [scale], active, memo }) => {
+			if (!chartContainerRef.current || !fullRange) return;
+			const [fullMin, fullMax] = fullRange;
+			const current =
+				zoomStack.length > 0
+					? zoomStack[zoomStack.length - 1]
+					: ([fullMin, fullMax] as [number, number]);
+			if (!current) return;
+			const span = current[1] - current[0];
+
+			if (!active) {
+				// end of pinch: apply zoom
+				const rect = chartContainerRef.current.getBoundingClientRect();
+				const plotLeft = 55;
+				const plotRight = rect.width - 55;
+				const plotWidth = plotRight - plotLeft;
+				const ratio = Math.max(0, Math.min(1, (ox - plotLeft) / plotWidth));
+
+				const newSpan = Math.max(5, Math.min(fullMax - fullMin, span / scale));
+				let newStart = current[0] + span * ratio - newSpan * ratio;
+				let newEnd = newStart + newSpan;
+
+				if (newStart < fullMin) {
+					newStart = fullMin;
+					newEnd = newStart + newSpan;
+				}
+				if (newEnd > fullMax) {
+					newEnd = fullMax;
+					newStart = newEnd - newSpan;
+				}
+				newStart = Math.max(fullMin, newStart);
+				newEnd = Math.min(fullMax, newEnd);
+
+				if (newSpan >= fullMax - fullMin - 1) {
+					setZoomStack([]);
+				} else {
+					setZoomStack((prev) =>
+						prev.length === 0
+							? [[newStart, newEnd]]
+							: [...prev.slice(0, -1), [newStart, newEnd]],
+					);
+				}
+				setSelection(null);
+				selectionChangeRef.current(null);
+				return;
+			}
+
+			return memo;
+		},
+		{
+			target: chartContainerRef,
+			scaleBounds: { min: 0.2, max: 50 },
+			from: () => {
+				if (!fullRange) return [0, 1];
+				const current =
+					zoomStack.length > 0 ? zoomStack[zoomStack.length - 1] : fullRange;
+				const span = current[1] - current[0];
+				return [0, (fullRange[1] - fullRange[0]) / span];
+			},
+		},
+	);
+
+	// Touch drag-to-pan
+	useDrag(
+		({ active, movement: [mx], memo }) => {
+			if (!chartContainerRef.current || !fullRange) return;
+			const [fullMin, fullMax] = fullRange;
+			if (!memo) memo = zoomStack;
+			const current = memo.length > 0 ? memo[memo.length - 1] : null;
+			if (!current) return memo; // not zoomed in, nothing to pan
+			const span = current[1] - current[0];
+			const rect = chartContainerRef.current.getBoundingClientRect();
+			const plotLeft = 55;
+			const plotRight = rect.width - 55;
+			const plotWidth = plotRight - plotLeft;
+			const pxToSeconds = span / plotWidth;
+			const deltaSeconds = -mx * pxToSeconds;
+
+			let newStart = current[0] + deltaSeconds;
+			let newEnd = current[1] + deltaSeconds;
+
+			if (newStart < fullMin) {
+				newStart = fullMin;
+				newEnd = fullMin + span;
+			}
+			if (newEnd > fullMax) {
+				newEnd = fullMax;
+				newStart = fullMax - span;
+			}
+
+			if (active) {
+				// preview pan
+				const nextZoom: [number, number] = [newStart, newEnd];
+				setZoomStack([...memo.slice(0, -1), nextZoom]);
+				return memo;
+			}
+			return memo;
+		},
+		{
+			target: chartContainerRef,
+			axis: "x",
+			bounds: {
+				left: Number.NEGATIVE_INFINITY,
+				right: Number.POSITIVE_INFINITY,
+			},
+			preventScrollAxis: "x",
+		},
+	);
 
 	const overlayAxisId = useMemo(() => {
 		if (hasPower && showPower) return "power";
@@ -781,7 +899,9 @@ export const ActivityChart = memo(function ActivityChart({
 							</>
 						) : (
 							<span className="text-xs text-[#94a3b8]/60 mr-2 select-none">
-								Drag to select · Scroll to pan · Ctrl+scroll to zoom
+								{isTouchDevice
+									? "Pinch to zoom · Drag to pan"
+									: "Drag to select · Scroll to pan · Ctrl+scroll to zoom"}
 							</span>
 						)}
 					</div>

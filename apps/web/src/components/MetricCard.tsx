@@ -1,4 +1,6 @@
 import type { LucideIcon } from "lucide-react";
+import { useSpringScale } from "../lib/useGestureSpring";
+import { animated } from "@react-spring/web";
 
 interface MetricCardProps {
 	icon: LucideIcon;
@@ -17,8 +19,13 @@ export function MetricCard({
 	subValue,
 	color,
 }: MetricCardProps) {
+	const pressGesture = useSpringScale({ scaleDown: 0.97 });
+
 	return (
-		<div className="flex min-w-0 items-center gap-4 p-4 bg-[#1a1533]/70 backdrop-blur-md border border-[rgba(139,92,246,0.1)] rounded-2xl hover:border-[rgba(139,92,246,0.2)] transition-all duration-200">
+		<animated.div
+			{...pressGesture}
+			className="flex min-w-0 items-center gap-4 p-4 bg-[#1a1533]/70 backdrop-blur-md border border-[rgba(139,92,246,0.1)] rounded-2xl hover:border-[rgba(139,92,246,0.2)] transition-[border-color] duration-200 cursor-default"
+		>
 			<div
 				className="flex items-center justify-center w-11 h-11 rounded-xl shrink-0"
 				style={{ backgroundColor: `${color}20` }}
@@ -37,6 +44,6 @@ export function MetricCard({
 					<p className="text-xs text-[#94a3b8] mt-0.5">{subValue}</p>
 				)}
 			</div>
-		</div>
+		</animated.div>
 	);
 }

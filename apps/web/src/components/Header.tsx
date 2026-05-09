@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useMatch, useNavigate } from "react-router-dom";
 import type { UserInfo } from "../lib/api";
+import { AnimatedButton } from "./AnimatedButton";
 
 interface HeaderProps {
 	onBackToHistory: () => void;
@@ -28,16 +29,16 @@ function getInitials(user: UserInfo): string {
 /** Simple hash to pick a consistent color for a username */
 function getAvatarColor(username: string): string {
 	const colors = [
-		"#8b5cf6", // violet
-		"#6366f1", // indigo
-		"#3b82f6", // blue
-		"#06b6d4", // cyan
-		"#14b8a6", // teal
-		"#10b981", // emerald
-		"#f59e0b", // amber
-		"#ef4444", // red
-		"#ec4899", // pink
-		"#f97316", // orange
+		"#8b5cf6",
+		"#6366f1",
+		"#3b82f6",
+		"#06b6d4",
+		"#14b8a6",
+		"#10b981",
+		"#f59e0b",
+		"#ef4444",
+		"#ec4899",
+		"#f97316",
 	];
 	let hash = 0;
 	for (let i = 0; i < username.length; i++) {
@@ -58,13 +59,9 @@ export function Header({
 	const isTrainer = useMatch("/trainer");
 	const isSettings = useMatch("/settings");
 
-	// Show back button everywhere except the history page
 	const showBack = !isHistory;
-	// Show "Load New File" only on the analysis page
 	const showUpload = !!isAnalysis;
-	// Show trainer button everywhere except the trainer page itself
 	const showTrainer = !isTrainer;
-	// Show settings button everywhere except the settings page
 	const showSettings = !isSettings;
 
 	return (
@@ -84,58 +81,49 @@ export function Header({
 			</div>
 
 			<div className="flex items-center gap-2 sm:gap-3 shrink-0">
-				{/* Back to History button — shown on all pages except history */}
 				{showBack && (
-					<button
-						type="button"
+					<AnimatedButton
 						onClick={onBackToHistory}
-						className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-all duration-200 cursor-pointer"
+						className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-colors duration-200 cursor-pointer"
 						title="History"
 					>
 						<ArrowLeft className="w-4 h-4" />
 						<span className="hidden sm:inline">History</span>
-					</button>
+					</AnimatedButton>
 				)}
 
-				{/* Upload button — shown in analysis view */}
 				{showUpload && (
-					<button
-						type="button"
+					<AnimatedButton
 						onClick={onUploadNew}
-						className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-all duration-200 cursor-pointer"
+						className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-colors duration-200 cursor-pointer"
 						title="Load New File"
 					>
 						<Upload className="w-4 h-4" />
 						<span className="hidden sm:inline">Load New File</span>
-					</button>
+					</AnimatedButton>
 				)}
 
-				{/* Trainer button — shown on all pages except the trainer itself */}
 				{showTrainer && (
-					<button
-						type="button"
+					<AnimatedButton
 						onClick={onOpenTrainer}
-						className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#c4b5fd] hover:text-[#f1f5f9] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-lg transition-all duration-200 cursor-pointer"
+						className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#c4b5fd] hover:text-[#f1f5f9] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-lg transition-colors duration-200 cursor-pointer"
 						title="Trainer"
 					>
 						<BotMessageSquare className="w-4 h-4" />
 						<span className="hidden sm:inline">Trainer</span>
-					</button>
+					</AnimatedButton>
 				)}
 
-				{/* Settings button */}
 				{showSettings && (
-					<button
-						type="button"
+					<AnimatedButton
 						onClick={() => navigate("/settings")}
-						className="flex items-center justify-center w-9 h-9 text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-all duration-200 cursor-pointer"
+						className="flex items-center justify-center w-9 h-9 text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-colors duration-200 cursor-pointer"
 						title="Settings"
 					>
 						<Settings className="w-4 h-4" />
-					</button>
+					</AnimatedButton>
 				)}
 
-				{/* User avatar */}
 				{user && (
 					<div className="flex items-center gap-2.5 pl-2 sm:pl-3 border-l border-[rgba(139,92,246,0.15)]">
 						<div className="text-right hidden sm:block">
