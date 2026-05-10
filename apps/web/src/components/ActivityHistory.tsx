@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useDrag } from "@use-gesture/react";
-import { useSpring, animated } from "@react-spring/web";
 import { Clock, Zap, Heart, Route, Trash2, Loader2 } from "lucide-react";
 import type { ActivityListItem } from "@fit-analyzer/shared";
 import { AnimatedButton } from "./AnimatedButton";
@@ -36,38 +36,37 @@ interface SwipeableRowProps {
 	activity: ActivityListItem;
 	isDeleting: boolean;
 	onSelect: (id: string) => void;
-	onDelete: (id: string) => void;
+	onRequestDelete: (id: string) => void;
 }
 
 function SwipeableRow({
 	activity,
 	isDeleting,
 	onSelect,
-	onDelete,
+	onRequestDelete,
 }: SwipeableRowProps) {
 	const swipeRef = useRef<HTMLDivElement>(null);
-	const [isOpen, setIsOpen] = useState(false);
-	const [springStyle, springApi] = useSpring(() => ({
-		x: 0,
-		config: { friction: 26, tension: 300 },
-	}));
 
 	useDrag(
-		({ active, movement: [mx], direction: [dx], velocity: [vx] }) => {
+		({ active, movement: [mx], velocity: [vx] }) => {
+			const el = swipeRef.current;
+			if (!el) return;
 			const minSwipe = 60;
 			const velocityThreshold = 0.3;
 
 			if (!active) {
-				let nextOpen = isOpen;
-				if (Math.abs(mx) > minSwipe || Math.abs(vx) > velocityThreshold) {
-					nextOpen = dx < 0;
-					setIsOpen(nextOpen);
+				const shouldTrigger =
+					Math.abs(mx) > minSwipe || Math.abs(vx) > velocityThreshold;
+				if (shouldTrigger && mx < 0) {
+					onRequestDelete(activity.id);
 				}
-				springApi.start({ x: nextOpen ? -80 : 0 });
+				// Always snap back — confirmation dialog handles the rest.
+				el.style.transition = "transform 0.25s cubic-bezier(0.32, 0.72, 0, 1)";
+				el.style.transform = "translateX(0px)";
 			} else {
-				const targetX = isOpen ? mx - 80 : mx;
-				const clamped = Math.max(-80, Math.min(targetX, 0));
-				springApi.start({ x: clamped, immediate: true });
+				el.style.transition = "none";
+				const clamped = Math.max(-80, Math.min(mx, 0));
+				el.style.transform = `translateX(${clamped}px)`;
 			}
 		},
 		{
@@ -75,33 +74,22 @@ function SwipeableRow({
 			axis: "x",
 			bounds: { left: -80, right: 80 },
 			rubberband: true,
-			preventScroll: true,
-			preventScrollAxis: "y",
 		},
 	);
 
 	return (
 		<div className="relative overflow-hidden rounded-xl border border-[rgba(139,92,246,0.1)] bg-[#1a1533]/70 group">
-			<div className="absolute inset-y-0 right-0 flex items-center justify-end pr-4 bg-red-500/10">
-				<AnimatedButton
-					onClick={() => onDelete(activity.id)}
-					aria-label={`Delete activity from ${formatDate(activity.summary.date)}`}
-					className="rounded-lg p-2 text-red-400 hover:text-red-300 transition-colors cursor-pointer"
-				>
-					{isDeleting ? (
-						<Loader2 className="w-4 h-4 animate-spin" />
-					) : (
-						<Trash2 className="w-4 h-4" />
-					)}
-				</AnimatedButton>
-			</div>
+			{/* Red tint visible while swiping left */}
+			<div className="absolute inset-y-0 right-0 w-20 bg-red-500/10" />
 
-			<animated.div
+			{/* Swipeable foreground */}
+			<div
 				ref={swipeRef}
-				style={{ touchAction: "pan-y", ...springStyle }}
+				style={{ touchAction: "pan-y" }}
 				className="relative z-10 flex items-center gap-3 bg-[#1a1533]"
 			>
-				<AnimatedButton
+				<button
+					type="button"
 					onClick={() => onSelect(activity.id)}
 					className="flex flex-1 items-center gap-4 p-4 text-left cursor-pointer"
 				>
@@ -157,10 +145,11 @@ function SwipeableRow({
 							)}
 						</div>
 					</div>
-				</AnimatedButton>
+				</button>
 
+				{/* Desktop hover delete button */}
 				<AnimatedButton
-					onClick={() => onDelete(activity.id)}
+					onClick={() => onRequestDelete(activity.id)}
 					aria-label={`Delete activity from ${formatDate(activity.summary.date)}`}
 					className="mr-3 hidden shrink-0 rounded-lg p-2 text-[#94a3b8] transition-opacity duration-200 hover:bg-red-500/10 hover:text-red-400 sm:flex sm:opacity-0 sm:group-hover:opacity-100"
 				>
@@ -170,7 +159,7 @@ function SwipeableRow({
 						<Trash2 className="w-4 h-4" />
 					)}
 				</AnimatedButton>
-			</animated.div>
+			</div>
 		</div>
 	);
 }
@@ -183,6 +172,7 @@ export function ActivityHistory({
 	onUploadNew,
 }: ActivityHistoryProps) {
 	const [deletingId, setDeletingId] = useState<string | null>(null);
+	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
 	const handleDelete = useCallback(
 		async (id: string) => {
@@ -194,6 +184,14 @@ export function ActivityHistory({
 			}
 		},
 		[onDelete],
+	);
+
+	const confirmDelete = useCallback(
+		(id: string) => {
+			setConfirmDeleteId(null);
+			handleDelete(id);
+		},
+		[handleDelete],
 	);
 
 	if (loading) {
@@ -252,10 +250,38 @@ export function ActivityHistory({
 						activity={activity}
 						isDeleting={deletingId === activity.id}
 						onSelect={onSelect}
-						onDelete={handleDelete}
+						onRequestDelete={setConfirmDeleteId}
 					/>
 				))}
 			</div>
+
+			{confirmDeleteId &&
+				createPortal(
+					<div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60">
+						<div className="w-72 rounded-lg bg-[#1a1533] border border-[rgba(139,92,246,0.2)] shadow-xl shadow-black/40 p-4">
+							<p className="text-sm text-[#c4b5fd] mb-4">
+								Are you sure you want to delete this activity?
+							</p>
+							<div className="flex justify-end gap-2">
+								<button
+									type="button"
+									onClick={() => setConfirmDeleteId(null)}
+									className="px-3 py-1.5 text-xs text-[#94a3b8] hover:text-[#c4b5fd] rounded-lg hover:bg-[#241e3d] transition-colors cursor-pointer"
+								>
+									Cancel
+								</button>
+								<button
+									type="button"
+									onClick={() => confirmDelete(confirmDeleteId)}
+									className="px-3 py-1.5 text-xs text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-lg transition-colors cursor-pointer"
+								>
+									Delete
+								</button>
+							</div>
+						</div>
+					</div>,
+					document.body,
+				)}
 		</div>
 	);
 }
