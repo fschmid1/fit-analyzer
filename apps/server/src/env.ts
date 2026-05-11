@@ -6,6 +6,7 @@ export const env = createEnv({
 		PORT: z.coerce.number().default(3001),
 		DB_PATH: z.string().default("./data/fit-analyzer.db"),
 		OPENROUTER_KEY: z.string().optional(),
+		OLLAMA_CLOUD_KEY: z.string().optional(),
 		STRAVA_CLIENT_ID: z.string().optional(),
 		STRAVA_CLIENT_SECRET: z.string().optional(),
 		STRAVA_REDIRECT_URI: z.string().optional(),

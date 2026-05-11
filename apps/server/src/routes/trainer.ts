@@ -2,13 +2,14 @@ import type {
 	SaveTrainerHistoryBody,
 	TrainerMessage,
 } from "@fit-analyzer/shared";
-import { AVAILABLE_MODELS } from "@fit-analyzer/shared";
+import { AVAILABLE_MODELS, getModelProvider } from "@fit-analyzer/shared";
 import { convertMessagesToModelMessages } from "@tanstack/ai";
 import { Hono } from "hono";
 import { db } from "../db.js";
 import { env } from "../env.js";
 import { getCoachModelSettings } from "../lib/coachModelSettings.js";
-import { createOpenRouterTrainerStream } from "../lib/openRouterTrainerStream.js";
+import { createOllamaTrainerStream } from "../lib/ollamaTrainerStream.js";
+import { createTrainerStream } from "../lib/trainerStream.js";
 import { parseCoachingMarkdown } from "../lib/parseCoachingMarkdown.js";
 import {
 	createTrainerStreamConsumer,
@@ -22,9 +23,32 @@ const SYSTEM_PROMPT =
 	"When the user shares their activity summary and interval data, analyse power, heart rate and cadence trends " +
 	"and give practical training advice.";
 
-const OPENROUTER_CHAT_COMPLETIONS_URL =
-	"https://openrouter.ai/api/v1/chat/completions";
 const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 20;
+
+function getProviderConfig(modelId: string) {
+	const provider = getModelProvider(modelId);
+
+	if (provider === "ollama-cloud") {
+		return {
+			provider: "ollama-cloud" as const,
+			apiKey: env.OLLAMA_CLOUD_KEY,
+			apiKeyEnvName: "OLLAMA_CLOUD_KEY",
+			baseUrl: "https://ollama.com/api",
+			includeReasoning: false,
+			metadata: undefined,
+		};
+	}
+
+	// Default: openrouter
+	return {
+		provider: "openrouter" as const,
+		apiKey: env.OPENROUTER_KEY,
+		apiKeyEnvName: "OPENROUTER_KEY",
+		baseUrl: "https://openrouter.ai/api/v1",
+		includeReasoning: true,
+		metadata: undefined,
+	};
+}
 
 function getUserId(c: {
 	req: { header: (name: string) => string | undefined };
@@ -134,10 +158,6 @@ const trainer = new Hono();
 // ─── Chat streaming ───────────────────────────────────────────────────────────
 
 trainer.post("/chat", async (c) => {
-	const apiKey = env.OPENROUTER_KEY;
-	if (!apiKey)
-		return c.json({ error: "OPENROUTER_KEY is not configured" }, 500);
-
 	const userId = c.req.header("x-authentik-username") ?? "anonymous";
 	const body: TrainerChatRequestBody = await c.req.json();
 	const streamId = getStringBodyValue(body.streamId) ?? crypto.randomUUID();
@@ -150,19 +170,47 @@ trainer.post("/chat", async (c) => {
 				| undefined)
 		: undefined;
 	const model = resolveThreadModel(thread, userId);
+	const providerConfig = getProviderConfig(model);
+
+	if (!providerConfig.apiKey) {
+		return c.json(
+			{ error: `${providerConfig.apiKeyEnvName} is not configured` },
+			500,
+		);
+	}
 
 	if (!hasActiveTrainerStream(streamId)) {
-		startTrainerStreamProducer(
-			streamId,
-			createOpenRouterTrainerStream({
-				apiKey,
-				model,
-				systemPrompt: SYSTEM_PROMPT,
-				messages: modelMessages,
-				metadata: getKimiRequestMetadata(body, userId),
-				threadId: getStringBodyValue(body.threadId),
-			}),
-		);
+		if (providerConfig.provider === "ollama-cloud") {
+			startTrainerStreamProducer(
+				streamId,
+				createOllamaTrainerStream({
+					baseUrl: providerConfig.baseUrl,
+					apiKey: providerConfig.apiKey,
+					model,
+					systemPrompt: SYSTEM_PROMPT,
+					messages: modelMessages,
+					threadId: getStringBodyValue(body.threadId),
+				}),
+			);
+		} else {
+			const metadata = providerConfig.includeReasoning
+				? getKimiRequestMetadata(body, userId)
+				: undefined;
+
+			startTrainerStreamProducer(
+				streamId,
+				createTrainerStream({
+					baseUrl: providerConfig.baseUrl,
+					apiKey: providerConfig.apiKey,
+					model,
+					systemPrompt: SYSTEM_PROMPT,
+					messages: modelMessages,
+					includeReasoning: providerConfig.includeReasoning,
+					metadata,
+					threadId: getStringBodyValue(body.threadId),
+				}),
+			);
+		}
 	}
 
 	return new Response(createTrainerStreamConsumer(streamId), {
@@ -288,10 +336,6 @@ trainer.put("/history/:threadId", async (c) => {
 // ─── Compact / fork ───────────────────────────────────────────────────────────
 
 trainer.post("/compact/:threadId", async (c) => {
-	const apiKey = env.OPENROUTER_KEY;
-	if (!apiKey)
-		return c.json({ error: "OPENROUTER_KEY is not configured" }, 500);
-
 	const userId = getUserId(c);
 	const { threadId } = c.req.param();
 
@@ -365,26 +409,62 @@ Messages to summarize:
 ${messagesText}`;
 
 	const model = resolveThreadModel(sourceThread, userId);
+	const providerConfig = getProviderConfig(model);
 
-	const response = await fetch(OPENROUTER_CHAT_COMPLETIONS_URL, {
-		method: "POST",
-		headers: {
-			Authorization: `Bearer ${apiKey}`,
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify({
-			model,
-			messages: [{ role: "user", content: compactionPrompt }],
-			metadata: {
-				app: "fit-analyzer",
-				feature: "trainer-compaction",
-				context_cache: "openrouter-moonshot-automatic",
-				user_id: userId,
-				source_thread_id: threadId,
+	if (!providerConfig.apiKey) {
+		return c.json(
+			{ error: `${providerConfig.apiKeyEnvName} is not configured` },
+			500,
+		);
+	}
+
+	const metadata: Record<string, unknown> | undefined =
+		providerConfig.includeReasoning
+			? {
+					app: "fit-analyzer",
+					feature: "trainer-compaction",
+					context_cache: "openrouter-moonshot-automatic",
+					user_id: userId,
+					source_thread_id: threadId,
+				}
+			: undefined;
+
+	const body: Record<string, unknown> = {
+		model,
+		messages: [{ role: "user", content: compactionPrompt }],
+	};
+
+	if (metadata) {
+		body.metadata = metadata;
+	}
+
+	let response: Response;
+
+	if (providerConfig.provider === "ollama-cloud") {
+		response = await fetch(`${providerConfig.baseUrl}/chat`, {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${providerConfig.apiKey}`,
+				"Content-Type": "application/json",
 			},
-		}),
-		signal: AbortSignal.timeout(240_000),
-	});
+			body: JSON.stringify({
+				model,
+				messages: [{ role: "user", content: compactionPrompt }],
+				stream: false,
+			}),
+			signal: AbortSignal.timeout(240_000),
+		});
+	} else {
+		response = await fetch(`${providerConfig.baseUrl}/chat/completions`, {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${providerConfig.apiKey}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify(body),
+			signal: AbortSignal.timeout(240_000),
+		});
+	}
 
 	if (!response.ok) {
 		const err = await response.json().catch(() => ({}));
@@ -392,8 +472,13 @@ ${messagesText}`;
 	}
 
 	const data = await response.json();
-	const summary: string =
-		data.choices?.[0]?.message?.content ?? "*(Summary unavailable)*";
+	let summary: string;
+
+	if (providerConfig.provider === "ollama-cloud") {
+		summary = data.message?.content ?? "*(Summary unavailable)*";
+	} else {
+		summary = data.choices?.[0]?.message?.content ?? "*(Summary unavailable)*";
+	}
 
 	const firstKeptAt = new Date(allMessages[cutoffIndex].createdAt).getTime();
 	const summaryMessage: TrainerMessage = {

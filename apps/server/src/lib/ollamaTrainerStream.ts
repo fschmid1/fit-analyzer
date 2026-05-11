@@ -1,23 +1,16 @@
 import type { ModelMessage, StreamChunk } from "@tanstack/ai";
 
-const OPENROUTER_CHAT_COMPLETIONS_URL =
-	"https://openrouter.ai/api/v1/chat/completions";
-
-type OpenRouterStreamChunk = {
-	choices?: Array<{
-		delta?: {
-			content?: string;
-			reasoning?: string;
-			reasoning_content?: string;
-			reasoning_text?: string;
-		};
-		finish_reason?: "stop" | "length" | "content_filter" | "tool_calls" | null;
-	}>;
-	usage?: {
-		prompt_tokens?: number;
-		completion_tokens?: number;
-		total_tokens?: number;
+type OllamaStreamChunk = {
+	model?: string;
+	created_at?: string;
+	message?: {
+		role?: string;
+		content?: string;
+		thinking?: string;
 	};
+	done?: boolean;
+	prompt_eval_count?: number;
+	eval_count?: number;
 };
 
 function messageContentToString(
@@ -37,7 +30,7 @@ function messageContentToString(
 	return text || null;
 }
 
-function toOpenRouterMessages(systemPrompt: string, messages: ModelMessage[]) {
+function toOllamaMessages(systemPrompt: string, messages: ModelMessage[]) {
 	const mapped = messages
 		.map((message) => {
 			const content = messageContentToString(message.content);
@@ -55,11 +48,11 @@ function toOpenRouterMessages(systemPrompt: string, messages: ModelMessage[]) {
 	return [{ role: "system", content: systemPrompt }, ...mapped];
 }
 
-async function* parseOpenRouterSse(
+async function* parseOllamaNdjson(
 	response: Response,
-): AsyncGenerator<OpenRouterStreamChunk> {
+): AsyncGenerator<OllamaStreamChunk> {
 	const reader = response.body?.getReader();
-	if (!reader) throw new Error("OpenRouter stream body is not readable");
+	if (!reader) throw new Error("Ollama stream body is not readable");
 
 	const decoder = new TextDecoder();
 	let buffer = "";
@@ -69,27 +62,29 @@ async function* parseOpenRouterSse(
 		if (done) break;
 
 		buffer += decoder.decode(value, { stream: true });
-		const events = buffer.split("\n\n");
-		buffer = events.pop() ?? "";
+		const lines = buffer.split("\n");
+		buffer = lines.pop() ?? "";
 
-		for (const event of events) {
-			for (const line of event.split("\n")) {
-				if (!line.startsWith("data: ")) continue;
-				const data = line.slice(6).trim();
-				if (!data) continue;
-				if (data === "[DONE]") return;
-				yield JSON.parse(data) as OpenRouterStreamChunk;
-			}
+		for (const line of lines) {
+			const trimmed = line.trim();
+			if (!trimmed) continue;
+			yield JSON.parse(trimmed) as OllamaStreamChunk;
 		}
+	}
+
+	// Flush any remaining buffer
+	const trimmed = buffer.trim();
+	if (trimmed) {
+		yield JSON.parse(trimmed) as OllamaStreamChunk;
 	}
 }
 
-export async function* createOpenRouterTrainerStream(options: {
+export async function* createOllamaTrainerStream(options: {
+	baseUrl: string;
 	apiKey: string;
 	model: string;
 	systemPrompt: string;
 	messages: ModelMessage[];
-	metadata: Record<string, unknown>;
 	threadId?: string;
 }): AsyncGenerator<StreamChunk> {
 	const runId = crypto.randomUUID();
@@ -99,8 +94,12 @@ export async function* createOpenRouterTrainerStream(options: {
 	let textStarted = false;
 	let accumulatedText = "";
 	let accumulatedReasoning = "";
-	let finishReason: "stop" | "length" | "content_filter" | "tool_calls" | null =
-		"stop";
+	const finishReason:
+		| "stop"
+		| "length"
+		| "content_filter"
+		| "tool_calls"
+		| null = "stop";
 	let usage:
 		| {
 				promptTokens: number;
@@ -117,7 +116,7 @@ export async function* createOpenRouterTrainerStream(options: {
 		timestamp: Date.now(),
 	};
 
-	const response = await fetch(OPENROUTER_CHAT_COMPLETIONS_URL, {
+	const response = await fetch(`${options.baseUrl}/chat`, {
 		method: "POST",
 		headers: {
 			Authorization: `Bearer ${options.apiKey}`,
@@ -125,29 +124,30 @@ export async function* createOpenRouterTrainerStream(options: {
 		},
 		body: JSON.stringify({
 			model: options.model,
-			messages: toOpenRouterMessages(options.systemPrompt, options.messages),
+			messages: toOllamaMessages(options.systemPrompt, options.messages),
 			stream: true,
-			include_reasoning: true,
-			metadata: options.metadata,
 		}),
 	});
 
 	if (!response.ok) {
 		const errorText = await response.text().catch(() => "");
 		throw new Error(
-			`OpenRouter stream failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
+			`Ollama stream failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
 		);
 	}
 
-	for await (const chunk of parseOpenRouterSse(response)) {
-		const choice = chunk.choices?.[0];
-		const delta = choice?.delta;
+	for await (const chunk of parseOllamaNdjson(response)) {
+		if (chunk.done) {
+			usage = {
+				promptTokens: chunk.prompt_eval_count ?? 0,
+				completionTokens: chunk.eval_count ?? 0,
+				totalTokens: (chunk.prompt_eval_count ?? 0) + (chunk.eval_count ?? 0),
+			};
+			break;
+		}
 
-		const reasoningDelta =
-			delta?.reasoning ??
-			delta?.reasoning_content ??
-			delta?.reasoning_text ??
-			"";
+		const message = chunk.message;
+		const reasoningDelta = message?.thinking ?? "";
 		if (reasoningDelta) {
 			if (!stepStarted) {
 				stepStarted = true;
@@ -171,7 +171,7 @@ export async function* createOpenRouterTrainerStream(options: {
 			};
 		}
 
-		const textDelta = delta?.content ?? "";
+		const textDelta = message?.content ?? "";
 		if (textDelta) {
 			if (!textStarted) {
 				textStarted = true;
@@ -192,18 +192,6 @@ export async function* createOpenRouterTrainerStream(options: {
 				content: accumulatedText,
 				model: options.model,
 				timestamp: Date.now(),
-			};
-		}
-
-		if (choice?.finish_reason !== undefined) {
-			finishReason = choice.finish_reason;
-		}
-
-		if (chunk.usage) {
-			usage = {
-				promptTokens: chunk.usage.prompt_tokens ?? 0,
-				completionTokens: chunk.usage.completion_tokens ?? 0,
-				totalTokens: chunk.usage.total_tokens ?? 0,
 			};
 		}
 	}

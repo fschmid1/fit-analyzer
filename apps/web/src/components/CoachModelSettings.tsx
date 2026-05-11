@@ -68,6 +68,11 @@ export function CoachModelSettings() {
 		}
 	};
 
+	const providerLabels: Record<string, string> = {
+		openrouter: "OpenRouter",
+		"ollama-cloud": "Ollama Cloud",
+	};
+
 	return (
 		<div className="flex flex-col gap-4">
 			{notification && (
@@ -112,11 +117,36 @@ export function CoachModelSettings() {
 								onChange={(e) => setSelected(e.target.value)}
 								className="px-3 py-2 text-sm bg-[#0f0b1a] border border-[rgba(139,92,246,0.2)] text-[#f1f5f9] rounded-xl focus:outline-none focus:border-[rgba(139,92,246,0.5)]"
 							>
-								{AVAILABLE_MODELS.map((m) => (
-									<option key={m.id} value={m.id}>
-										{m.name}
-									</option>
-								))}
+								{(() => {
+									const groups = new Map<
+										string,
+										(typeof AVAILABLE_MODELS)[number][]
+									>();
+									for (const model of AVAILABLE_MODELS) {
+										const arr = groups.get(model.provider);
+										if (arr) {
+											arr.push(model);
+										} else {
+											groups.set(model.provider, [model]);
+										}
+									}
+									const result: React.ReactNode[] = [];
+									for (const [provider, models] of groups) {
+										result.push(
+											<optgroup
+												key={provider}
+												label={providerLabels[provider] ?? provider}
+											>
+												{models.map((model) => (
+													<option key={model.id} value={model.id}>
+														{model.name}
+													</option>
+												))}
+											</optgroup>,
+										);
+									}
+									return result;
+								})()}
 							</select>
 						</label>
 

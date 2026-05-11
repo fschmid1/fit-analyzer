@@ -27,6 +27,7 @@ import type { TrainerMessage, TrainerThread } from "@fit-analyzer/shared";
 import {
 	AVAILABLE_MODELS,
 	getCoachModelDisplayName,
+	getModelProvider,
 } from "@fit-analyzer/shared";
 import {
 	compactTrainerHistory,
@@ -789,6 +790,41 @@ function ModelPicker({
 	const activeIndex =
 		AVAILABLE_MODELS.findIndex((m) => m.id === activeModel) + 1;
 
+	const activeProvider = getModelProvider(activeModel);
+
+	const providerIcons: Record<string, React.ReactNode> = {
+		openrouter: (
+			<svg
+				className="w-3.5 h-3.5 text-[#94a3b8]"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="2"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+				aria-hidden="true"
+			>
+				<circle cx="12" cy="12" r="10" />
+				<path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+				<path d="M2 12h20" />
+			</svg>
+		),
+		"ollama-cloud": (
+			<svg
+				className="w-3.5 h-3.5 text-[#94a3b8]"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="2"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+				aria-hidden="true"
+			>
+				<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+			</svg>
+		),
+	};
+
 	return (
 		<div ref={containerRef} className="relative">
 			<button
@@ -797,6 +833,7 @@ function ModelPicker({
 				className="flex items-center gap-1.5 px-2 py-1 text-xs text-[#94a3b8] hover:text-[#c4b5fd] bg-[#1a1533]/60 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-all duration-200 cursor-pointer"
 				title={activeModel}
 			>
+				{activeProvider && providerIcons[activeProvider]}
 				<span className="truncate max-w-[10rem]">{activeName}</span>
 				<ChevronDown
 					className={`w-3 h-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
@@ -810,7 +847,11 @@ function ModelPicker({
 						style={(() => {
 							const rect = containerRef.current?.getBoundingClientRect();
 							if (!rect) return {};
-							const dropdownHeight = AVAILABLE_MODELS.length * 32 + 8;
+							const groupCount = new Set(
+								AVAILABLE_MODELS.map((m) => m.provider),
+							).size;
+							const dropdownHeight =
+								AVAILABLE_MODELS.length * 32 + groupCount * 24 + 8;
 							const spaceBelow = window.innerHeight - rect.bottom;
 							const openUpward =
 								spaceBelow < dropdownHeight && rect.top > dropdownHeight;
@@ -824,24 +865,101 @@ function ModelPicker({
 						onPointerDown={(e) => e.stopPropagation()}
 						role="menu"
 					>
-						{AVAILABLE_MODELS.map((model, index) => (
-							<button
-								key={model.id}
-								type="button"
-								onClick={() => {
-									onChange(model.id);
-									setOpen(false);
-								}}
-								className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors cursor-pointer ${
-									model.id === activeModel
-										? "bg-[#8b5cf6]/15 text-[#e2d9f3]"
-										: "text-[#c4b5fd] hover:bg-[#8b5cf6]/15"
-								}`}
-								role="menuitem"
-							>
-								<span className="flex-1 text-left truncate">{model.name}</span>
-							</button>
-						))}
+						{(() => {
+							const groups = new Map<
+								string,
+								(typeof AVAILABLE_MODELS)[number][]
+							>();
+							for (const model of AVAILABLE_MODELS) {
+								const arr = groups.get(model.provider);
+								if (arr) {
+									arr.push(model);
+								} else {
+									groups.set(model.provider, [model]);
+								}
+							}
+							const providerLabels: Record<string, string> = {
+								openrouter: "OpenRouter",
+								"ollama-cloud": "Ollama Cloud",
+							};
+							const providerIcons: Record<string, React.ReactNode> = {
+								openrouter: (
+									<svg
+										className="w-3.5 h-3.5 text-[#94a3b8]"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										strokeWidth="2"
+										strokeLinecap="round"
+										strokeLinejoin="round"
+										aria-hidden="true"
+									>
+										<circle cx="12" cy="12" r="10" />
+										<path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+										<path d="M2 12h20" />
+									</svg>
+								),
+								"ollama-cloud": (
+									<svg
+										className="w-3.5 h-3.5 text-[#94a3b8]"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										strokeWidth="2"
+										strokeLinecap="round"
+										strokeLinejoin="round"
+										aria-hidden="true"
+									>
+										<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+									</svg>
+								),
+							};
+							const result: React.ReactNode[] = [];
+							let first = true;
+							for (const [provider, models] of groups) {
+								if (!first) {
+									result.push(
+										<div
+											key={`sep-${provider}`}
+											className="my-1 border-t border-[rgba(139,92,246,0.1)]"
+										/>,
+									);
+								}
+								first = false;
+								result.push(
+									<div
+										key={`group-${provider}`}
+										className="px-3 py-1.5 text-[10px] font-semibold text-[#64748b] uppercase tracking-wider flex items-center gap-1.5"
+									>
+										{providerIcons[provider]}
+										{providerLabels[provider] ?? provider}
+									</div>,
+								);
+								for (const model of models) {
+									result.push(
+										<button
+											key={model.id}
+											type="button"
+											onClick={() => {
+												onChange(model.id);
+												setOpen(false);
+											}}
+											className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors cursor-pointer ${
+												model.id === activeModel
+													? "bg-[#8b5cf6]/15 text-[#e2d9f3]"
+													: "text-[#c4b5fd] hover:bg-[#8b5cf6]/15"
+											}`}
+											role="menuitem"
+										>
+											<span className="flex-1 text-left truncate">
+												{model.name}
+											</span>
+										</button>,
+									);
+								}
+							}
+							return result;
+						})()}
 					</div>,
 					document.body,
 				)}
@@ -1075,7 +1193,7 @@ function TrainerChat({
 						{status === "streaming" && "Responding…"}
 						{(status === "ready" || status === "error") &&
 							(coachModelName
-								? `${coachModelName} with OpenRouter cache`
+								? `${coachModelName} via ${getModelProvider(activeModel) === "ollama-cloud" ? "Ollama Cloud" : "OpenRouter"}`
 								: "Coach")}
 					</span>
 				</div>
