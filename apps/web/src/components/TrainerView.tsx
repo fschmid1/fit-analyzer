@@ -8,14 +8,17 @@ import {
 	ArrowLeft,
 	ArrowUp,
 	Brain,
+	Check,
 	ChevronDown,
 	ChevronRight,
+	Clipboard,
 	GitFork,
 	Menu,
 	Minimize2,
 	MoreVertical,
 	Pencil,
 	Plus,
+	RefreshCw,
 	Send,
 	Square,
 	Trash2,
@@ -974,6 +977,80 @@ function ModelPicker({
 	);
 }
 
+function MessageActions({
+	msg,
+	isCurrentlyStreaming,
+	onDelete,
+	onRetry,
+	canRetry,
+}: {
+	msg: UIMessage;
+	isCurrentlyStreaming: boolean;
+	onDelete: () => void;
+	onRetry: () => void;
+	canRetry: boolean;
+}) {
+	const [copied, setCopied] = useState(false);
+
+	const handleCopy = async () => {
+		const text = getTextContent(msg);
+		try {
+			await navigator.clipboard.writeText(text);
+			setCopied(true);
+			setTimeout(() => setCopied(false), 2000);
+		} catch {
+			const textarea = document.createElement("textarea");
+			textarea.value = text;
+			document.body.appendChild(textarea);
+			textarea.select();
+			document.execCommand("copy");
+			document.body.removeChild(textarea);
+			setCopied(true);
+			setTimeout(() => setCopied(false), 2000);
+		}
+	};
+
+	if (isCurrentlyStreaming) return null;
+
+	return (
+		<div className="flex items-center gap-1">
+			<button
+				type="button"
+				onClick={handleCopy}
+				title="Copy message"
+				className={`flex items-center justify-center w-7 h-7 rounded-md transition-colors cursor-pointer ${
+					copied
+						? "text-emerald-400"
+						: "text-[#7c6fa0] hover:text-[#c4b5fd] hover:bg-[#8b5cf6]/10"
+				}`}
+			>
+				{copied ? (
+					<Check className="w-3.5 h-3.5" />
+				) : (
+					<Clipboard className="w-3.5 h-3.5" />
+				)}
+			</button>
+			<button
+				type="button"
+				onClick={onDelete}
+				title="Delete message"
+				className="flex items-center justify-center w-7 h-7 rounded-md text-[#7c6fa0] hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+			>
+				<Trash2 className="w-3.5 h-3.5" />
+			</button>
+			<button
+				type="button"
+				onClick={onRetry}
+				disabled={!canRetry}
+				title="Retry generation"
+				className="flex items-center justify-center w-7 h-7 rounded-md text-[#7c6fa0] hover:text-[#c4b5fd] hover:bg-[#8b5cf6]/10 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+			>
+				<RefreshCw className="w-3.5 h-3.5" />
+			</button>
+		</div>
+	);
+}
+
 // ─── TrainerChat ──────────────────────────────────────────────────────────────
 
 interface TrainerChatProps {
@@ -1002,8 +1079,16 @@ function TrainerChat({
 	onModelChange,
 }: TrainerChatProps) {
 	const connectionRef = useRef(createTrainerStreamConnection(threadId));
-	const { messages, sendMessage, status, isLoading, stop, error, setMessages } =
-		useChat({
+	const {
+		messages,
+		sendMessage,
+		status,
+		isLoading,
+		stop,
+		error,
+		setMessages,
+		reload,
+	} = useChat({
 			connection: connectionRef.current,
 			initialMessages,
 			body: { threadId },
@@ -1021,6 +1106,9 @@ function TrainerChat({
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [showScrollTop, setShowScrollTop] = useState(false);
 	const [showScrollBottom, setShowScrollBottom] = useState(false);
+	const [confirmDeleteMessageId, setConfirmDeleteMessageId] = useState<
+		string | null
+	>(null);
 
 	const activeModel = threadModel ?? defaultModel ?? AVAILABLE_MODELS[0].id;
 	const coachModelName = getCoachModelDisplayName(activeModel);
@@ -1168,6 +1256,21 @@ function TrainerChat({
 		[handleSend],
 	);
 
+	const handleConfirmDelete = useCallback(
+		(messageId: string) => {
+			setConfirmDeleteMessageId(null);
+			const nextMessages = messages.filter((m) => m.id !== messageId);
+			setMessages(nextMessages);
+			const toSave = nextMessages
+				.filter((m) => m.role === "user" || m.role === "assistant")
+				.map(toTrainerMessage)
+				.filter((m) => m.content);
+			if (toSave.length > 0)
+				saveTrainerHistory(threadId, toSave).catch(console.error);
+		},
+		[messages, setMessages, threadId],
+	);
+
 	const isGeneralChat = activityId === "general";
 
 	return (
@@ -1250,10 +1353,49 @@ function TrainerChat({
 						</div>
 					)}
 
-					{messages.map((msg) => {
+					{messages.map((msg, msgIndex) => {
 						const isUser = msg.role === "user";
 						const isLastMsg = msg.id === lastMessageId;
 						const isCurrentlyStreaming = isLastMsg && status === "streaming";
+
+						const handleRetry = async () => {
+							const msgText = getTextContent(msg);
+							if (msg.role === "user") {
+								if (isLoading) stop();
+								const truncated = messages.slice(0, msgIndex);
+								setMessages(truncated);
+								const toSave = truncated
+									.filter((m) => m.role === "user" || m.role === "assistant")
+									.map(toTrainerMessage)
+									.filter((m) => m.content);
+								if (toSave.length > 0)
+									saveTrainerHistory(threadId, toSave).catch(console.error);
+								await sendMessage(msgText);
+								return;
+							}
+							const isLastAssistant =
+								messages.findLastIndex((m) => m.role === "assistant") === msgIndex;
+							if (isLastAssistant) {
+								await reload();
+								return;
+							}
+							const lastUserIndex = messages.findLastIndex(
+								(m, idx) => m.role === "user" && idx < msgIndex,
+							);
+							if (lastUserIndex === -1) return;
+							const userMsg = messages[lastUserIndex];
+							const userText = getTextContent(userMsg);
+							if (isLoading) stop();
+							const truncated = messages.slice(0, lastUserIndex);
+							setMessages(truncated);
+							const toSave = truncated
+								.filter((m) => m.role === "user" || m.role === "assistant")
+								.map(toTrainerMessage)
+								.filter((m) => m.content);
+							if (toSave.length > 0)
+								saveTrainerHistory(threadId, toSave).catch(console.error);
+							await sendMessage(userText);
+						};
 
 						if (isUser) {
 							const text = getTextContent(msg);
@@ -1263,49 +1405,67 @@ function TrainerChat({
 									<div className="min-w-0 max-w-[calc(100%-1rem)] overflow-hidden rounded-lg px-3 py-2.5 text-sm leading-relaxed break-words bg-[#8b5cf6]/20 border border-[#8b5cf6]/30 text-[#e2d9f3] whitespace-pre-wrap [overflow-wrap:anywhere] sm:max-w-[80%] sm:px-4 sm:py-3 sm:text-base">
 										{text}
 									</div>
-									<span className="text-[10px] text-[#4a4468] pr-1">
-										{formatTime(msg.createdAt)}
-									</span>
+									<div className="flex items-center gap-2 pr-1">
+										<MessageActions
+											msg={msg}
+											isCurrentlyStreaming={isCurrentlyStreaming}
+											onDelete={() => setConfirmDeleteMessageId(msg.id)}
+											onRetry={handleRetry}
+											canRetry={true}
+										/>
+										<span className="text-[10px] text-[#4a4468]">
+											{formatTime(msg.createdAt)}
+										</span>
+									</div>
 								</div>
 							);
-						}
+							}
 
-						const thinkingContent = getThinkingContent(msg);
-						const textContent = getTextContent(msg);
-						const isThinkingPhase =
-							isCurrentlyStreaming && !!thinkingContent && !textContent;
+							const thinkingContent = getThinkingContent(msg);
+							const textContent = getTextContent(msg);
+							const isThinkingPhase =
+								isCurrentlyStreaming && !!thinkingContent && !textContent;
 
-						return (
-							<div key={msg.id} className="flex flex-col items-start gap-1">
-								<div className="min-w-0 max-w-[calc(100%-1rem)] overflow-hidden rounded-lg px-3 py-2.5 text-sm leading-relaxed break-words bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] text-[#c4b5fd] [overflow-wrap:anywhere] sm:max-w-[80%] sm:px-4 sm:py-3 sm:text-base">
-									{thinkingContent && (
-										<ThinkingBlock
-											content={thinkingContent}
-											isStreaming={isThinkingPhase}
+							return (
+								<div key={msg.id} className="flex flex-col items-start gap-1">
+									<div className="min-w-0 max-w-[calc(100%-1rem)] overflow-hidden rounded-lg px-3 py-2.5 text-sm leading-relaxed break-words bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] text-[#c4b5fd] [overflow-wrap:anywhere] sm:max-w-[80%] sm:px-4 sm:py-3 sm:text-base">
+										{thinkingContent && (
+											<ThinkingBlock
+												content={thinkingContent}
+												isStreaming={isThinkingPhase}
+											/>
+										)}
+										{textContent ? (
+											<ReactMarkdown
+												remarkPlugins={[remarkGfm]}
+												components={mdComponents}
+											>
+												{textContent}
+											</ReactMarkdown>
+										) : isCurrentlyStreaming && !thinkingContent ? (
+											<DotsLoader />
+										) : null}
+										{isCurrentlyStreaming && textContent && (
+											<span className="inline-block w-0.5 h-4 bg-[#8b5cf6] animate-pulse ml-0.5 align-middle" />
+										)}
+									</div>
+									<div className="flex items-center gap-2 pl-1">
+										<MessageActions
+											msg={msg}
+											isCurrentlyStreaming={isCurrentlyStreaming}
+											onDelete={() => setConfirmDeleteMessageId(msg.id)}
+											onRetry={handleRetry}
+											canRetry={true}
 										/>
-									)}
-									{textContent ? (
-										<ReactMarkdown
-											remarkPlugins={[remarkGfm]}
-											components={mdComponents}
-										>
-											{textContent}
-										</ReactMarkdown>
-									) : isCurrentlyStreaming && !thinkingContent ? (
-										<DotsLoader />
-									) : null}
-									{isCurrentlyStreaming && textContent && (
-										<span className="inline-block w-0.5 h-4 bg-[#8b5cf6] animate-pulse ml-0.5 align-middle" />
-									)}
+										{!isCurrentlyStreaming && textContent && (
+											<span className="text-[10px] text-[#4a4468]">
+												{formatTime(msg.createdAt)}
+											</span>
+										)}
+									</div>
 								</div>
-								{!isCurrentlyStreaming && textContent && (
-									<span className="text-[10px] text-[#4a4468] pl-1">
-										{formatTime(msg.createdAt)}
-									</span>
-								)}
-							</div>
-						);
-					})}
+							);
+						})}
 
 					{status === "submitted" && (
 						<div className="flex justify-start">
@@ -1349,6 +1509,33 @@ function TrainerChat({
 							</button>
 						)}
 					</div>
+				)}
+			{confirmDeleteMessageId &&
+				createPortal(
+					<div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60">
+						<div className="w-72 rounded-lg bg-[#1a1533] border border-[rgba(139,92,246,0.2)] shadow-xl shadow-black/40 p-4">
+							<p className="text-sm text-[#c4b5fd] mb-4">
+								Are you sure you want to delete this message?
+							</p>
+							<div className="flex justify-end gap-2">
+								<button
+									type="button"
+									onClick={() => setConfirmDeleteMessageId(null)}
+									className="px-3 py-1.5 text-xs text-[#94a3b8] hover:text-[#c4b5fd] rounded-lg hover:bg-[#241e3d] transition-colors cursor-pointer"
+								>
+									Cancel
+								</button>
+								<button
+									type="button"
+									onClick={() => handleConfirmDelete(confirmDeleteMessageId)}
+									className="px-3 py-1.5 text-xs text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-lg transition-colors cursor-pointer"
+								>
+									Delete
+								</button>
+							</div>
+						</div>
+					</div>,
+					document.body,
 				)}
 			</div>
 
