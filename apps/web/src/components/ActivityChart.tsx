@@ -437,7 +437,8 @@ export const ActivityChart = memo(function ActivityChart({
 
 	// Touch drag-to-pan
 	useDrag(
-		({ active, movement: [mx], memo }) => {
+		({ active, movement: [mx], memo, event }) => {
+			if (event && "pointerType" in event && (event as PointerEvent).pointerType !== "touch") return memo;
 			if (!chartContainerRef.current || !fullRange) return;
 			const [fullMin, fullMax] = fullRange;
 			if (!memo) memo = zoomStack;
