@@ -12,6 +12,7 @@ import {
 	fetchUserSettings,
 	forkThread,
 	renameThread,
+	updateFavoriteModels,
 	updateThreadModel,
 } from "../lib/api";
 import {
@@ -45,6 +46,7 @@ export function TrainerView({
 		useState(initialMessage);
 	const [defaultModel, setDefaultModel] = useState<string | null>(null);
 	const [availableModels, setAvailableModels] = useState<ModelEntry[]>([...AVAILABLE_MODELS]);
+	const [favorites, setFavorites] = useState<string[]>([]);
 	const initialized = useRef(false);
 
 	// Load threads for this activity
@@ -77,6 +79,9 @@ export function TrainerView({
 			.then((data) => {
 				const id = data.coachModel?.coachModel;
 				if (id) setDefaultModel(id);
+				if (Array.isArray(data.favoriteModels)) {
+					setFavorites(data.favoriteModels);
+				}
 			})
 			.catch(() => {
 				/* ignore */
@@ -142,6 +147,18 @@ export function TrainerView({
 		},
 		[],
 	);
+
+	const handleToggleFavorite = useCallback((modelId: string) => {
+		setFavorites((prev) => {
+			const next = prev.includes(modelId)
+				? prev.filter((id) => id !== modelId)
+				: [...prev, modelId];
+			updateFavoriteModels(next).catch(() => {
+				/* ignore */
+			});
+			return next;
+		});
+	}, []);
 
 	const handleDeleteThread = useCallback(
 		async (threadId: string) => {
@@ -242,6 +259,8 @@ export function TrainerView({
 				defaultModel={defaultModel}
 				availableModels={availableModels}
 				onModelChange={(modelId) => handleModelChange(activeThreadId, modelId)}
+				favorites={favorites}
+				onToggleFavorite={handleToggleFavorite}
 			/>
 		);
 	})();

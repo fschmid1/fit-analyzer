@@ -13,33 +13,11 @@ interface ModelPickerProps {
 	defaultModel: string | null;
 	availableModels: ModelEntry[];
 	onChange: (modelId: string) => void;
+	favorites: string[];
+	onToggleFavorite: (modelId: string) => void;
 }
 
-const FAVORITES_KEY = "fit-analyzer:favorite-models";
 const FAVORITES_GROUP = "__favorites__";
-
-function useFavoriteModels() {
-	const [favorites, setFavorites] = useState<string[]>(() => {
-		try {
-			const stored = localStorage.getItem(FAVORITES_KEY);
-			return stored ? (JSON.parse(stored) as string[]) : [];
-		} catch {
-			return [];
-		}
-	});
-
-	const toggleFavorite = (modelId: string) => {
-		setFavorites((prev) => {
-			const next = prev.includes(modelId)
-				? prev.filter((id) => id !== modelId)
-				: [...prev, modelId];
-			localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
-			return next;
-		});
-	};
-
-	return { favorites, toggleFavorite } as const;
-}
 
 const providerIcons: Record<string, React.ReactNode> = {
 	openrouter: (
@@ -111,12 +89,13 @@ export function ModelPicker({
 	defaultModel,
 	availableModels,
 	onChange,
+	favorites,
+	onToggleFavorite,
 }: ModelPickerProps) {
 	const [open, setOpen] = useState(false);
 	const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
 	const [search, setSearch] = useState("");
 	const containerRef = useRef<HTMLDivElement>(null);
-	const { favorites, toggleFavorite } = useFavoriteModels();
 
 	useEffect(() => {
 		if (!open) return;
@@ -245,7 +224,7 @@ export function ModelPicker({
 														type="button"
 														onClick={(e) => {
 															e.stopPropagation();
-															toggleFavorite(model.id);
+															onToggleFavorite(model.id);
 														}}
 														className={`shrink-0 p-0.5 rounded transition-colors cursor-pointer ${
 															favorites.includes(model.id)
@@ -378,7 +357,7 @@ export function ModelPicker({
 																type="button"
 																onClick={(e) => {
 																	e.stopPropagation();
-																	toggleFavorite(model.id);
+																	onToggleFavorite(model.id);
 																}}
 																className={`shrink-0 p-0.5 rounded transition-colors cursor-pointer ${
 																	favorites.includes(model.id)

@@ -23,6 +23,7 @@ export interface UserInfo {
 export interface UserSettingsResponse {
 	waxedChainReminder: WaxedChainReminderSettings;
 	coachModel: CoachModelSettings;
+	favoriteModels: string[];
 }
 
 export async function fetchCurrentUser(): Promise<UserInfo | null> {
@@ -85,6 +86,28 @@ export async function updateCoachModelSettings(input: {
 	}
 
 	return (data as UserSettingsResponse).coachModel;
+}
+
+export async function updateFavoriteModels(
+	favoriteModels: string[],
+): Promise<string[]> {
+	const res = await fetch(`${API_BASE}/me/settings`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ favoriteModels }),
+	});
+
+	const data = await res
+		.json()
+		.catch(() => ({ error: "Failed to update favorites" }));
+
+	if (!res.ok) {
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to update favorites",
+		);
+	}
+
+	return (data as UserSettingsResponse).favoriteModels;
 }
 
 export async function resetWaxedChainReminderProgress(): Promise<WaxedChainReminderSettings> {

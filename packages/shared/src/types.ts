@@ -137,6 +137,10 @@ export interface UpdateCoachModelSettingsBody {
 	coachModel: string;
 }
 
+export interface UpdateFavoriteModelsBody {
+	favoriteModels: string[];
+}
+
 // --- Trainer chat types ---
 
 /** A single persisted trainer chat message */

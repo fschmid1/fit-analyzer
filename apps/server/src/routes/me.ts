@@ -5,6 +5,10 @@ import {
 	updateCoachModelSettings,
 } from "../lib/coachModelSettings.js";
 import {
+	getFavoriteModels,
+	updateFavoriteModels,
+} from "../lib/favoriteModels.js";
+import {
 	getWaxedChainReminderSettings,
 	resetWaxedChainReminderProgress,
 	sendTestWaxedChainReminder,
@@ -48,6 +52,7 @@ me.get("/settings", async (c) => {
 	return c.json({
 		waxedChainReminder: getWaxedChainReminderSettings(userId),
 		coachModel: await getCoachModelSettings(userId),
+		favoriteModels: getFavoriteModels(userId),
 	});
 });
 
@@ -61,11 +66,18 @@ me.patch("/settings", async (c) => {
 	}
 
 	const body = await c.req.json<
-		Partial<UpdateWaxedChainReminderSettingsBody> & { coachModel?: string }
+		Partial<UpdateWaxedChainReminderSettingsBody> & {
+			coachModel?: string;
+			favoriteModels?: string[];
+		}
 	>();
 
 	if (typeof body.coachModel === "string" && body.coachModel.trim()) {
 		await updateCoachModelSettings(userId, { coachModel: body.coachModel.trim() });
+	}
+
+	if (Array.isArray(body.favoriteModels)) {
+		updateFavoriteModels(userId, body.favoriteModels);
 	}
 
 	if (
@@ -101,6 +113,7 @@ me.patch("/settings", async (c) => {
 	return c.json({
 		waxedChainReminder: getWaxedChainReminderSettings(userId),
 		coachModel: await getCoachModelSettings(userId),
+		favoriteModels: getFavoriteModels(userId),
 	});
 });
 

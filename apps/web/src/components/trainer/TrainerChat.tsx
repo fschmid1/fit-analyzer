@@ -58,6 +58,8 @@ interface TrainerChatProps {
 	defaultModel: string | null;
 	availableModels: ModelEntry[];
 	onModelChange: (modelId: string) => void;
+	favorites: string[];
+	onToggleFavorite: (modelId: string) => void;
 }
 
 export function TrainerChat({
@@ -72,6 +74,8 @@ export function TrainerChat({
 	defaultModel,
 	availableModels,
 	onModelChange,
+	favorites,
+	onToggleFavorite,
 }: TrainerChatProps) {
 	const connectionRef = useRef(createTrainerStreamConnection(threadId));
 	const {
@@ -558,6 +562,8 @@ export function TrainerChat({
 							defaultModel={defaultModel}
 							availableModels={availableModels}
 							onChange={onModelChange}
+							favorites={favorites}
+							onToggleFavorite={onToggleFavorite}
 						/>
 						<div className="ml-auto">
 							{isLoading ? (

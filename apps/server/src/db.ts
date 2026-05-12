@@ -178,7 +178,8 @@ db.exec(`
     waxed_chain_ntfy_topic TEXT NOT NULL DEFAULT '',
     waxed_chain_accumulated_km REAL NOT NULL DEFAULT 0,
     waxed_chain_last_notified_at TEXT,
-    coach_model TEXT NOT NULL DEFAULT 'moonshotai/kimi-k2.6'
+    coach_model TEXT NOT NULL DEFAULT 'moonshotai/kimi-k2.6',
+    favorite_models TEXT NOT NULL DEFAULT '[]'
   )
 `);
 
@@ -186,6 +187,15 @@ db.exec(`
 try {
 	db.exec(
 		`ALTER TABLE user_settings ADD COLUMN coach_model TEXT NOT NULL DEFAULT 'moonshotai/kimi-k2.6'`,
+	);
+} catch {
+	/* column already exists */
+}
+
+// Migration: add favorite_models to existing user_settings rows
+try {
+	db.exec(
+		`ALTER TABLE user_settings ADD COLUMN favorite_models TEXT NOT NULL DEFAULT '[]'`,
 	);
 } catch {
 	/* column already exists */

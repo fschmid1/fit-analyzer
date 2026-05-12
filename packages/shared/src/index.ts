@@ -15,6 +15,7 @@ export type {
 	UpdateWaxedChainReminderSettingsBody,
 	CoachModelSettings,
 	UpdateCoachModelSettingsBody,
+	UpdateFavoriteModelsBody,
 	TrainerMessage,
 	TrainerThread,
 	TrainerChatHistory,
