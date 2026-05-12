@@ -186,7 +186,7 @@ export function ModelPicker({
 									m.name.toLowerCase().includes(q),
 								);
 								return (
-									<div className="flex-1 py-1 overflow-y-auto max-h-[280px]">
+									<div className="flex-1 py-1 overflow-y-auto max-h-[280px] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/20 hover:[&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/35">
 										{results.length === 0 ? (
 											<p className="px-3 py-4 text-xs text-[#64748b] text-center">
 												No models found.
@@ -309,7 +309,7 @@ export function ModelPicker({
 													</button>
 												))}
 											</div>
-											<div className="flex-1 py-1 overflow-y-auto max-h-[320px]">
+											<div className="flex-1 py-1 overflow-y-auto max-h-[320px] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/20 hover:[&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/35">
 												{isFavorites ? (
 													<div className="px-3 py-1.5 text-[10px] font-semibold text-[#64748b] uppercase tracking-wider flex items-center gap-1.5">
 														<Star className="w-3 h-3" />
