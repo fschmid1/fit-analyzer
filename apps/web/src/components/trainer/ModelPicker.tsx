@@ -128,7 +128,9 @@ export function ModelPicker({
 			<button
 				type="button"
 				onClick={() => {
-					setSelectedProvider(activeProvider ?? null);
+					setSelectedProvider(
+						favorites.length > 0 ? FAVORITES_GROUP : (activeProvider ?? null),
+					);
 					setOpen((o) => !o);
 				}}
 				className="flex items-center gap-1.5 px-2 py-1 text-xs text-[#94a3b8] hover:text-[#c4b5fd] bg-[#1a1533]/60 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-all duration-200 cursor-pointer"
