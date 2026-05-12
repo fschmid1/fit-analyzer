@@ -5,15 +5,10 @@ import type {
 	Interval,
 	ParsedActivity,
 } from "@fit-analyzer/shared";
-import { computeAverages } from "./lib/stats";
 import { Header } from "./components/Header";
 import { FileDropZone } from "./components/FileDropZone";
 import { ActivityHistory } from "./components/ActivityHistory";
-import { ActivityChart } from "./components/ActivityChart";
-import { StatsBar } from "./components/StatsBar";
-import { IntervalList } from "./components/IntervalList";
-import { SummaryCards } from "./components/SummaryCards";
-import { CopyBox } from "./components/CopyBox";
+import { AnalysisView } from "./components/AnalysisView";
 import { InstallPrompt } from "./components/InstallPrompt";
 import { TrainerView } from "./components/TrainerView";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -139,13 +134,11 @@ function App() {
 			setActivity(data);
 			resetAnalysisState();
 
-			// Save to server in background
 			try {
 				const id = await saveActivityToServer(data);
 				setActivityId(id);
 				loadedActivityId.current = id;
 				navigate(`/activity/${id}`);
-				// Refresh the list
 				const list = await fetchActivities();
 				setActivities(list);
 			} catch (err) {
@@ -163,11 +156,9 @@ function App() {
 				setActivityId(data.id);
 				loadedActivityId.current = data.id;
 
-				// Reset selection/zoom state
 				setSelectionRange(null);
 				setChartZoom(null);
 
-				// Restore saved interval config from DB
 				const mins = data.intervalMinutes || "";
 				setSavedIntervalMinutes(mins);
 				setIntervalMinutes(mins);
@@ -175,7 +166,6 @@ function App() {
 					saveIntervalMinutes(mins);
 				}
 
-				// Restore custom intervals from DB
 				if (data.customRanges && data.customRanges.length > 0) {
 					setCustomIntervals(data.customRanges);
 				} else {
@@ -183,7 +173,6 @@ function App() {
 					clearCustomIntervals();
 				}
 
-				// Skip saving intervals back to DB when IntervalList recomputes on mount
 				skipNextSave.current = true;
 
 				setLapIntervalObjects([]);
@@ -246,7 +235,12 @@ function App() {
 			);
 			const stats =
 				slice.length > 0
-					? computeAverages(slice)
+					? {
+							avgPower: null as number | null,
+							avgHeartRate: null as number | null,
+							avgCadence: null as number | null,
+							duration: 0,
+						}
 					: {
 							avgPower: null,
 							avgHeartRate: null,
@@ -324,53 +318,23 @@ function App() {
 		navigate("/trainer");
 	}, [navigate]);
 
-	// Analysis view content extracted for use in the Route element
 	const analysisContent = activity ? (
-		<div className="flex-1 flex flex-col overflow-y-auto pt-6 animate-[fadeIn_0.4s_ease-out]">
-			{/* Date header */}
-			<div className="px-6 mb-4">
-				<h2 className="text-2xl font-bold text-[#f1f5f9]">
-					Activity on {activity.summary.date}
-				</h2>
-				<p className="text-sm text-[#94a3b8] mt-1">
-					{activity.records.length.toLocaleString()} data points recorded
-				</p>
-			</div>
-
-			{/* Selection stats bar */}
-			<StatsBar records={activity.records} selectionRange={selectionRange} />
-
-			{/* Interactive chart */}
-			<ActivityChart
-				records={activity.records}
-				onSelectionChange={handleSelectionChange}
-				externalZoom={chartZoom}
-				intervalRanges={chartIntervalRanges}
-				onAddInterval={handleAddInterval}
-			/>
-
-			{/* Interval list */}
-			<IntervalList
-				records={activity.records}
-				laps={activity.laps}
-				onIntervalClick={handleIntervalClick}
-				onIntervalsChange={handleIntervalsChange}
-				onIntervalMinutesChange={handleIntervalMinutesChange}
-				customIntervals={customIntervals}
-				onRemoveCustomInterval={handleRemoveCustomInterval}
-				initialIntervalMinutes={savedIntervalMinutes}
-			/>
-
-			{/* Summary cards */}
-			<SummaryCards summary={activity.summary} />
-
-			{/* Copyable summary box */}
-			<CopyBox
-				summary={activity.summary}
-				intervals={[...lapIntervalObjects, ...customIntervalObjects]}
-				onSendToTrainer={handleSendToTrainer}
-			/>
-		</div>
+		<AnalysisView
+			activity={activity}
+			selectionRange={selectionRange}
+			chartZoom={chartZoom}
+			chartIntervalRanges={chartIntervalRanges}
+			allIntervals={allIntervals}
+			customIntervals={customIntervals}
+			savedIntervalMinutes={savedIntervalMinutes}
+			onSelectionChange={handleSelectionChange}
+			onIntervalClick={handleIntervalClick}
+			onIntervalsChange={handleIntervalsChange}
+			onIntervalMinutesChange={handleIntervalMinutesChange}
+			onAddInterval={handleAddInterval}
+			onRemoveCustomInterval={handleRemoveCustomInterval}
+			onSendToTrainer={handleSendToTrainer}
+		/>
 	) : null;
 
 	return (

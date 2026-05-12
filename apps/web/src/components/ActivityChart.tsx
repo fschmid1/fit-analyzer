@@ -24,6 +24,25 @@ import {
 } from "lucide-react";
 import { formatElapsedTime } from "../lib/formatters";
 import type { ActivityRecord } from "@fit-analyzer/shared";
+import { CustomTooltip } from "./CustomTooltip";
+import {
+	findNearestElapsedIndex,
+	findStartIndex,
+	findEndIndex,
+	type ChartDataPoint,
+} from "./chartHelpers";
+import {
+	CHART_MARGIN,
+	AXIS_TICK,
+	AXIS_LINE,
+	TICK_LINE,
+	POWER_ACTIVE_DOT,
+	HR_ACTIVE_DOT,
+	CAD_ACTIVE_DOT,
+	SPEED_ACTIVE_DOT,
+	GRADIENT_ACTIVE_DOT,
+	DEFAULT_INITIAL_WINDOW_SECONDS,
+} from "./chartConfig";
 
 interface ActivityChartProps {
 	records: ActivityRecord[];
@@ -36,203 +55,9 @@ interface ActivityChartProps {
 	onAddInterval?: (startSeconds: number, endSeconds: number) => void;
 }
 
-interface ChartDataPoint {
-	elapsedSeconds: number;
-	power: number | null;
-	heartRate: number | null;
-	cadence: number | null;
-	speed: number | null;
-	gradient: number | null;
-}
-
 interface ChartPointerEvent {
 	activeLabel?: number | string;
 }
-
-interface TooltipPayloadEntry {
-	color?: string;
-	dataKey?: string;
-	value?: number | null;
-}
-
-interface CustomTooltipProps {
-	active?: boolean;
-	label?: number | string;
-	payload?: TooltipPayloadEntry[];
-}
-
-function findNearestElapsedIndex(
-	records: ActivityRecord[],
-	seconds: number,
-): number {
-	if (records.length === 0) return 0;
-
-	let left = 0;
-	let right = records.length - 1;
-
-	while (left <= right) {
-		const mid = Math.floor((left + right) / 2);
-		const value = records[mid]?.elapsedSeconds ?? 0;
-
-		if (value === seconds) return mid;
-		if (value < seconds) {
-			left = mid + 1;
-		} else {
-			right = mid - 1;
-		}
-	}
-
-	if (left >= records.length) return records.length - 1;
-	if (right < 0) return 0;
-
-	const leftDiff = Math.abs((records[left]?.elapsedSeconds ?? 0) - seconds);
-	const rightDiff = Math.abs((records[right]?.elapsedSeconds ?? 0) - seconds);
-
-	return leftDiff < rightDiff ? left : right;
-}
-
-function findStartIndex(data: ChartDataPoint[], seconds: number): number {
-	let left = 0;
-	let right = data.length;
-
-	while (left < right) {
-		const mid = Math.floor((left + right) / 2);
-		if ((data[mid]?.elapsedSeconds ?? 0) < seconds) {
-			left = mid + 1;
-		} else {
-			right = mid;
-		}
-	}
-
-	return left;
-}
-
-function findEndIndex(data: ChartDataPoint[], seconds: number): number {
-	let left = 0;
-	let right = data.length;
-
-	while (left < right) {
-		const mid = Math.floor((left + right) / 2);
-		if ((data[mid]?.elapsedSeconds ?? 0) <= seconds) {
-			left = mid + 1;
-		} else {
-			right = mid;
-		}
-	}
-
-	return left;
-}
-
-// Stable config objects (hoisted outside component to avoid re-creation)
-const CHART_MARGIN = { top: 5, right: 10, left: 10, bottom: 5 };
-const AXIS_TICK = { fontSize: 11, fill: "#94a3b8" };
-const AXIS_LINE = { stroke: "rgba(139, 92, 246, 0.1)" };
-const TICK_LINE = { stroke: "rgba(139, 92, 246, 0.1)" };
-const POWER_LABEL = {
-	value: "W",
-	position: "insideTopLeft" as const,
-	offset: -5,
-	style: { fontSize: 10, fill: "#8b5cf6" },
-};
-const HR_CAD_LABEL = {
-	value: "bpm / rpm / km/h",
-	position: "insideTopRight" as const,
-	offset: -5,
-	style: { fontSize: 10, fill: "#94a3b8" },
-};
-const GRADIENT_LABEL = {
-	value: "%",
-	position: "insideTopRight" as const,
-	offset: -5,
-	style: { fontSize: 10, fill: "#10b981" },
-};
-const POWER_ACTIVE_DOT = {
-	r: 4,
-	fill: "#8b5cf6",
-	stroke: "#1a1533",
-	strokeWidth: 2,
-};
-const HR_ACTIVE_DOT = {
-	r: 4,
-	fill: "#ef4444",
-	stroke: "#1a1533",
-	strokeWidth: 2,
-};
-const CAD_ACTIVE_DOT = {
-	r: 4,
-	fill: "#06b6d4",
-	stroke: "#1a1533",
-	strokeWidth: 2,
-};
-const SPEED_ACTIVE_DOT = {
-	r: 4,
-	fill: "#f59e0b",
-	stroke: "#1a1533",
-	strokeWidth: 2,
-};
-const GRADIENT_ACTIVE_DOT = {
-	r: 4,
-	fill: "#10b981",
-	stroke: "#1a1533",
-	strokeWidth: 2,
-};
-const DEFAULT_INITIAL_WINDOW_SECONDS = 60 * 60;
-
-const CustomTooltip = memo(function CustomTooltip({
-	active,
-	payload,
-	label,
-}: CustomTooltipProps) {
-	if (!active || !payload || payload.length === 0) return null;
-	const formattedLabel =
-		typeof label === "number" ? formatElapsedTime(label) : formatElapsedTime(0);
-
-	return (
-		<div className="bg-[#1a1533]/95 backdrop-blur-xl border border-[rgba(139,92,246,0.2)] rounded-xl p-3 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-			<p className="text-xs text-[#94a3b8] mb-2 font-medium">
-				{formattedLabel}
-			</p>
-			{payload.map(
-				(entry) =>
-					entry.value != null && (
-						<div
-							key={entry.dataKey ?? "unknown"}
-							className="flex items-center gap-2 text-sm"
-						>
-							<div
-								className="w-2 h-2 rounded-full"
-								style={{ backgroundColor: entry.color ?? "#94a3b8" }}
-							/>
-							<span className="text-[#94a3b8] capitalize">
-								{entry.dataKey === "heartRate"
-									? "Heart Rate"
-									: entry.dataKey === "gradient"
-										? "Steigung"
-										: entry.dataKey}
-								:
-							</span>
-							<span className="font-semibold text-[#f1f5f9]">
-								{entry.dataKey === "speed" || entry.dataKey === "gradient"
-									? (Math.round(entry.value * 10) / 10).toFixed(1)
-									: Math.round(entry.value)}
-								<span className="text-xs text-[#94a3b8] ml-1">
-									{entry.dataKey === "power"
-										? "W"
-										: entry.dataKey === "heartRate"
-											? "bpm"
-											: entry.dataKey === "speed"
-												? "km/h"
-												: entry.dataKey === "gradient"
-													? "%"
-													: "rpm"}
-								</span>
-							</span>
-						</div>
-					),
-			)}
-		</div>
-	);
-});
 
 export const ActivityChart = memo(function ActivityChart({
 	records,
@@ -459,12 +284,10 @@ export const ActivityChart = memo(function ActivityChart({
 				e.preventDefault();
 
 				const rect = container.getBoundingClientRect();
-				// Estimate chart plot area (account for Y-axis margins ~55px each side)
 				const plotLeft = 55;
 				const plotRight = rect.width - 55;
 				const plotWidth = plotRight - plotLeft;
 				const mouseX = e.clientX - rect.left;
-				// Clamp cursor ratio to the plot area
 				const ratio = Math.max(0, Math.min(1, (mouseX - plotLeft) / plotWidth));
 
 				const current =
@@ -475,20 +298,17 @@ export const ActivityChart = memo(function ActivityChart({
 				const span = current[1] - current[0];
 				const center = current[0] + span * ratio;
 
-				const zoomFactor = e.deltaY < 0 ? 0.7 : 1.4; // scroll up = zoom in, down = zoom out
+				const zoomFactor = e.deltaY < 0 ? 0.7 : 1.4;
 				let newSpan = span * zoomFactor;
 
-				// Don't zoom out beyond full range
 				if (newSpan >= fullMax - fullMin) {
 					pendingZoomRef.current = [];
 				} else {
-					// Don't zoom in too far (minimum ~5 seconds visible)
 					if (newSpan < 5) newSpan = 5;
 
 					let newStart = center - newSpan * ratio;
 					let newEnd = center + newSpan * (1 - ratio);
 
-					// Clamp to full data range
 					if (newStart < fullMin) {
 						newStart = fullMin;
 						newEnd = newStart + newSpan;
@@ -500,7 +320,6 @@ export const ActivityChart = memo(function ActivityChart({
 					newStart = Math.max(fullMin, newStart);
 					newEnd = Math.min(fullMax, newEnd);
 
-					// Replace top of stack (or push new) for smooth wheel zooming
 					const newZoom: [number, number] = [newStart, newEnd];
 					pendingZoomRef.current =
 						currentStack.length === 0
@@ -511,22 +330,19 @@ export const ActivityChart = memo(function ActivityChart({
 				setSelection(null);
 				selectionChangeRef.current(null);
 			} else {
-				// Regular scroll = pan left/right (only when zoomed in)
-				if (currentStack.length === 0) return; // not zoomed in, let page scroll normally
+				if (currentStack.length === 0) return;
 				e.preventDefault();
 
 				const current = currentStack[currentStack.length - 1];
 				if (!current) return;
 				const span = current[1] - current[0];
-				// Use deltaY (vertical scroll) or deltaX (horizontal scroll/trackpad) for panning
 				const delta =
 					Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-				const panAmount = span * 0.05 * Math.sign(delta); // 5% of visible range per scroll tick
+				const panAmount = span * 0.05 * Math.sign(delta);
 
 				let newStart = current[0] + panAmount;
 				let newEnd = current[1] + panAmount;
 
-				// Clamp to full data range
 				if (newStart < fullMin) {
 					newStart = fullMin;
 					newEnd = fullMin + span;
@@ -569,7 +385,6 @@ export const ActivityChart = memo(function ActivityChart({
 			const span = current[1] - current[0];
 
 			if (!active) {
-				// end of pinch: apply zoom
 				const rect = chartContainerRef.current.getBoundingClientRect();
 				const plotLeft = 55;
 				const plotRight = rect.width - 55;
@@ -627,7 +442,7 @@ export const ActivityChart = memo(function ActivityChart({
 			const [fullMin, fullMax] = fullRange;
 			if (!memo) memo = zoomStack;
 			const current = memo.length > 0 ? memo[memo.length - 1] : null;
-			if (!current) return memo; // not zoomed in, nothing to pan
+			if (!current) return memo;
 			const span = current[1] - current[0];
 			const rect = chartContainerRef.current.getBoundingClientRect();
 			const plotLeft = 55;
@@ -649,7 +464,6 @@ export const ActivityChart = memo(function ActivityChart({
 			}
 
 			if (active) {
-				// preview pan
 				const nextZoom: [number, number] = [newStart, newEnd];
 				setZoomStack([...memo.slice(0, -1), nextZoom]);
 				return memo;
