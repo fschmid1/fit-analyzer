@@ -1,5 +1,11 @@
 export type Provider = "openrouter" | "ollama-cloud";
 
+export interface ModelEntry {
+	id: string;
+	name: string;
+	provider: Provider;
+}
+
 export const AVAILABLE_MODELS = [
 	// OpenRouter models
 	{

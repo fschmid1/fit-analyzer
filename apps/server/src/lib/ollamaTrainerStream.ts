@@ -116,7 +116,7 @@ export async function* createOllamaTrainerStream(options: {
 		timestamp: Date.now(),
 	};
 
-	const response = await fetch(`${options.baseUrl}/chat`, {
+	const response = await fetch(`${options.baseUrl}/api/chat`, {
 		method: "POST",
 		headers: {
 			Authorization: `Bearer ${options.apiKey}`,

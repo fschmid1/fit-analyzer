@@ -1,15 +1,17 @@
 import {
 	AVAILABLE_MODELS,
 	type CoachModelSettings as CoachModelSettingsData,
+	type ModelEntry,
 } from "@fit-analyzer/shared";
 import { AlertCircle, Bot, CheckCircle2, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { fetchUserSettings, updateCoachModelSettings } from "../lib/api";
+import { fetchAvailableModels, fetchUserSettings, updateCoachModelSettings } from "../lib/api";
 import { AnimatedButton } from "./AnimatedButton";
 
 export function CoachModelSettings() {
 	const [settings, setSettings] = useState<CoachModelSettingsData | null>(null);
 	const [selected, setSelected] = useState<string>(AVAILABLE_MODELS[0].id);
+	const [availableModels, setAvailableModels] = useState<ModelEntry[]>([...AVAILABLE_MODELS]);
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [notification, setNotification] = useState<{
@@ -18,12 +20,13 @@ export function CoachModelSettings() {
 	} | null>(null);
 
 	useEffect(() => {
-		fetchUserSettings()
-			.then((data) => {
-				setSettings(data.coachModel);
+		Promise.all([fetchUserSettings(), fetchAvailableModels()])
+			.then(([settingsData, models]) => {
+				setSettings(settingsData.coachModel);
+				setAvailableModels(models);
 				setSelected(
-					AVAILABLE_MODELS.find((m) => m.id === data.coachModel.coachModel)
-						?.id ?? AVAILABLE_MODELS[0].id,
+					models.find((m) => m.id === settingsData.coachModel.coachModel)
+						?.id ?? models[0]?.id ?? AVAILABLE_MODELS[0].id,
 				);
 			})
 			.catch((error) => {
@@ -118,11 +121,8 @@ export function CoachModelSettings() {
 								className="px-3 py-2 text-sm bg-[#0f0b1a] border border-[rgba(139,92,246,0.2)] text-[#f1f5f9] rounded-xl focus:outline-none focus:border-[rgba(139,92,246,0.5)]"
 							>
 								{(() => {
-									const groups = new Map<
-										string,
-										(typeof AVAILABLE_MODELS)[number][]
-									>();
-									for (const model of AVAILABLE_MODELS) {
+									const groups = new Map<string, ModelEntry[]>();
+									for (const model of availableModels) {
 										const arr = groups.get(model.provider);
 										if (arr) {
 											arr.push(model);

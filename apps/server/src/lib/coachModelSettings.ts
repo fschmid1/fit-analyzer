@@ -1,6 +1,7 @@
 import type { CoachModelSettings } from "@fit-analyzer/shared";
 import { AVAILABLE_MODELS } from "@fit-analyzer/shared";
 import { db } from "../db.js";
+import { isOllamaModelKnown } from "./ollamaModelCache.js";
 
 const DEFAULT_COACH_MODEL = "moonshotai/kimi-k2.6";
 
@@ -17,24 +18,26 @@ const upsertSettingsStmt = db.prepare(
    ON CONFLICT(user_id) DO UPDATE SET coach_model = excluded.coach_model`,
 );
 
-function sanitizeCoachModel(value: string | null | undefined): string {
+async function sanitizeCoachModel(value: string | null | undefined): Promise<string> {
 	if (!value) return DEFAULT_COACH_MODEL;
 	const id = value.trim();
 	const known = AVAILABLE_MODELS.find((m) => m.id === id);
-	return known ? known.id : DEFAULT_COACH_MODEL;
+	if (known) return known.id;
+	if (await isOllamaModelKnown(id)) return id;
+	return DEFAULT_COACH_MODEL;
 }
 
-export function getCoachModelSettings(userId: string): CoachModelSettings {
+export async function getCoachModelSettings(userId: string): Promise<CoachModelSettings> {
 	const row = getSettingsStmt.get(userId) ?? null;
 	return {
-		coachModel: sanitizeCoachModel(row?.coach_model),
+		coachModel: await sanitizeCoachModel(row?.coach_model),
 	};
 }
 
-export function updateCoachModelSettings(
+export async function updateCoachModelSettings(
 	userId: string,
 	input: { coachModel: string },
-): CoachModelSettings {
-	upsertSettingsStmt.run(userId, sanitizeCoachModel(input.coachModel));
+): Promise<CoachModelSettings> {
+	upsertSettingsStmt.run(userId, await sanitizeCoachModel(input.coachModel));
 	return getCoachModelSettings(userId);
 }

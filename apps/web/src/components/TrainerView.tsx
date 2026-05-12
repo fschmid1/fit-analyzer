@@ -31,11 +31,13 @@ import {
 	AVAILABLE_MODELS,
 	getCoachModelDisplayName,
 	getModelProvider,
+	type ModelEntry,
 } from "@fit-analyzer/shared";
 import {
 	compactTrainerHistory,
 	createThread,
 	deleteThread,
+	fetchAvailableModels,
 	fetchThreads,
 	fetchTrainerHistory,
 	fetchUserSettings,
@@ -756,12 +758,14 @@ function ThreadSidebar({
 interface ModelPickerProps {
 	currentModel: string | null;
 	defaultModel: string | null;
+	availableModels: ModelEntry[];
 	onChange: (modelId: string) => void;
 }
 
 function ModelPicker({
 	currentModel,
 	defaultModel,
+	availableModels,
 	onChange,
 }: ModelPickerProps) {
 	const [open, setOpen] = useState(false);
@@ -789,12 +793,10 @@ function ModelPicker({
 		};
 	}, [open]);
 
-	const activeModel = currentModel ?? defaultModel ?? AVAILABLE_MODELS[0].id;
-	const activeName = getCoachModelDisplayName(activeModel);
-	const activeIndex =
-		AVAILABLE_MODELS.findIndex((m) => m.id === activeModel) + 1;
-
-	const activeProvider = getModelProvider(activeModel);
+	const activeModel = currentModel ?? defaultModel ?? availableModels[0]?.id ?? AVAILABLE_MODELS[0].id;
+	const activeModelInfo = availableModels.find((m) => m.id === activeModel);
+	const activeName = activeModelInfo?.name ?? getCoachModelDisplayName(activeModel);
+	const activeProvider = activeModelInfo?.provider ?? getModelProvider(activeModel);
 
 	const providerIcons: Record<string, React.ReactNode> = {
 		openrouter: (
@@ -807,7 +809,7 @@ function ModelPicker({
 			>
 				<path
 					d="M3 248.945C18 248.945 76 236 106 219C136 202 136 202 198 158C276.497 102.293 332 120.945 423 120.945"
-					stroke-width="90"
+					strokeWidth="90"
 				/>
 				<path
 					d="M511 121.5L357.25 210.268L357.25 32.7324L511 121.5Z"
@@ -816,7 +818,7 @@ function ModelPicker({
 				/>
 				<path
 					d="M0 249C15 249 73 261.945 103 278.945C133 295.945 133 295.945 195 339.945C273.497 395.652 329 377 420 377"
-					stroke-width="90"
+					strokeWidth="90"
 				/>
 				<path
 					d="M508 376.445L354.25 287.678L354.25 465.213L508 376.445Z"
@@ -877,34 +879,34 @@ function ModelPicker({
 			{open &&
 				createPortal(
 					<div
-						className="fixed z-[80] w-64 rounded-lg bg-[#1a1533] border border-[rgba(139,92,246,0.2)] shadow-xl shadow-black/40 overflow-hidden flex"
-						style={(() => {
-							const rect = containerRef.current?.getBoundingClientRect();
-							if (!rect) return {};
-							const groupCount = new Set(
-								AVAILABLE_MODELS.map((m) => m.provider),
-							).size;
-							const dropdownHeight =
-								AVAILABLE_MODELS.length * 32 + groupCount * 24 + 8;
-							const spaceBelow = window.innerHeight - rect.bottom;
-							const openUpward =
-								spaceBelow < dropdownHeight && rect.top > dropdownHeight;
-							return {
-								left: rect.left,
-								top: openUpward
-									? rect.top - dropdownHeight - 6
-									: rect.bottom + 6,
-							};
-						})()}
+						className="fixed z-[80] w-64 rounded-lg bg-[#1a1533] border border-[rgba(139,92,246,0.2)] shadow-xl shadow-black/40 overflow-hidden flex max-h-[340px]"
+							style={(() => {
+								const rect = containerRef.current?.getBoundingClientRect();
+								if (!rect) return {};
+								const spaceBelow = window.innerHeight - rect.bottom;
+								const openUpward = spaceBelow < 200 && rect.top > 200;
+								const dropdownWidth = 256;
+								const left = Math.max(
+									8,
+									Math.min(
+										rect.left,
+										window.innerWidth - dropdownWidth - 8,
+									),
+								);
+								if (openUpward) {
+									return {
+										left,
+										bottom: window.innerHeight - rect.top + 6,
+									};
+								}
+								return { left, top: rect.bottom + 6 };
+							})()}
 						onPointerDown={(e) => e.stopPropagation()}
 						role="menu"
 					>
 						{(() => {
-							const groups = new Map<
-								string,
-								(typeof AVAILABLE_MODELS)[number][]
-							>();
-							for (const model of AVAILABLE_MODELS) {
+								const groups = new Map<string, ModelEntry[]>();
+								for (const model of availableModels) {
 								const arr = groups.get(model.provider);
 								if (arr) {
 									arr.push(model);
@@ -1063,6 +1065,7 @@ interface TrainerChatProps {
 	onImported: () => void;
 	threadModel: string | null;
 	defaultModel: string | null;
+	availableModels: ModelEntry[];
 	onModelChange: (modelId: string) => void;
 }
 
@@ -1076,6 +1079,7 @@ function TrainerChat({
 	onImported,
 	threadModel,
 	defaultModel,
+	availableModels,
 	onModelChange,
 }: TrainerChatProps) {
 	const connectionRef = useRef(createTrainerStreamConnection(threadId));
@@ -1110,8 +1114,8 @@ function TrainerChat({
 		string | null
 	>(null);
 
-	const activeModel = threadModel ?? defaultModel ?? AVAILABLE_MODELS[0].id;
-	const coachModelName = getCoachModelDisplayName(activeModel);
+	const activeModel = threadModel ?? defaultModel ?? availableModels[0]?.id ?? AVAILABLE_MODELS[0].id;
+	const coachModelName = availableModels.find((m) => m.id === activeModel)?.name ?? getCoachModelDisplayName(activeModel);
 
 	useEffect(() => {
 		const activeStream = loadActiveTrainerStream(threadId);
@@ -1561,6 +1565,7 @@ function TrainerChat({
 						<ModelPicker
 							currentModel={threadModel}
 							defaultModel={defaultModel}
+							availableModels={availableModels}
 							onChange={onModelChange}
 						/>
 						<div className="ml-auto">
@@ -1610,6 +1615,7 @@ export function TrainerView({
 	const [currentInitialInput, setCurrentInitialInput] =
 		useState(initialMessage);
 	const [defaultModel, setDefaultModel] = useState<string | null>(null);
+	const [availableModels, setAvailableModels] = useState<ModelEntry[]>([...AVAILABLE_MODELS]);
 	const initialized = useRef(false);
 
 	// Load threads for this activity
@@ -1643,6 +1649,14 @@ export function TrainerView({
 				const id = data.coachModel?.coachModel;
 				if (id) setDefaultModel(id);
 			})
+			.catch(() => {
+				/* ignore */
+			});
+	}, []);
+
+	useEffect(() => {
+		fetchAvailableModels()
+			.then((models) => setAvailableModels(models))
 			.catch(() => {
 				/* ignore */
 			});
@@ -1797,6 +1811,7 @@ export function TrainerView({
 				onImported={handleImported}
 				threadModel={activeThread?.coachModel ?? null}
 				defaultModel={defaultModel}
+					availableModels={availableModels}
 				onModelChange={(modelId) => handleModelChange(activeThreadId, modelId)}
 			/>
 		);

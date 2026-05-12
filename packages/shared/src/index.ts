@@ -26,4 +26,4 @@ export {
 	getCoachModelDisplayName,
 	getModelProvider,
 } from "./coachModels.js";
-export type { AvailableModelId, Provider } from "./coachModels.js";
+export type { AvailableModelId, ModelEntry, Provider } from "./coachModels.js";

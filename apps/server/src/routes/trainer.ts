@@ -11,6 +11,7 @@ import { getCoachModelSettings } from "../lib/coachModelSettings.js";
 import { createOllamaTrainerStream } from "../lib/ollamaTrainerStream.js";
 import { createTrainerStream } from "../lib/trainerStream.js";
 import { parseCoachingMarkdown } from "../lib/parseCoachingMarkdown.js";
+import { getOllamaModels } from "../lib/ollamaModelCache.js";
 import {
 	createTrainerStreamConsumer,
 	hasActiveTrainerStream,
@@ -25,15 +26,37 @@ const SYSTEM_PROMPT =
 
 const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 20;
 
-function getProviderConfig(modelId: string) {
-	const provider = getModelProvider(modelId);
-
-	if (provider === "ollama-cloud") {
+async function getProviderConfig(modelId: string) {
+	const staticProvider = getModelProvider(modelId);
+	if (staticProvider === "ollama-cloud") {
 		return {
 			provider: "ollama-cloud" as const,
 			apiKey: env.OLLAMA_CLOUD_KEY,
 			apiKeyEnvName: "OLLAMA_CLOUD_KEY",
-			baseUrl: "https://ollama.com/api",
+			baseUrl: env.OLLAMA_BASE_URL,
+			includeReasoning: false,
+			metadata: undefined,
+		};
+	}
+	if (staticProvider === "openrouter") {
+		return {
+			provider: "openrouter" as const,
+			apiKey: env.OPENROUTER_KEY,
+			apiKeyEnvName: "OPENROUTER_KEY",
+			baseUrl: "https://openrouter.ai/api/v1",
+			includeReasoning: true,
+			metadata: undefined,
+		};
+	}
+
+	// Check dynamic Ollama cache
+	const ollamaModels = await getOllamaModels();
+	if (ollamaModels.some((m) => m.id === modelId)) {
+		return {
+			provider: "ollama-cloud" as const,
+			apiKey: env.OLLAMA_CLOUD_KEY,
+			apiKeyEnvName: "OLLAMA_CLOUD_KEY",
+			baseUrl: env.OLLAMA_BASE_URL,
 			includeReasoning: false,
 			metadata: undefined,
 		};
@@ -142,15 +165,20 @@ const insertMessageStmt = db.prepare(
      VALUES (?, ?, ?, ?, ?)`,
 );
 
-function resolveThreadModel(
+async function resolveThreadModel(
 	thread: { coachModel: string | null } | undefined,
 	userId: string,
-): string {
+): Promise<string> {
 	if (thread?.coachModel) {
 		const known = AVAILABLE_MODELS.find((m) => m.id === thread.coachModel);
 		if (known) return known.id;
+		const ollamaModels = await getOllamaModels();
+		if (ollamaModels.some((m) => m.id === thread.coachModel)) {
+			return thread.coachModel;
+		}
 	}
-	return getCoachModelSettings(userId).coachModel;
+	const settings = await getCoachModelSettings(userId);
+	return settings.coachModel;
 }
 
 const trainer = new Hono();
@@ -169,8 +197,8 @@ trainer.post("/chat", async (c) => {
 				| { coachModel: string | null }
 				| undefined)
 		: undefined;
-	const model = resolveThreadModel(thread, userId);
-	const providerConfig = getProviderConfig(model);
+	const model = await resolveThreadModel(thread, userId);
+	const providerConfig = await getProviderConfig(model);
 
 	if (!providerConfig.apiKey) {
 		return c.json(
@@ -239,6 +267,14 @@ trainer.get("/chat/:streamId", async (c) => {
 	return c.json({ error: "Stream not found or already completed" }, 404);
 });
 
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+trainer.get("/models", async (c) => {
+	const openRouterModels = AVAILABLE_MODELS.filter((m) => m.provider === "openrouter");
+	const ollamaModels = await getOllamaModels();
+	return c.json({ models: [...openRouterModels, ...ollamaModels] });
+});
+
 // ─── Thread CRUD ──────────────────────────────────────────────────────────────
 
 trainer.get("/threads/:activityId", (c) => {
@@ -257,8 +293,11 @@ trainer.post("/threads/:activityId", async (c) => {
 		body.coachModel as string | undefined
 	)?.trim();
 	const threadId = crypto.randomUUID();
-	const coachModel =
-		model && AVAILABLE_MODELS.find((m) => m.id === model) ? model : null;
+	const known =
+		model &&
+		(AVAILABLE_MODELS.find((m) => m.id === model) ||
+			(await getOllamaModels()).some((m) => m.id === model));
+	const coachModel = known ? model : null;
 	createThreadStmt.run(threadId, activityId, userId, name, coachModel);
 	const thread = getThreadByIdStmt.get(threadId, userId);
 	return c.json({ thread });
@@ -276,9 +315,10 @@ trainer.patch("/threads/:threadId", async (c) => {
 		return c.json({ error: "Name or coachModel is required" }, 400);
 	if (name) renameThreadStmt.run(name, threadId, userId);
 	if (model) {
-		const coachModel = AVAILABLE_MODELS.find((m) => m.id === model)
-			? model
-			: null;
+		const known =
+			AVAILABLE_MODELS.find((m) => m.id === model) ||
+			(await getOllamaModels()).some((m) => m.id === model);
+		const coachModel = known ? model : null;
 		updateThreadModelStmt.run(coachModel, threadId, userId);
 	}
 	return c.json({ ok: true });
@@ -408,8 +448,8 @@ Messages to summarize:
 
 ${messagesText}`;
 
-	const model = resolveThreadModel(sourceThread, userId);
-	const providerConfig = getProviderConfig(model);
+	const model = await resolveThreadModel(sourceThread, userId);
+	const providerConfig = await getProviderConfig(model);
 
 	if (!providerConfig.apiKey) {
 		return c.json(
@@ -441,7 +481,7 @@ ${messagesText}`;
 	let response: Response;
 
 	if (providerConfig.provider === "ollama-cloud") {
-		response = await fetch(`${providerConfig.baseUrl}/chat`, {
+		response = await fetch(`${providerConfig.baseUrl}/api/chat`, {
 			method: "POST",
 			headers: {
 				Authorization: `Bearer ${providerConfig.apiKey}`,

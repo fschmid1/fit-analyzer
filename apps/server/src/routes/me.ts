@@ -37,7 +37,7 @@ me.get("/", (c) => {
 });
 
 // GET /me/settings — return persisted user settings
-me.get("/settings", (c) => {
+me.get("/settings", async (c) => {
 	let userId: string;
 	try {
 		userId = getUserId(c);
@@ -47,7 +47,7 @@ me.get("/settings", (c) => {
 
 	return c.json({
 		waxedChainReminder: getWaxedChainReminderSettings(userId),
-		coachModel: getCoachModelSettings(userId),
+		coachModel: await getCoachModelSettings(userId),
 	});
 });
 
@@ -65,7 +65,7 @@ me.patch("/settings", async (c) => {
 	>();
 
 	if (typeof body.coachModel === "string" && body.coachModel.trim()) {
-		updateCoachModelSettings(userId, { coachModel: body.coachModel.trim() });
+		await updateCoachModelSettings(userId, { coachModel: body.coachModel.trim() });
 	}
 
 	if (
@@ -100,7 +100,7 @@ me.patch("/settings", async (c) => {
 
 	return c.json({
 		waxedChainReminder: getWaxedChainReminderSettings(userId),
-		coachModel: getCoachModelSettings(userId),
+		coachModel: await getCoachModelSettings(userId),
 	});
 });
 

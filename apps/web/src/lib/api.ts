@@ -1,13 +1,15 @@
-import type {
-	ActivityListItem,
-	Interval,
-	ParsedActivity,
-	StoredRecord,
-	TrainerMessage,
-	TrainerChatHistory,
-	TrainerThread,
-	WaxedChainReminderSettings,
-	CoachModelSettings,
+import {
+	AVAILABLE_MODELS,
+	type ActivityListItem,
+	type CoachModelSettings,
+	type Interval,
+	type ModelEntry,
+	type ParsedActivity,
+	type StoredRecord,
+	type TrainerChatHistory,
+	type TrainerMessage,
+	type TrainerThread,
+	type WaxedChainReminderSettings,
 } from "@fit-analyzer/shared";
 
 const API_BASE = "/api";
@@ -349,6 +351,13 @@ export async function unregisterStravaWebhook(): Promise<void> {
 }
 
 // ─── Trainer ─────────────────────────────────────────────────────────────────
+
+export async function fetchAvailableModels(): Promise<ModelEntry[]> {
+	const res = await fetch(`${API_BASE}/trainer/models`);
+	if (!res.ok) return [...AVAILABLE_MODELS];
+	const data = (await res.json()) as { models?: ModelEntry[] };
+	return data.models ?? [...AVAILABLE_MODELS];
+}
 
 export async function importTrainerChat(
 	file: File,
