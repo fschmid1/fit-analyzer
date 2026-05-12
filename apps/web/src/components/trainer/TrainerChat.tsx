@@ -541,7 +541,7 @@ export function TrainerChat({
 						onKeyDown={handleKeyDown}
 						placeholder="Ask your trainer..."
 						rows={1}
-						className="w-full resize-none bg-transparent text-sm text-[#f1f5f9] placeholder-[#4a4468] outline-none leading-relaxed"
+						className="w-full resize-none bg-transparent text-base sm:text-sm text-[#f1f5f9] placeholder-[#4a4468] outline-none leading-relaxed"
 						style={{ maxHeight: "200px", fieldSizing: "content" }}
 					/>
 					<div className="flex items-center gap-2">
