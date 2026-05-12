@@ -473,6 +473,7 @@ export const ActivityChart = memo(function ActivityChart({
 		{
 			target: chartContainerRef,
 			axis: "x",
+			pointer: { touch: true },
 			bounds: {
 				left: Number.NEGATIVE_INFINITY,
 				right: Number.POSITIVE_INFINITY,
