@@ -191,16 +191,6 @@ export function TrainerChat({
 		updateScrollButtons();
 	}, [updateScrollButtons]);
 
-	const adjustHeight = useCallback(() => {
-		const el = textareaRef.current;
-		if (!el) return;
-		el.style.height = "auto";
-		el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-	}, []);
-	useEffect(() => {
-		adjustHeight();
-	}, [adjustHeight]);
-
 	const isFirstRender = useRef(true);
 	const lastMessageId = messages[messages.length - 1]?.id;
 	const lastMessageTextLen = messages[messages.length - 1]?.parts?.length ?? 0;
@@ -241,9 +231,8 @@ export function TrainerChat({
 		inputRef.current = "";
 		if (textareaRef.current) textareaRef.current.value = "";
 		setHasInput(false);
-		adjustHeight();
 		await sendMessage(text);
-	}, [isLoading, sendMessage, adjustHeight]);
+	}, [isLoading, sendMessage]);
 
 	const handleKeyDown = useCallback(
 		(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -548,13 +537,12 @@ export function TrainerChat({
 							inputRef.current = e.target.value;
 							const next = !!e.target.value.trim();
 							if (next !== hasInput) setHasInput(next);
-							adjustHeight();
 						}}
 						onKeyDown={handleKeyDown}
 						placeholder="Ask your trainer..."
 						rows={1}
-						className="flex-1 resize-none bg-transparent text-sm text-[#f1f5f9] placeholder-[#4a4468] outline-none leading-relaxed"
-						style={{ maxHeight: "200px" }}
+						className="w-full resize-none bg-transparent text-sm text-[#f1f5f9] placeholder-[#4a4468] outline-none leading-relaxed"
+						style={{ maxHeight: "200px", fieldSizing: "content" }}
 					/>
 					<div className="flex items-center gap-2">
 						<ModelPicker
