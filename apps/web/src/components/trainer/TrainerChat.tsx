@@ -262,7 +262,7 @@ export function TrainerChat({
 	const isGeneralChat = activityId === "general";
 
 	return (
-		<div className="flex-1 flex flex-col min-h-0 min-w-0">
+		<div className="flex-1 flex flex-col min-h-0 min-w-0" style={{ touchAction: "manipulation" }}>
 			<input
 				ref={fileInputRef}
 				type="file"
