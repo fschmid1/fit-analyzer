@@ -5,13 +5,15 @@ import {
 } from "@fit-analyzer/shared";
 import { AlertCircle, Bot, CheckCircle2, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { fetchAvailableModels, fetchUserSettings, updateCoachModelSettings } from "../lib/api";
+import { fetchAvailableModels, fetchUserSettings, updateCoachModelSettings, updateFavoriteModels } from "../lib/api";
 import { AnimatedButton } from "./AnimatedButton";
+import { ModelPicker } from "./trainer/ModelPicker";
 
 export function CoachModelSettings() {
 	const [settings, setSettings] = useState<CoachModelSettingsData | null>(null);
 	const [selected, setSelected] = useState<string>(AVAILABLE_MODELS[0].id);
 	const [availableModels, setAvailableModels] = useState<ModelEntry[]>([...AVAILABLE_MODELS]);
+	const [favorites, setFavorites] = useState<string[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [notification, setNotification] = useState<{
@@ -24,6 +26,7 @@ export function CoachModelSettings() {
 			.then(([settingsData, models]) => {
 				setSettings(settingsData.coachModel);
 				setAvailableModels(models);
+				setFavorites(settingsData.favoriteModels);
 				setSelected(
 					models.find((m) => m.id === settingsData.coachModel.coachModel)
 						?.id ?? models[0]?.id ?? AVAILABLE_MODELS[0].id,
@@ -71,9 +74,16 @@ export function CoachModelSettings() {
 		}
 	};
 
-	const providerLabels: Record<string, string> = {
-		openrouter: "OpenRouter",
-		"ollama-cloud": "Ollama Cloud",
+	const handleToggleFavorite = async (modelId: string) => {
+		const next = favorites.includes(modelId)
+			? favorites.filter((id) => id !== modelId)
+			: [...favorites, modelId];
+		setFavorites(next);
+		try {
+			await updateFavoriteModels(next);
+		} catch {
+			setFavorites(favorites);
+		}
 	};
 
 	return (
@@ -115,39 +125,14 @@ export function CoachModelSettings() {
 					<>
 						<label className="flex flex-col gap-1.5">
 							<span className="text-xs font-medium text-[#cbd5e1]">Model</span>
-							<select
-								value={selected}
-								onChange={(e) => setSelected(e.target.value)}
-								className="px-3 py-2 text-sm bg-[#0f0b1a] border border-[rgba(139,92,246,0.2)] text-[#f1f5f9] rounded-xl focus:outline-none focus:border-[rgba(139,92,246,0.5)]"
-							>
-								{(() => {
-									const groups = new Map<string, ModelEntry[]>();
-									for (const model of availableModels) {
-										const arr = groups.get(model.provider);
-										if (arr) {
-											arr.push(model);
-										} else {
-											groups.set(model.provider, [model]);
-										}
-									}
-									const result: React.ReactNode[] = [];
-									for (const [provider, models] of groups) {
-										result.push(
-											<optgroup
-												key={provider}
-												label={providerLabels[provider] ?? provider}
-											>
-												{models.map((model) => (
-													<option key={model.id} value={model.id}>
-														{model.name}
-													</option>
-												))}
-											</optgroup>,
-										);
-									}
-									return result;
-								})()}
-							</select>
+							<ModelPicker
+								currentModel={selected}
+								defaultModel={null}
+								availableModels={availableModels}
+								onChange={setSelected}
+								favorites={favorites}
+								onToggleFavorite={handleToggleFavorite}
+							/>
 						</label>
 
 						<div className="flex items-center justify-end gap-2 pt-1 border-t border-[rgba(139,92,246,0.1)]">
