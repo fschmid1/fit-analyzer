@@ -126,8 +126,12 @@ export function ModelPicker({
 
 
 	useLayoutEffect(() => {
-		if (measureRef.current && showPortal) {
-			const height = measureRef.current.scrollHeight || 200;
+		if (contentRef.current && showPortal) {
+			const el = contentRef.current;
+			const prev = el.style.height;
+			el.style.height = "auto";
+			const height = el.scrollHeight || 200;
+			el.style.height = prev;
 			setMeasuredHeight(Math.min(height, 380));
 		}
 	}, [showPortal, selectedProvider, search, availableModels, favorites]);
@@ -209,7 +213,7 @@ export function ModelPicker({
 						}}
 						role="menu"
 					>
-							<div ref={measureRef}>
+							<div ref={measureRef} className="flex flex-col min-h-0">
 						<div className="flex items-center gap-2 px-3 py-2 border-b border-[rgba(139,92,246,0.1)]">
 							<Search className="w-3.5 h-3.5 shrink-0 text-[#64748b]" />
 							<input
