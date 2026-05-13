@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Search, Star } from "lucide-react";
 import {
@@ -95,17 +95,23 @@ export function ModelPicker({
 	const [open, setOpen] = useState(false);
 	const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
 	const [search, setSearch] = useState("");
+	const [showPortal, setShowPortal] = useState(false);
+	const [measuredHeight, setMeasuredHeight] = useState(0);
 	const containerRef = useRef<HTMLDivElement>(null);
+	const contentRef = useRef<HTMLDivElement>(null);
+	const measureRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
 		if (!open) return;
 		const handleClick = (e: MouseEvent) => {
+			const target = e.target as Node;
 			if (
-				containerRef.current &&
-				!containerRef.current.contains(e.target as Node)
+				containerRef.current?.contains(target) ||
+				contentRef.current?.contains(target)
 			) {
-				setOpen(false);
+				return;
 			}
+			setOpen(false);
 		};
 		const handleKey = (e: KeyboardEvent) => {
 			if (e.key === "Escape") setOpen(false);
@@ -116,6 +122,24 @@ export function ModelPicker({
 			window.removeEventListener("pointerdown", handleClick);
 			window.removeEventListener("keydown", handleKey);
 		};
+	}, [open]);
+
+
+	useLayoutEffect(() => {
+		if (measureRef.current && showPortal) {
+			const height = measureRef.current.scrollHeight || 200;
+			setMeasuredHeight(Math.min(height, 380));
+		}
+	}, [showPortal, selectedProvider, search, availableModels, favorites]);
+
+	useEffect(() => {
+		if (open) {
+			setShowPortal(true);
+		} else {
+			setMeasuredHeight(0);
+			const timeout = setTimeout(() => setShowPortal(false), 400);
+			return () => clearTimeout(timeout);
+		}
 	}, [open]);
 
 	const activeModel = currentModel ?? defaultModel ?? availableModels[0]?.id ?? AVAILABLE_MODELS[0].id;
@@ -143,10 +167,11 @@ export function ModelPicker({
 				/>
 			</button>
 
-			{open &&
+			{showPortal &&
 				createPortal(
 					<div
-						className="fixed z-[80] w-64 rounded-lg bg-[#1a1533] border border-[rgba(139,92,246,0.2)] shadow-xl shadow-black/40 overflow-hidden flex flex-col max-h-[340px]"
+						ref={contentRef}
+						className="fixed z-[80] w-64 rounded-lg bg-[#1a1533] border border-[rgba(139,92,246,0.2)] shadow-xl shadow-black/40 overflow-hidden flex flex-col max-h-[380px]"
 						style={(() => {
 							const rect = containerRef.current?.getBoundingClientRect();
 							if (!rect) return {};
@@ -164,13 +189,27 @@ export function ModelPicker({
 								return {
 									left,
 									bottom: window.innerHeight - rect.top + 6,
+									height: measuredHeight,
+									opacity: open ? 1 : 0,
+									overflow: "hidden",
+									transition: "height 200ms ease, opacity 200ms ease",
 								};
 							}
-							return { left, top: rect.bottom + 6 };
+							return {
+								left,
+								top: rect.bottom + 6,
+								height: measuredHeight,
+								opacity: open ? 1 : 0,
+								transition: "height 200ms ease, opacity 200ms ease",
+							};
 						})()}
-						onPointerDown={(e) => e.stopPropagation()}
+						onPointerDown={(e) => {
+							e.stopPropagation();
+							e.nativeEvent.stopImmediatePropagation();
+						}}
 						role="menu"
 					>
+							<div ref={measureRef}>
 						<div className="flex items-center gap-2 px-3 py-2 border-b border-[rgba(139,92,246,0.1)]">
 							<Search className="w-3.5 h-3.5 shrink-0 text-[#64748b]" />
 							<input
@@ -188,7 +227,7 @@ export function ModelPicker({
 									m.name.toLowerCase().includes(q),
 								);
 								return (
-									<div className="flex-1 py-1 overflow-y-auto max-h-[280px] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/20 hover:[&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/35">
+									<div className="flex-1 py-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/20 hover:[&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/35">
 										{results.length === 0 ? (
 											<p className="px-3 py-4 text-xs text-[#64748b] text-center">
 												No models found.
@@ -311,7 +350,7 @@ export function ModelPicker({
 													</button>
 												))}
 											</div>
-											<div className="flex-1 py-1 overflow-y-auto max-h-[320px] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/20 hover:[&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/35">
+											<div className="flex-1 py-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/20 hover:[&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/35">
 												{isFavorites ? (
 													<div className="px-3 py-1.5 text-[10px] font-semibold text-[#64748b] uppercase tracking-wider flex items-center gap-1.5">
 														<Star className="w-3 h-3" />
@@ -390,6 +429,7 @@ export function ModelPicker({
 								})()}
 							</div>
 						)}
+						</div>
 					</div>,
 					document.body,
 				)}

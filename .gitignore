@@ -33,3 +33,4 @@ apps/server/public/
 *.sln
 .env
 *.sw?
+tsconfig.tsbuildinfo
