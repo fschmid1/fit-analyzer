@@ -4,6 +4,7 @@ import {
 	type CoachModelSettings,
 	type Interval,
 	type ModelEntry,
+	type OpenwearablesSettings,
 	type ParsedActivity,
 	type StoredRecord,
 	type TrainerChatHistory,
@@ -24,6 +25,7 @@ export interface UserSettingsResponse {
 	waxedChainReminder: WaxedChainReminderSettings;
 	coachModel: CoachModelSettings;
 	favoriteModels: string[];
+	openwearables: OpenwearablesSettings;
 }
 
 export async function fetchCurrentUser(): Promise<UserInfo | null> {
@@ -142,6 +144,28 @@ export async function sendWaxedChainReminderTest(): Promise<void> {
 			(data as { error?: string }).error ?? "Failed to send test notification",
 		);
 	}
+}
+
+export async function updateOpenwearablesSettings(input: {
+	owUserId: string;
+}): Promise<OpenwearablesSettings> {
+	const res = await fetch(`${API_BASE}/me/settings`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ owUserId: input.owUserId }),
+	});
+
+	const data = await res
+		.json()
+		.catch(() => ({ error: "Failed to update settings" }));
+
+	if (!res.ok) {
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to update settings",
+		);
+	}
+
+	return (data as UserSettingsResponse).openwearables;
 }
 
 export async function fetchActivities(): Promise<ActivityListItem[]> {

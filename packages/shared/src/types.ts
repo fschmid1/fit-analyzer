@@ -145,6 +145,14 @@ export interface UpdateFavoriteModelsBody {
 	favoriteModels: string[];
 }
 
+export interface OpenwearablesSettings {
+	owUserId: string | null;
+}
+
+export interface UpdateOpenwearablesSettingsBody {
+	owUserId: string;
+}
+
 // --- Trainer chat types ---
 
 /** A single persisted trainer chat message */
