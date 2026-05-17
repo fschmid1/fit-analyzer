@@ -22,7 +22,7 @@
 		"lucide-react": "^1.6.0",
 		"react": "^18.2.0",
 		"react-dom": "^18.2.0",
-		"react-leaflet": "^5.0.0",
+		"react-leaflet": "^4.2.0",
 		"react-markdown": "^10.1.0",
 		"react-router-dom": "^7.13.2",
 		"recharts": "^3.8.0",

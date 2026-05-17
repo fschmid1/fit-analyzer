@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { MapContainer, TileLayer, Polyline, useMap } from "react-leaflet";
 import type { LatLngBoundsExpression, LatLngTuple } from "leaflet";
 import type { ActivityRecord } from "@fit-analyzer/shared";
@@ -43,10 +43,12 @@ function coordsForRange(
 
 function FitBounds({ coords }: { coords: LatLngTuple[] }) {
 	const map = useMap();
-	if (coords.length >= 2) {
-		const bounds = coords as LatLngBoundsExpression;
-		map.fitBounds(bounds, { padding: [20, 20] });
-	}
+	useEffect(() => {
+		if (coords.length >= 2) {
+			const bounds = coords as LatLngBoundsExpression;
+			map.fitBounds(bounds, { padding: [20, 20] });
+		}
+	}, [map, coords]);
 	return null;
 }
 
@@ -101,7 +103,6 @@ export function RouteMap({ records, selectionRange }: RouteMapProps) {
 						zoom={13}
 						className="h-full w-full"
 						zoomControl={false}
-						attributionControl={false}
 					>
 						<TileLayer
 							url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"

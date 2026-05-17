@@ -37,19 +37,24 @@ interface StravaActivity {
 	kilojoules?: number;
 }
 
-interface StravaStream {
+interface StravaNumericStream {
 	type: string;
 	data: number[];
 }
 
+interface StravaLatLngStream {
+	type: string;
+	data: [number, number][];
+}
+
 interface StravaStreams {
-	time?: StravaStream;
-	watts?: StravaStream;
-	heartrate?: StravaStream;
-	cadence?: StravaStream;
-	velocity_smooth?: StravaStream;
-	grade_smooth?: StravaStream;
-	latlng?: StravaStream;
+	time?: StravaNumericStream;
+	watts?: StravaNumericStream;
+	heartrate?: StravaNumericStream;
+	cadence?: StravaNumericStream;
+	velocity_smooth?: StravaNumericStream;
+	grade_smooth?: StravaNumericStream;
+	latlng?: StravaLatLngStream;
 }
 
 interface StravaLap {
@@ -238,8 +243,8 @@ function buildRecords(startDate: Date, streams: StravaStreams): StoredRecord[] {
 		cadence: cadData[i] ?? null,
 		speed: velData[i] != null ? Math.round(velData[i] * 3.6 * 10) / 10 : null,
 		gradient: gradeData[i] ?? null,
-		lat: Array.isArray(latLngData[i]) ? (latLngData[i] as number[])[0] ?? null : null,
-		lng: Array.isArray(latLngData[i]) ? (latLngData[i] as number[])[1] ?? null : null,
+		lat: latLngData[i]?.[0] ?? null,
+		lng: latLngData[i]?.[1] ?? null,
 	}));
 }
 

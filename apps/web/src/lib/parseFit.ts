@@ -34,7 +34,7 @@ function asFiniteNumber(value: unknown): number | null {
 
 function semicirclesToDegrees(value: unknown): number | null {
 	if (typeof value !== "number" || !Number.isFinite(value)) return null;
-	return Math.round((value * (180 / 2 ** 31)) * 1_000_000) / 1_000_000;
+	return Math.round(value * (180 / 2 ** 31) * 1_000_000) / 1_000_000;
 }
 
 export function parseFit(arrayBuffer: ArrayBuffer): ParsedActivity {
