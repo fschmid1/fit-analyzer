@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import ReactMarkdown from "react-markdown";
+import type ReactMarkdown from "react-markdown";
 
 export const mdComponents: ComponentProps<typeof ReactMarkdown>["components"] =
 	{

@@ -131,7 +131,7 @@ export function CoachModelSettings() {
 
 				{!loading && (
 					<>
-						<label className="flex flex-col gap-1.5">
+						<div className="flex flex-col gap-1.5">
 							<span className="text-xs font-medium text-[#cbd5e1]">Model</span>
 							<ModelPicker
 								currentModel={selected}
@@ -141,7 +141,7 @@ export function CoachModelSettings() {
 								favorites={favorites}
 								onToggleFavorite={handleToggleFavorite}
 							/>
-						</label>
+						</div>
 
 						<div className="flex items-center justify-end gap-2 pt-1 border-t border-[rgba(139,92,246,0.1)]">
 							<AnimatedButton
