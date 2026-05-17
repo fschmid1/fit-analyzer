@@ -8,21 +8,29 @@ import { Hono } from "hono";
 import { db } from "../db.js";
 import { env } from "../env.js";
 import { getCoachModelSettings } from "../lib/coachModelSettings.js";
-import { createOllamaTrainerStream } from "../lib/ollamaTrainerStream.js";
-import { createTrainerStream } from "../lib/trainerStream.js";
-import { parseCoachingMarkdown } from "../lib/parseCoachingMarkdown.js";
 import { getOllamaModels } from "../lib/ollamaModelCache.js";
+import { createOllamaTrainerStream } from "../lib/ollamaTrainerStream.js";
+import { getHealthContext } from "../lib/owClient.js";
+import { parseCoachingMarkdown } from "../lib/parseCoachingMarkdown.js";
+import { createTrainerStream } from "../lib/trainerStream.js";
 import {
 	createTrainerStreamConsumer,
 	hasActiveTrainerStream,
 	startTrainerStreamProducer,
+	verifyStreamOwner,
 } from "../lib/trainerStreamRegistry.js";
 
-const SYSTEM_PROMPT =
+const BASE_SYSTEM_PROMPT =
 	"You are an expert endurance sports coach specialising in cycling and triathlon. " +
 	"You receive structured training data from Garmin FIT files and provide concise, actionable coaching feedback. " +
 	"When the user shares their activity summary and interval data, analyse power, heart rate and cadence trends " +
 	"and give practical training advice.";
+
+async function buildSystemPrompt(userId: string): Promise<string> {
+	const { text: healthText } = await getHealthContext(userId);
+	if (!healthText) return BASE_SYSTEM_PROMPT;
+	return `${BASE_SYSTEM_PROMPT}\n${healthText}`;
+}
 
 const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 20;
 
@@ -186,7 +194,15 @@ const trainer = new Hono();
 // ─── Chat streaming ───────────────────────────────────────────────────────────
 
 trainer.post("/chat", async (c) => {
-	const userId = c.req.header("x-authentik-username") ?? "anonymous";
+	let userId: string;
+	try {
+		userId = getUserId(c);
+	} catch {
+		return c.json(
+			{ error: "Unauthorized — missing x-authentik-username header" },
+			401,
+		);
+	}
 	const body: TrainerChatRequestBody = await c.req.json();
 	const streamId = getStringBodyValue(body.streamId) ?? crypto.randomUUID();
 	const modelMessages = convertMessagesToModelMessages(body.messages ?? []);
@@ -208,6 +224,8 @@ trainer.post("/chat", async (c) => {
 	}
 
 	if (!hasActiveTrainerStream(streamId)) {
+		const systemPrompt = await buildSystemPrompt(userId);
+
 		if (providerConfig.provider === "ollama-cloud") {
 			startTrainerStreamProducer(
 				streamId,
@@ -215,10 +233,11 @@ trainer.post("/chat", async (c) => {
 					baseUrl: providerConfig.baseUrl,
 					apiKey: providerConfig.apiKey,
 					model,
-					systemPrompt: SYSTEM_PROMPT,
+					systemPrompt,
 					messages: modelMessages,
 					threadId: getStringBodyValue(body.threadId),
 				}),
+				userId,
 			);
 		} else {
 			const metadata = providerConfig.includeReasoning
@@ -231,12 +250,13 @@ trainer.post("/chat", async (c) => {
 					baseUrl: providerConfig.baseUrl,
 					apiKey: providerConfig.apiKey,
 					model,
-					systemPrompt: SYSTEM_PROMPT,
+					systemPrompt,
 					messages: modelMessages,
 					includeReasoning: providerConfig.includeReasoning,
 					metadata,
 					threadId: getStringBodyValue(body.threadId),
 				}),
+				userId,
 			);
 		}
 	}
@@ -252,6 +272,20 @@ trainer.post("/chat", async (c) => {
 
 trainer.get("/chat/:streamId", async (c) => {
 	const { streamId } = c.req.param();
+
+	let userId: string;
+	try {
+		userId = getUserId(c);
+	} catch {
+		return c.json(
+			{ error: "Unauthorized — missing x-authentik-username header" },
+			401,
+		);
+	}
+
+	if (!verifyStreamOwner(streamId, userId)) {
+		return c.json({ error: "Stream not found or already completed" }, 404);
+	}
 
 	if (hasActiveTrainerStream(streamId)) {
 		console.log("resuming stream");
@@ -270,7 +304,9 @@ trainer.get("/chat/:streamId", async (c) => {
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 trainer.get("/models", async (c) => {
-	const openRouterModels = AVAILABLE_MODELS.filter((m) => m.provider === "openrouter");
+	const openRouterModels = AVAILABLE_MODELS.filter(
+		(m) => m.provider === "openrouter",
+	);
 	const ollamaModels = await getOllamaModels();
 	return c.json({ models: [...openRouterModels, ...ollamaModels] });
 });
@@ -417,7 +453,7 @@ trainer.post("/compact/:threadId", async (c) => {
 	}
 
 	const cutoffIndex = allMessages.findIndex((m) => keepEndIds.has(m.id));
-	const toCompact = allMessages.slice(0, cutoffIndex);
+	const toCompact = cutoffIndex === -1 ? [] : allMessages.slice(0, cutoffIndex);
 
 	if (toCompact.length === 0) {
 		return c.json({
@@ -542,7 +578,13 @@ ${summary}`,
 	const forkName = `${sourceThread.name} · Compacted`;
 
 	db.transaction(() => {
-		createThreadStmt.run(forkId, sourceThread.activityId, userId, forkName);
+		createThreadStmt.run(
+			forkId,
+			sourceThread.activityId,
+			userId,
+			forkName,
+			sourceThread.coachModel,
+		);
 		for (const m of newMessages) {
 			insertMessageStmt.run(m.id, forkId, m.role, m.content, m.createdAt);
 		}

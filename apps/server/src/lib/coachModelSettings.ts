@@ -18,7 +18,9 @@ const upsertSettingsStmt = db.prepare(
    ON CONFLICT(user_id) DO UPDATE SET coach_model = excluded.coach_model`,
 );
 
-async function sanitizeCoachModel(value: string | null | undefined): Promise<string> {
+async function sanitizeCoachModel(
+	value: string | null | undefined,
+): Promise<string> {
 	if (!value) return DEFAULT_COACH_MODEL;
 	const id = value.trim();
 	const known = AVAILABLE_MODELS.find((m) => m.id === id);
@@ -27,7 +29,9 @@ async function sanitizeCoachModel(value: string | null | undefined): Promise<str
 	return DEFAULT_COACH_MODEL;
 }
 
-export async function getCoachModelSettings(userId: string): Promise<CoachModelSettings> {
+export async function getCoachModelSettings(
+	userId: string,
+): Promise<CoachModelSettings> {
 	const row = getSettingsStmt.get(userId) ?? null;
 	return {
 		coachModel: await sanitizeCoachModel(row?.coach_model),
