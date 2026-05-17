@@ -20,6 +20,8 @@ export type {
 	TrainerThread,
 	TrainerChatHistory,
 	SaveTrainerHistoryBody,
+	OpenwearablesSettings,
+	UpdateOpenwearablesSettingsBody,
 } from "./types.js";
 
 export {

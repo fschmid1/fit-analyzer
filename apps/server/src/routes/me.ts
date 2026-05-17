@@ -8,12 +8,14 @@ import {
 	getFavoriteModels,
 	updateFavoriteModels,
 } from "../lib/favoriteModels.js";
+import { getOwUserId } from "../lib/owClient.js";
 import {
 	getWaxedChainReminderSettings,
 	resetWaxedChainReminderProgress,
 	sendTestWaxedChainReminder,
 	updateWaxedChainReminderSettings,
 } from "../lib/waxedChainReminders.js";
+import { db } from "../db.js";
 
 const me = new Hono();
 
@@ -53,6 +55,7 @@ me.get("/settings", async (c) => {
 		waxedChainReminder: getWaxedChainReminderSettings(userId),
 		coachModel: await getCoachModelSettings(userId),
 		favoriteModels: getFavoriteModels(userId),
+		openwearables: { owUserId: getOwUserId(userId) },
 	});
 });
 
@@ -69,15 +72,25 @@ me.patch("/settings", async (c) => {
 		Partial<UpdateWaxedChainReminderSettingsBody> & {
 			coachModel?: string;
 			favoriteModels?: string[];
+			owUserId?: string;
 		}
 	>();
 
 	if (typeof body.coachModel === "string" && body.coachModel.trim()) {
-		await updateCoachModelSettings(userId, { coachModel: body.coachModel.trim() });
+		await updateCoachModelSettings(userId, {
+			coachModel: body.coachModel.trim(),
+		});
 	}
 
 	if (Array.isArray(body.favoriteModels)) {
 		updateFavoriteModels(userId, body.favoriteModels);
+	}
+
+	if (typeof body.owUserId === "string") {
+		const trimmed = body.owUserId.trim();
+		db.prepare(
+			"INSERT INTO user_settings (user_id, ow_user_id) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET ow_user_id = excluded.ow_user_id",
+		).run(userId, trimmed || null);
 	}
 
 	if (
@@ -114,6 +127,7 @@ me.patch("/settings", async (c) => {
 		waxedChainReminder: getWaxedChainReminderSettings(userId),
 		coachModel: await getCoachModelSettings(userId),
 		favoriteModels: getFavoriteModels(userId),
+		openwearables: { owUserId: getOwUserId(userId) },
 	});
 });
 

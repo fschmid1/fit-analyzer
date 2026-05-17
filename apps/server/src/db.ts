@@ -213,4 +213,11 @@ db.exec(`
     WHERE strava_activity_id IS NOT NULL
 `);
 
+// Migration: add ow_user_id to user_settings
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN ow_user_id TEXT");
+} catch {
+	/* column already exists */
+}
+
 export { db };

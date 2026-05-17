@@ -1,6 +1,10 @@
 import { env } from "../env.js";
 
-let cachedModels: Array<{ id: string; name: string; provider: "ollama-cloud" }> | null = null;
+let cachedModels: Array<{
+	id: string;
+	name: string;
+	provider: "ollama-cloud";
+}> | null = null;
 let cachedAt = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -23,7 +27,7 @@ async function fetchOllamaModels(): Promise<
 		models?: Array<{
 			name: string;
 			model?: string;
-		}>
+		}>;
 	};
 
 	return (data.models ?? []).map((m) => ({

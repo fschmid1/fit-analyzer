@@ -1,26 +1,14 @@
-import {
-	AVAILABLE_MODELS,
-	type CoachModelSettings as CoachModelSettingsData,
-	type ModelEntry,
-} from "@fit-analyzer/shared";
-import { AlertCircle, Bot, CheckCircle2, Loader2 } from "lucide-react";
+import type { OpenwearablesSettings as OpenwearablesSettingsData } from "@fit-analyzer/shared";
+import { AlertCircle, CheckCircle2, Heart, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import {
-	fetchAvailableModels,
-	fetchUserSettings,
-	updateCoachModelSettings,
-	updateFavoriteModels,
-} from "../lib/api";
+import { fetchUserSettings, updateOpenwearablesSettings } from "../lib/api";
 import { AnimatedButton } from "./AnimatedButton";
-import { ModelPicker } from "./trainer/ModelPicker";
 
-export function CoachModelSettings() {
-	const [settings, setSettings] = useState<CoachModelSettingsData | null>(null);
-	const [selected, setSelected] = useState<string>(AVAILABLE_MODELS[0].id);
-	const [availableModels, setAvailableModels] = useState<ModelEntry[]>([
-		...AVAILABLE_MODELS,
-	]);
-	const [favorites, setFavorites] = useState<string[]>([]);
+export function OpenwearablesSettings() {
+	const [settings, setSettings] = useState<OpenwearablesSettingsData | null>(
+		null,
+	);
+	const [owUserId, setOwUserId] = useState("");
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [notification, setNotification] = useState<{
@@ -29,16 +17,10 @@ export function CoachModelSettings() {
 	} | null>(null);
 
 	useEffect(() => {
-		Promise.all([fetchUserSettings(), fetchAvailableModels()])
-			.then(([settingsData, models]) => {
-				setSettings(settingsData.coachModel);
-				setAvailableModels(models);
-				setFavorites(settingsData.favoriteModels);
-				setSelected(
-					models.find((m) => m.id === settingsData.coachModel.coachModel)?.id ??
-						models[0]?.id ??
-						AVAILABLE_MODELS[0].id,
-				);
+		fetchUserSettings()
+			.then((data) => {
+				setSettings(data.openwearables);
+				setOwUserId(data.openwearables.owUserId ?? "");
 			})
 			.catch((error) => {
 				setNotification({
@@ -56,20 +38,22 @@ export function CoachModelSettings() {
 		return () => window.clearTimeout(timeoutId);
 	}, [notification]);
 
-	const isDirty = settings !== null && selected !== settings.coachModel;
+	const isDirty = settings !== null && owUserId !== (settings.owUserId ?? "");
 
 	const handleSave = async () => {
 		setSaving(true);
 		setNotification(null);
 		try {
-			const next = await updateCoachModelSettings({
-				coachModel: selected,
+			const next = await updateOpenwearablesSettings({
+				owUserId,
 			});
 			setSettings(next);
-			setSelected(next.coachModel);
+			setOwUserId(next.owUserId ?? "");
 			setNotification({
 				type: "success",
-				message: "Coach model updated.",
+				message: owUserId
+					? "OpenWearables user ID saved."
+					: "OpenWearables integration disabled.",
 			});
 		} catch (error) {
 			setNotification({
@@ -79,18 +63,6 @@ export function CoachModelSettings() {
 			});
 		} finally {
 			setSaving(false);
-		}
-	};
-
-	const handleToggleFavorite = async (modelId: string) => {
-		const next = favorites.includes(modelId)
-			? favorites.filter((id) => id !== modelId)
-			: [...favorites, modelId];
-		setFavorites(next);
-		try {
-			await updateFavoriteModels(next);
-		} catch {
-			setFavorites(favorites);
 		}
 	};
 
@@ -115,13 +87,16 @@ export function CoachModelSettings() {
 
 			<div className="p-5 bg-[#1a1533]/70 border border-[rgba(139,92,246,0.15)] rounded-xl flex flex-col gap-4">
 				<div className="flex items-center gap-3">
-					<div className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#8b5cf6]/10 shrink-0">
-						<Bot className="w-5 h-5 text-[#a78bfa]" />
+					<div className="flex items-center justify-center w-10 h-10 rounded-xl bg-rose-500/10 shrink-0">
+						<Heart className="w-5 h-5 text-rose-300" />
 					</div>
 					<div>
-						<p className="text-sm font-semibold text-[#f1f5f9]">Coach model</p>
+						<p className="text-sm font-semibold text-[#f1f5f9]">
+							OpenWearables
+						</p>
 						<p className="text-xs text-[#94a3b8]">
-							Choose the AI model used by the cycling coach.
+							Provide your OpenWearables user ID so the AI coach can access your
+							RHR, sleep, and HRV data for smarter training advice.
 						</p>
 					</div>
 					{loading && (
@@ -132,18 +107,22 @@ export function CoachModelSettings() {
 				{!loading && (
 					<>
 						<label className="flex flex-col gap-1.5">
-							<span className="text-xs font-medium text-[#cbd5e1]">Model</span>
-							<ModelPicker
-								currentModel={selected}
-								defaultModel={null}
-								availableModels={availableModels}
-								onChange={setSelected}
-								favorites={favorites}
-								onToggleFavorite={handleToggleFavorite}
+							<span className="text-xs font-medium text-[#cbd5e1]">
+								User ID
+							</span>
+							<input
+								type="text"
+								value={owUserId}
+								onChange={(event) => setOwUserId(event.target.value)}
+								placeholder="Your OpenWearables user ID"
+								className="px-3 py-2 text-sm bg-[#0f0b1a] border border-[rgba(139,92,246,0.2)] text-[#f1f5f9] rounded-xl focus:outline-none focus:border-[rgba(139,92,246,0.5)]"
 							/>
 						</label>
 
-						<div className="flex items-center justify-end gap-2 pt-1 border-t border-[rgba(139,92,246,0.1)]">
+						<div className="flex items-center justify-between gap-3 pt-1 border-t border-[rgba(139,92,246,0.1)]">
+							<p className="text-xs text-[#94a3b8]">
+								The API key and URL are configured on the server.
+							</p>
 							<AnimatedButton
 								onClick={handleSave}
 								disabled={!isDirty || saving}

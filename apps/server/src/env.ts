@@ -14,6 +14,8 @@ export const env = createEnv({
         STRAVA_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
         NTFY_HOST: z.string().optional(),
         NTFY_TOKEN: z.string().optional(),
+        OW_API_KEY: z.string().optional(),
+        OW_BASE_URL: z.string().optional(),
     },
     runtimeEnv: process.env,
     emptyStringAsUndefined: true,

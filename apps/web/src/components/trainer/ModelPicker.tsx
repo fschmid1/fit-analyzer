@@ -124,7 +124,6 @@ export function ModelPicker({
 		};
 	}, [open]);
 
-
 	useLayoutEffect(() => {
 		if (contentRef.current && showPortal) {
 			const el = contentRef.current;
@@ -146,10 +145,16 @@ export function ModelPicker({
 		}
 	}, [open]);
 
-	const activeModel = currentModel ?? defaultModel ?? availableModels[0]?.id ?? AVAILABLE_MODELS[0].id;
+	const activeModel =
+		currentModel ??
+		defaultModel ??
+		availableModels[0]?.id ??
+		AVAILABLE_MODELS[0].id;
 	const activeModelInfo = availableModels.find((m) => m.id === activeModel);
-	const activeName = activeModelInfo?.name ?? getCoachModelDisplayName(activeModel);
-	const activeProvider = activeModelInfo?.provider ?? getModelProvider(activeModel);
+	const activeName =
+		activeModelInfo?.name ?? getCoachModelDisplayName(activeModel);
+	const activeProvider =
+		activeModelInfo?.provider ?? getModelProvider(activeModel);
 
 	return (
 		<div ref={containerRef} className="relative">
@@ -184,10 +189,7 @@ export function ModelPicker({
 							const dropdownWidth = 256;
 							const left = Math.max(
 								8,
-								Math.min(
-									rect.left,
-									window.innerWidth - dropdownWidth - 8,
-								),
+								Math.min(rect.left, window.innerWidth - dropdownWidth - 8),
 							);
 							if (openUpward) {
 								return {
@@ -213,226 +215,229 @@ export function ModelPicker({
 						}}
 						role="menu"
 					>
-							<div ref={measureRef} className="flex flex-col min-h-0">
-						<div className="flex items-center gap-2 px-3 py-2 border-b border-[rgba(139,92,246,0.1)]">
-							<Search className="w-3.5 h-3.5 shrink-0 text-[#64748b]" />
-							<input
-								type="text"
-								value={search}
-								onChange={(e) => setSearch(e.target.value)}
-								placeholder="Search models..."
-								className="flex-1 bg-transparent text-xs text-[#f1f5f9] placeholder-[#4a4468] outline-none"
-							/>
-						</div>
-						{search ? (
-							(() => {
-								const q = search.toLowerCase();
-								const results = availableModels.filter((m) =>
-									m.name.toLowerCase().includes(q),
-								);
-								return (
-									<div className="flex-1 py-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/20 hover:[&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/35">
-										{results.length === 0 ? (
-											<p className="px-3 py-4 text-xs text-[#64748b] text-center">
-												No models found.
-											</p>
-										) : (
-											results.map((model) => (
-												<div
-													key={model.id}
-													className={`flex items-center gap-1.5 pr-1.5 ${
-														model.id === activeModel
-															? "bg-[#8b5cf6]/15"
-															: ""
-													}`}
-												>
-													<button
-														type="button"
-														onClick={() => {
-															onChange(model.id);
-															setOpen(false);
-															setSearch("");
-														}}
-														className={`flex-1 flex items-center gap-2.5 px-3 py-2 text-xs transition-colors cursor-pointer ${
-															model.id === activeModel
-																? "text-[#e2d9f3]"
-																: "text-[#c4b5fd] hover:bg-[#8b5cf6]/15"
-														}`}
-														role="menuitem"
-													>
-														<span className="flex-1 text-left truncate flex items-center gap-1.5">
-															{providerIcons[model.provider]}
-															{model.name}
-														</span>
-													</button>
-													<button
-														type="button"
-														onClick={(e) => {
-															e.stopPropagation();
-															onToggleFavorite(model.id);
-														}}
-														className={`shrink-0 p-0.5 rounded transition-colors cursor-pointer ${
-															favorites.includes(model.id)
-																? "text-[#eab308] hover:text-[#fbbf24]"
-																: "text-[#475569] hover:text-[#eab308]"
-														}`}
-														title={
-															favorites.includes(model.id)
-																? "Remove from favorites"
-																: "Add to favorites"
-														}
-													>
-														<Star
-															className="w-3.5 h-3.5"
-															fill={
-																favorites.includes(model.id)
-																	? "currentColor"
-																	: "none"
-															}
-														/>
-													</button>
-												</div>
-											))
-										)}
-									</div>
-								);
-							})()
-						) : (
-							<div className="flex flex-1 min-h-0">
-								{(() => {
-									const groups = new Map<string, ModelEntry[]>();
-									for (const model of availableModels) {
-										const arr = groups.get(model.provider);
-										if (arr) {
-											arr.push(model);
-										} else {
-											groups.set(model.provider, [model]);
-										}
-									}
-
-									const providers = Array.from(groups.keys());
-									const effectiveProvider =
-										selectedProvider ?? activeProvider ?? providers[0];
-									const isFavorites = effectiveProvider === FAVORITES_GROUP;
-									const visibleModels = isFavorites
-										? availableModels.filter((m) => favorites.includes(m.id))
-										: (groups.get(effectiveProvider) ?? []);
-
-									return (
-										<>
-											<div className="flex flex-col border-r border-[rgba(139,92,246,0.1)] py-2">
-												{favorites.length > 0 && (
-													<button
-														type="button"
-														onClick={() => setSelectedProvider(FAVORITES_GROUP)}
-														className={`flex items-center justify-center w-10 h-10 mx-1 rounded-lg transition-colors cursor-pointer ${
-															isFavorites
-																? "text-[#eab308] bg-[#eab308]/10"
-																: "text-[#94a3b8] hover:text-[#eab308] hover:bg-[#eab308]/10"
-														}`}
-														title="Favorites"
-													>
-														<Star
-															className="w-3.5 h-3.5"
-															fill={isFavorites ? "currentColor" : "none"}
-														/>
-													</button>
-												)}
-												{providers.map((provider) => (
-													<button
-														key={provider}
-														type="button"
-														onClick={() => setSelectedProvider(provider)}
-														className={`flex items-center justify-center w-10 h-10 mx-1 rounded-lg transition-colors cursor-pointer ${
-															provider === effectiveProvider
-																? "text-[#c4b5fd] bg-[#8b5cf6]/15"
-																: "text-[#94a3b8] hover:text-[#c4b5fd] hover:bg-[#8b5cf6]/10"
-														}`}
-														title={providerLabels[provider] ?? provider}
-													>
-														{providerIcons[provider]}
-													</button>
-												))}
-											</div>
-											<div className="flex-1 py-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/20 hover:[&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/35">
-												{isFavorites ? (
-													<div className="px-3 py-1.5 text-[10px] font-semibold text-[#64748b] uppercase tracking-wider flex items-center gap-1.5">
-														<Star className="w-3 h-3" />
-														Favorites
-													</div>
-												) : (
-													<div className="px-3 py-1.5 text-[10px] font-semibold text-[#64748b] uppercase tracking-wider flex items-center gap-1.5">
-														{providerIcons[effectiveProvider]}
-														{providerLabels[effectiveProvider] ?? effectiveProvider}
-													</div>
-												)}
-												{visibleModels.length === 0 && isFavorites ? (
-													<p className="px-3 py-4 text-xs text-[#64748b] text-center">
-														No favorite models yet. Star a model to add it here.
-													</p>
-												) : (
-													visibleModels.map((model) => (
-														<div
-															key={model.id}
-															className={`flex items-center gap-1.5 pr-1.5 ${
-																model.id === activeModel
-																	? "bg-[#8b5cf6]/15"
-																	: ""
-															}`}
-														>
-															<button
-																type="button"
-																onClick={() => {
-																	onChange(model.id);
-																	setOpen(false);
-																}}
-																className={`flex-1 flex items-center gap-2.5 px-3 py-2 text-xs transition-colors cursor-pointer ${
-																	model.id === activeModel
-																		? "text-[#e2d9f3]"
-																		: "text-[#c4b5fd] hover:bg-[#8b5cf6]/15"
-																}`}
-																role="menuitem"
-															>
-																<span className="flex-1 text-left truncate flex items-center gap-1.5">
-																	{isFavorites && providerIcons[model.provider]}
-																	{model.name}
-																</span>
-															</button>
-															<button
-																type="button"
-																onClick={(e) => {
-																	e.stopPropagation();
-																	onToggleFavorite(model.id);
-																}}
-																className={`shrink-0 p-0.5 rounded transition-colors cursor-pointer ${
-																	favorites.includes(model.id)
-																		? "text-[#eab308] hover:text-[#fbbf24]"
-																		: "text-[#475569] hover:text-[#eab308]"
-																}`}
-																title={
-																	favorites.includes(model.id)
-																		? "Remove from favorites"
-																		: "Add to favorites"
-																}
-															>
-																<Star
-																	className="w-3.5 h-3.5"
-																	fill={
-																		favorites.includes(model.id)
-																			? "currentColor"
-																			: "none"
-																	}
-																/>
-															</button>
-														</div>
-													))
-												)}
-											</div>
-										</>
-									);
-								})()}
+						<div ref={measureRef} className="flex flex-col min-h-0">
+							<div className="flex items-center gap-2 px-3 py-2 border-b border-[rgba(139,92,246,0.1)]">
+								<Search className="w-3.5 h-3.5 shrink-0 text-[#64748b]" />
+								<input
+									type="text"
+									value={search}
+									onChange={(e) => setSearch(e.target.value)}
+									placeholder="Search models..."
+									className="flex-1 bg-transparent text-xs text-[#f1f5f9] placeholder-[#4a4468] outline-none"
+								/>
 							</div>
-						)}
+							{search ? (
+								(() => {
+									const q = search.toLowerCase();
+									const results = availableModels.filter((m) =>
+										m.name.toLowerCase().includes(q),
+									);
+									return (
+										<div className="flex-1 py-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/20 hover:[&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/35">
+											{results.length === 0 ? (
+												<p className="px-3 py-4 text-xs text-[#64748b] text-center">
+													No models found.
+												</p>
+											) : (
+												results.map((model) => (
+													<div
+														key={model.id}
+														className={`flex items-center gap-1.5 pr-1.5 ${
+															model.id === activeModel ? "bg-[#8b5cf6]/15" : ""
+														}`}
+													>
+														<button
+															type="button"
+															onClick={() => {
+																onChange(model.id);
+																setOpen(false);
+																setSearch("");
+															}}
+															className={`flex-1 flex items-center gap-2.5 px-3 py-2 text-xs transition-colors cursor-pointer ${
+																model.id === activeModel
+																	? "text-[#e2d9f3]"
+																	: "text-[#c4b5fd] hover:bg-[#8b5cf6]/15"
+															}`}
+															role="menuitem"
+														>
+															<span className="flex-1 text-left truncate flex items-center gap-1.5">
+																{providerIcons[model.provider]}
+																{model.name}
+															</span>
+														</button>
+														<button
+															type="button"
+															onClick={(e) => {
+																e.stopPropagation();
+																onToggleFavorite(model.id);
+															}}
+															className={`shrink-0 p-0.5 rounded transition-colors cursor-pointer ${
+																favorites.includes(model.id)
+																	? "text-[#eab308] hover:text-[#fbbf24]"
+																	: "text-[#475569] hover:text-[#eab308]"
+															}`}
+															title={
+																favorites.includes(model.id)
+																	? "Remove from favorites"
+																	: "Add to favorites"
+															}
+														>
+															<Star
+																className="w-3.5 h-3.5"
+																fill={
+																	favorites.includes(model.id)
+																		? "currentColor"
+																		: "none"
+																}
+															/>
+														</button>
+													</div>
+												))
+											)}
+										</div>
+									);
+								})()
+							) : (
+								<div className="flex flex-1 min-h-0">
+									{(() => {
+										const groups = new Map<string, ModelEntry[]>();
+										for (const model of availableModels) {
+											const arr = groups.get(model.provider);
+											if (arr) {
+												arr.push(model);
+											} else {
+												groups.set(model.provider, [model]);
+											}
+										}
+
+										const providers = Array.from(groups.keys());
+										const effectiveProvider =
+											selectedProvider ?? activeProvider ?? providers[0];
+										const isFavorites = effectiveProvider === FAVORITES_GROUP;
+										const visibleModels = isFavorites
+											? availableModels.filter((m) => favorites.includes(m.id))
+											: (groups.get(effectiveProvider) ?? []);
+
+										return (
+											<>
+												<div className="flex flex-col border-r border-[rgba(139,92,246,0.1)] py-2">
+													{favorites.length > 0 && (
+														<button
+															type="button"
+															onClick={() =>
+																setSelectedProvider(FAVORITES_GROUP)
+															}
+															className={`flex items-center justify-center w-10 h-10 mx-1 rounded-lg transition-colors cursor-pointer ${
+																isFavorites
+																	? "text-[#eab308] bg-[#eab308]/10"
+																	: "text-[#94a3b8] hover:text-[#eab308] hover:bg-[#eab308]/10"
+															}`}
+															title="Favorites"
+														>
+															<Star
+																className="w-3.5 h-3.5"
+																fill={isFavorites ? "currentColor" : "none"}
+															/>
+														</button>
+													)}
+													{providers.map((provider) => (
+														<button
+															key={provider}
+															type="button"
+															onClick={() => setSelectedProvider(provider)}
+															className={`flex items-center justify-center w-10 h-10 mx-1 rounded-lg transition-colors cursor-pointer ${
+																provider === effectiveProvider
+																	? "text-[#c4b5fd] bg-[#8b5cf6]/15"
+																	: "text-[#94a3b8] hover:text-[#c4b5fd] hover:bg-[#8b5cf6]/10"
+															}`}
+															title={providerLabels[provider] ?? provider}
+														>
+															{providerIcons[provider]}
+														</button>
+													))}
+												</div>
+												<div className="flex-1 py-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/20 hover:[&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/35">
+													{isFavorites ? (
+														<div className="px-3 py-1.5 text-[10px] font-semibold text-[#64748b] uppercase tracking-wider flex items-center gap-1.5">
+															<Star className="w-3 h-3" />
+															Favorites
+														</div>
+													) : (
+														<div className="px-3 py-1.5 text-[10px] font-semibold text-[#64748b] uppercase tracking-wider flex items-center gap-1.5">
+															{providerIcons[effectiveProvider]}
+															{providerLabels[effectiveProvider] ??
+																effectiveProvider}
+														</div>
+													)}
+													{visibleModels.length === 0 && isFavorites ? (
+														<p className="px-3 py-4 text-xs text-[#64748b] text-center">
+															No favorite models yet. Star a model to add it
+															here.
+														</p>
+													) : (
+														visibleModels.map((model) => (
+															<div
+																key={model.id}
+																className={`flex items-center gap-1.5 pr-1.5 ${
+																	model.id === activeModel
+																		? "bg-[#8b5cf6]/15"
+																		: ""
+																}`}
+															>
+																<button
+																	type="button"
+																	onClick={() => {
+																		onChange(model.id);
+																		setOpen(false);
+																	}}
+																	className={`flex-1 flex items-center gap-2.5 px-3 py-2 text-xs transition-colors cursor-pointer ${
+																		model.id === activeModel
+																			? "text-[#e2d9f3]"
+																			: "text-[#c4b5fd] hover:bg-[#8b5cf6]/15"
+																	}`}
+																	role="menuitem"
+																>
+																	<span className="flex-1 text-left truncate flex items-center gap-1.5">
+																		{isFavorites &&
+																			providerIcons[model.provider]}
+																		{model.name}
+																	</span>
+																</button>
+																<button
+																	type="button"
+																	onClick={(e) => {
+																		e.stopPropagation();
+																		onToggleFavorite(model.id);
+																	}}
+																	className={`shrink-0 p-0.5 rounded transition-colors cursor-pointer ${
+																		favorites.includes(model.id)
+																			? "text-[#eab308] hover:text-[#fbbf24]"
+																			: "text-[#475569] hover:text-[#eab308]"
+																	}`}
+																	title={
+																		favorites.includes(model.id)
+																			? "Remove from favorites"
+																			: "Add to favorites"
+																	}
+																>
+																	<Star
+																		className="w-3.5 h-3.5"
+																		fill={
+																			favorites.includes(model.id)
+																				? "currentColor"
+																				: "none"
+																		}
+																	/>
+																</button>
+															</div>
+														))
+													)}
+												</div>
+											</>
+										);
+									})()}
+								</div>
+							)}
 						</div>
 					</div>,
 					document.body,
