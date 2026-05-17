@@ -26,10 +26,9 @@ const BASE_SYSTEM_PROMPT =
     "and give practical training advice.";
 
 async function buildSystemPrompt(userId: string): Promise<string> {
-    const { text: healthText } = await getHealthContext(userId);
-    console.log("HEALTH TEXT", healthText);
-    if (!healthText) return BASE_SYSTEM_PROMPT;
-    return `${BASE_SYSTEM_PROMPT}\n${healthText}`;
+	const { text: healthText } = await getHealthContext(userId);
+	if (!healthText) return BASE_SYSTEM_PROMPT;
+	return `${BASE_SYSTEM_PROMPT}\n${healthText}`;
 }
 
 const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 20;

@@ -191,9 +191,11 @@ function computeHealthContext(
 
 function formatHealthContext(ctx: HealthContext): string {
 	const parts: string[] = [];
+	const now = new Date().toISOString().split("T")[0];
+	parts.push(`*Health data retrieved ${now} from OpenWearables — this is live, up-to-date data.*`);
 
 	if (ctx.rhr?.current != null) {
-		let rhrLine = `- Resting Heart Rate: ${ctx.rhr.current} bpm`;
+		let rhrLine = `- Resting Heart Rate (from sleep): ${ctx.rhr.current} bpm`;
 		if (ctx.rhr.trend7d != null) {
 			rhrLine += ` (7-day avg: ${ctx.rhr.trend7d} bpm)`;
 			if (ctx.rhr.elevated) {
@@ -205,7 +207,7 @@ function formatHealthContext(ctx: HealthContext): string {
 	}
 
 	if (ctx.hrv?.current != null) {
-		let hrvLine = `- HRV: ${ctx.hrv.current} ms`;
+		let hrvLine = `- HRV (from sleep): ${ctx.hrv.current} ms`;
 		if (ctx.hrv.trend7d != null) {
 			hrvLine += ` (7-day avg: ${ctx.hrv.trend7d} ms)`;
 			if (ctx.hrv.declining) {
@@ -229,7 +231,7 @@ function formatHealthContext(ctx: HealthContext): string {
 			if (last.durationMinutes > 0) {
 				const hours = Math.floor(last.durationMinutes / 60);
 				const mins = Math.round(last.durationMinutes % 60);
-				let lastNight = `- Last Night's Sleep: ${hours}h ${String(mins).padStart(2, "0")}m`;
+				let lastNight = `- Last Night's Sleep (${last.date}): ${hours}h ${String(mins).padStart(2, "0")}m`;
 				if (last.quality) {
 					lastNight += `, Quality: ${last.quality}`;
 				}
@@ -238,9 +240,9 @@ function formatHealthContext(ctx: HealthContext): string {
 		}
 	}
 
-	if (parts.length === 0) return "";
+	if (parts.length <= 1) return "";
 
-	return `\n## Athlete Health Data\nUse this data to contextualize training advice (fatigue, recovery, sleep):\n${parts.join("\n")}\n`;
+	return `\n## Athlete Health Data\nUse this data to contextualize training advice (fatigue, recovery, sleep). This data is fetched live from the athlete's wearables via OpenWearables.\n${parts.join("\n")}\n`;
 }
 
 export async function getHealthContext(
