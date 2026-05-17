@@ -22,8 +22,22 @@ interface HealthContext {
 	} | null;
 }
 
-const cache = new Map<string, { data: HealthContext; fetchedAt: number }>();
+interface CacheEntry {
+	data: HealthContext;
+	fetchedAt: number;
+}
+
+const cache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
+
+function pruneCache() {
+	const now = Date.now();
+	for (const [key, entry] of cache) {
+		if (now - entry.fetchedAt >= CACHE_TTL_MS) {
+			cache.delete(key);
+		}
+	}
+}
 
 const getOwUserStmt = db.prepare(
 	"SELECT ow_user_id FROM user_settings WHERE user_id = ?",
@@ -38,22 +52,6 @@ function getOwUserId(fitUserId: string): string | null {
 
 function isConfigured(): boolean {
 	return !!(env.OW_BASE_URL && env.OW_API_KEY);
-}
-
-interface DataSummary {
-	user_id: string;
-	total_data_points: number;
-	total_workouts: number;
-	total_sleep_events: number;
-	series_type_counts: Record<string, number>;
-	workout_type_counts: Record<string, number>;
-	by_provider: {
-		provider: string;
-		data_points: number;
-		series_counts: Record<string, number>;
-		workout_count: number;
-		sleep_count: number;
-	}[];
 }
 
 interface SleepRecord {
@@ -80,24 +78,6 @@ function getDateRange(): { startDate: string; endDate: string } {
 	return { startDate: fmt(start), endDate: fmt(end) };
 }
 
-async function fetchDataSummary(owUserId: string): Promise<DataSummary | null> {
-	const res = await fetch(
-		`${env.OW_BASE_URL}/api/v1/users/${owUserId}/summaries/data`,
-		{
-			headers: { "X-Open-Wearables-API-Key": env.OW_API_KEY! },
-			signal: AbortSignal.timeout(10_000),
-		},
-	);
-	if (!res.ok) {
-		const body = await res.text().catch(() => "(unreadable)");
-		console.warn(
-			`[ow] data summary fetch failed for OW user ${owUserId}: ${res.status} ${res.statusText} — body: ${body}`,
-		);
-		return null;
-	}
-	return res.json() as Promise<DataSummary>;
-}
-
 async function fetchSleepSummaries(
 	owUserId: string,
 ): Promise<SleepRecord[] | null> {
@@ -107,17 +87,18 @@ async function fetchSleepSummaries(
 		end_date: endDate,
 		limit: "7",
 	});
+	const apiKey = env.OW_API_KEY;
+	if (!apiKey) throw new Error("OW_API_KEY not configured");
 	const res = await fetch(
-		`${env.OW_BASE_URL}/api/v1/users/${owUserId}/summaries/sleep?${params}`,
+		`${env.OW_BASE_URL}/api/v1/users/${encodeURIComponent(owUserId)}/summaries/sleep?${params}`,
 		{
-			headers: { "X-Open-Wearables-API-Key": env.OW_API_KEY! },
+			headers: { "X-Open-Wearables-API-Key": apiKey },
 			signal: AbortSignal.timeout(10_000),
 		},
 	);
 	if (!res.ok) {
-		const body = await res.text().catch(() => "(unreadable)");
 		console.warn(
-			`[ow] sleep fetch failed for OW user ${owUserId}: ${res.status} ${res.statusText} — body: ${body}`,
+			`[ow] sleep fetch failed: ${res.status} ${res.statusText} (response body redacted)`,
 		);
 		return null;
 	}
@@ -126,7 +107,6 @@ async function fetchSleepSummaries(
 }
 
 function computeHealthContext(
-	_dataSummary: DataSummary | null,
 	sleepSummaries: SleepRecord[] | null,
 ): HealthContext {
 	let rhr: HealthContext["rhr"] = null;
@@ -155,14 +135,20 @@ function computeHealthContext(
 
 		sleep = { recentNights, avgDurationMinutes7d };
 
-		const sleepHrValues = sleepSummaries
-			.map((n) => n.avg_heart_rate_bpm)
-			.filter((v): v is number => typeof v === "number" && v > 0);
-		if (sleepHrValues.length > 0) {
-			const latest = sleepHrValues[0];
+		const datedHrValues = sleepSummaries
+			.map((n) => ({
+				date: n.date,
+				value: n.avg_heart_rate_bpm,
+			}))
+			.filter(
+				(v): v is { date: string; value: number } =>
+					typeof v.value === "number" && v.value > 0,
+			)
+			.sort((a, b) => b.date.localeCompare(a.date));
+		if (datedHrValues.length > 0) {
+			const latest = datedHrValues[0].value;
 			const avg =
-				sleepHrValues.reduce((a, b) => a + b, 0) /
-				sleepHrValues.length;
+				datedHrValues.reduce((a, b) => a + b.value, 0) / datedHrValues.length;
 			rhr = {
 				current: Math.round(latest),
 				trend7d: Math.round(avg),
@@ -170,14 +156,20 @@ function computeHealthContext(
 			};
 		}
 
-		const sleepHrvValues = sleepSummaries
-			.map((n) => n.avg_hrv_sdnn_ms)
-			.filter((v): v is number => typeof v === "number" && v > 0);
-		if (sleepHrvValues.length > 0) {
-			const latest = sleepHrvValues[0];
+		const datedHrvValues = sleepSummaries
+			.map((n) => ({
+				date: n.date,
+				value: n.avg_hrv_sdnn_ms,
+			}))
+			.filter(
+				(v): v is { date: string; value: number } =>
+					typeof v.value === "number" && v.value > 0,
+			)
+			.sort((a, b) => b.date.localeCompare(a.date));
+		if (datedHrvValues.length > 0) {
+			const latest = datedHrvValues[0].value;
 			const avg =
-				sleepHrvValues.reduce((a, b) => a + b, 0) /
-				sleepHrvValues.length;
+				datedHrvValues.reduce((a, b) => a + b.value, 0) / datedHrvValues.length;
 			hrv = {
 				current: Math.round(latest),
 				trend7d: Math.round(avg),
@@ -192,7 +184,9 @@ function computeHealthContext(
 function formatHealthContext(ctx: HealthContext): string {
 	const parts: string[] = [];
 	const now = new Date().toISOString().split("T")[0];
-	parts.push(`*Health data retrieved ${now} from OpenWearables — this is live, up-to-date data.*`);
+	parts.push(
+		`*Health data retrieved ${now} from OpenWearables — this is live, up-to-date data.*`,
+	);
 
 	if (ctx.rhr?.current != null) {
 		let rhrLine = `- Resting Heart Rate (from sleep): ${ctx.rhr.current} bpm`;
@@ -263,11 +257,9 @@ export async function getHealthContext(
 	}
 
 	try {
-		const [dataSummary, sleepSummaries] = await Promise.all([
-			fetchDataSummary(owUserId),
-			fetchSleepSummaries(owUserId),
-		]);
-		const ctx = computeHealthContext(dataSummary, sleepSummaries);
+		const sleepSummaries = await fetchSleepSummaries(owUserId);
+		const ctx = computeHealthContext(sleepSummaries);
+		pruneCache();
 		cache.set(owUserId, { data: ctx, fetchedAt: Date.now() });
 
 		const text = formatHealthContext(ctx);

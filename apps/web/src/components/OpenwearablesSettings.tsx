@@ -9,6 +9,7 @@ export function OpenwearablesSettings() {
 		null,
 	);
 	const [owUserId, setOwUserId] = useState("");
+	const [initialOwUserId, setInitialOwUserId] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [notification, setNotification] = useState<{
@@ -19,10 +20,14 @@ export function OpenwearablesSettings() {
 	useEffect(() => {
 		fetchUserSettings()
 			.then((data) => {
+				const id = data.openwearables.owUserId ?? "";
 				setSettings(data.openwearables);
-				setOwUserId(data.openwearables.owUserId ?? "");
+				setOwUserId(id);
+				setInitialOwUserId(id);
 			})
 			.catch((error) => {
+				setSettings({ owUserId: null });
+				setInitialOwUserId("");
 				setNotification({
 					type: "error",
 					message:
@@ -38,7 +43,7 @@ export function OpenwearablesSettings() {
 		return () => window.clearTimeout(timeoutId);
 	}, [notification]);
 
-	const isDirty = settings !== null && owUserId !== (settings.owUserId ?? "");
+	const isDirty = initialOwUserId !== null && owUserId !== initialOwUserId;
 
 	const handleSave = async () => {
 		setSaving(true);
@@ -49,9 +54,10 @@ export function OpenwearablesSettings() {
 			});
 			setSettings(next);
 			setOwUserId(next.owUserId ?? "");
+			setInitialOwUserId(next.owUserId ?? "");
 			setNotification({
 				type: "success",
-				message: owUserId
+				message: next.owUserId
 					? "OpenWearables user ID saved."
 					: "OpenWearables integration disabled.",
 			});

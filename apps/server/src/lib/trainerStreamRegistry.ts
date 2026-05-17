@@ -5,6 +5,7 @@ type RegistryEntry = {
 	done: boolean;
 	waiters: Set<() => void>;
 	startedAt: number;
+	userId: string | null;
 };
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -19,6 +20,7 @@ function getOrCreateEntry(streamId: string): RegistryEntry {
 		done: false,
 		waiters: new Set(),
 		startedAt: Date.now(),
+		userId: null,
 	};
 	registry.set(streamId, entry);
 	return entry;
@@ -39,9 +41,11 @@ function cleanupIfExpired(streamId: string, entry: RegistryEntry) {
 export function startTrainerStreamProducer(
 	streamId: string,
 	stream: AsyncIterable<StreamChunk>,
+	userId: string,
 ) {
 	const entry = getOrCreateEntry(streamId);
 	if (entry.chunks.length > 0 || entry.done) return;
+	entry.userId = userId;
 
 	void (async () => {
 		try {
@@ -73,6 +77,12 @@ export function startTrainerStreamProducer(
 export function hasActiveTrainerStream(streamId: string): boolean {
 	const entry = registry.get(streamId);
 	return Boolean(entry && (!entry.done || entry.chunks.length > 0));
+}
+
+export function verifyStreamOwner(streamId: string, userId: string): boolean {
+	const entry = registry.get(streamId);
+	if (!entry) return false;
+	return entry.userId === null || entry.userId === userId;
 }
 
 export function createTrainerStreamConsumer(
