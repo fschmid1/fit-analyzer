@@ -372,6 +372,13 @@ async function importSingleActivity(
 		);
 	}
 
+	console.log(
+		`[strava] Activity ${stravaActivityId} (type=${activity.type}/${activity.sport_type}) streams: ` +
+			`latlng=${streams.latlng ? `present (${streams.latlng.data.length} pts)` : "MISSING"}, ` +
+			`time=${streams.time?.data.length ?? 0}, ` +
+			`watts=${streams.watts?.data.length ?? 0}`,
+	);
+
 	// Fetch laps
 	const lapsRes = await fetch(
 		`https://www.strava.com/api/v3/activities/${stravaActivityId}/laps`,
@@ -386,6 +393,12 @@ async function importSingleActivity(
 	const startDate = new Date(activity.start_date);
 
 	const records = buildRecords(startDate, streams);
+	const recordsWithGps = records.filter(
+		(r) => r.lat != null && r.lng != null,
+	).length;
+	console.log(
+		`[strava] Parsed ${records.length} records, ${recordsWithGps} with GPS coordinates`,
+	);
 	const summary = buildSummary(activity, records, timeArr, wattsArr);
 	const laps = buildLaps(rawLaps, timeArr);
 
