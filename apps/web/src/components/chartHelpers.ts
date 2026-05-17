@@ -39,7 +39,10 @@ export interface ChartDataPoint {
 	gradient: number | null;
 }
 
-export function findStartIndex(data: ChartDataPoint[], seconds: number): number {
+export function findStartIndex(
+	data: ChartDataPoint[],
+	seconds: number,
+): number {
 	let left = 0;
 	let right = data.length;
 

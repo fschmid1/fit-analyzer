@@ -49,6 +49,7 @@ interface StravaStreams {
 	cadence?: StravaStream;
 	velocity_smooth?: StravaStream;
 	grade_smooth?: StravaStream;
+	latlng?: StravaStream;
 }
 
 interface StravaLap {
@@ -227,6 +228,7 @@ function buildRecords(startDate: Date, streams: StravaStreams): StoredRecord[] {
 	const cadData = streams.cadence?.data ?? [];
 	const velData = streams.velocity_smooth?.data ?? [];
 	const gradeData = streams.grade_smooth?.data ?? [];
+	const latLngData = streams.latlng?.data ?? [];
 
 	return timeData.map((elapsed, i) => ({
 		timestamp: new Date(startDate.getTime() + elapsed * 1000).toISOString(),
@@ -234,9 +236,10 @@ function buildRecords(startDate: Date, streams: StravaStreams): StoredRecord[] {
 		power: wattsData[i] ?? null,
 		heartRate: hrData[i] ?? null,
 		cadence: cadData[i] ?? null,
-		// Strava velocity_smooth is m/s → convert to km/h to match FIT parser output
 		speed: velData[i] != null ? Math.round(velData[i] * 3.6 * 10) / 10 : null,
 		gradient: gradeData[i] ?? null,
+		lat: Array.isArray(latLngData[i]) ? (latLngData[i] as number[])[0] ?? null : null,
+		lng: Array.isArray(latLngData[i]) ? (latLngData[i] as number[])[1] ?? null : null,
 	}));
 }
 
@@ -351,7 +354,7 @@ async function importSingleActivity(
 
 	// Fetch streams
 	const streamsRes = await fetch(
-		`https://www.strava.com/api/v3/activities/${stravaActivityId}/streams?keys=time,watts,heartrate,cadence,velocity_smooth,grade_smooth&key_by_type=true`,
+		`https://www.strava.com/api/v3/activities/${stravaActivityId}/streams?keys=time,watts,heartrate,cadence,velocity_smooth,grade_smooth,latlng&key_by_type=true`,
 		{ headers: { Authorization: `Bearer ${accessToken}` } },
 	);
 	const streams: StravaStreams = streamsRes.ok

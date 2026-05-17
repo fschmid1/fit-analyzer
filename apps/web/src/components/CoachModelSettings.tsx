@@ -5,14 +5,21 @@ import {
 } from "@fit-analyzer/shared";
 import { AlertCircle, Bot, CheckCircle2, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { fetchAvailableModels, fetchUserSettings, updateCoachModelSettings, updateFavoriteModels } from "../lib/api";
+import {
+	fetchAvailableModels,
+	fetchUserSettings,
+	updateCoachModelSettings,
+	updateFavoriteModels,
+} from "../lib/api";
 import { AnimatedButton } from "./AnimatedButton";
 import { ModelPicker } from "./trainer/ModelPicker";
 
 export function CoachModelSettings() {
 	const [settings, setSettings] = useState<CoachModelSettingsData | null>(null);
 	const [selected, setSelected] = useState<string>(AVAILABLE_MODELS[0].id);
-	const [availableModels, setAvailableModels] = useState<ModelEntry[]>([...AVAILABLE_MODELS]);
+	const [availableModels, setAvailableModels] = useState<ModelEntry[]>([
+		...AVAILABLE_MODELS,
+	]);
 	const [favorites, setFavorites] = useState<string[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
@@ -28,8 +35,9 @@ export function CoachModelSettings() {
 				setAvailableModels(models);
 				setFavorites(settingsData.favoriteModels);
 				setSelected(
-					models.find((m) => m.id === settingsData.coachModel.coachModel)
-						?.id ?? models[0]?.id ?? AVAILABLE_MODELS[0].id,
+					models.find((m) => m.id === settingsData.coachModel.coachModel)?.id ??
+						models[0]?.id ??
+						AVAILABLE_MODELS[0].id,
 				);
 			})
 			.catch((error) => {

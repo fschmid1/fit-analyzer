@@ -4,6 +4,7 @@ import { ActivityChart } from "./ActivityChart";
 import { IntervalList } from "./IntervalList";
 import { SummaryCards } from "./SummaryCards";
 import { CopyBox } from "./CopyBox";
+import { RouteMap } from "./RouteMap";
 
 interface AnalysisViewProps {
 	activity: ParsedActivity;
@@ -48,6 +49,8 @@ export function AnalysisView({
 					{activity.records.length.toLocaleString()} data points recorded
 				</p>
 			</div>
+
+			<RouteMap records={activity.records} selectionRange={selectionRange} />
 
 			<StatsBar records={activity.records} selectionRange={selectionRange} />
 

@@ -17,10 +17,7 @@ import {
 	getModelProvider,
 	type ModelEntry,
 } from "@fit-analyzer/shared";
-import {
-	importTrainerChat,
-	saveTrainerHistory,
-} from "../../lib/api";
+import { importTrainerChat, saveTrainerHistory } from "../../lib/api";
 import { createTrainerStreamConnection } from "../../lib/trainerStreamConnection";
 import {
 	clearActiveTrainerStream,
@@ -109,8 +106,14 @@ export function TrainerChat({
 		string | null
 	>(null);
 
-	const activeModel = threadModel ?? defaultModel ?? availableModels[0]?.id ?? AVAILABLE_MODELS[0].id;
-	const coachModelName = availableModels.find((m) => m.id === activeModel)?.name ?? getCoachModelDisplayName(activeModel);
+	const activeModel =
+		threadModel ??
+		defaultModel ??
+		availableModels[0]?.id ??
+		AVAILABLE_MODELS[0].id;
+	const coachModelName =
+		availableModels.find((m) => m.id === activeModel)?.name ??
+		getCoachModelDisplayName(activeModel);
 
 	useEffect(() => {
 		const activeStream = loadActiveTrainerStream(threadId);
@@ -262,7 +265,10 @@ export function TrainerChat({
 	const isGeneralChat = activityId === "general";
 
 	return (
-		<div className="flex-1 flex flex-col min-h-0 min-w-0" style={{ touchAction: "manipulation" }}>
+		<div
+			className="flex-1 flex flex-col min-h-0 min-w-0"
+			style={{ touchAction: "manipulation" }}
+		>
 			<input
 				ref={fileInputRef}
 				type="file"
@@ -362,7 +368,8 @@ export function TrainerChat({
 								return;
 							}
 							const isLastAssistant =
-								messages.findLastIndex((m) => m.role === "assistant") === msgIndex;
+								messages.findLastIndex((m) => m.role === "assistant") ===
+								msgIndex;
 							if (isLastAssistant) {
 								await reload();
 								return;

@@ -73,7 +73,9 @@ me.patch("/settings", async (c) => {
 	>();
 
 	if (typeof body.coachModel === "string" && body.coachModel.trim()) {
-		await updateCoachModelSettings(userId, { coachModel: body.coachModel.trim() });
+		await updateCoachModelSettings(userId, {
+			coachModel: body.coachModel.trim(),
+		});
 	}
 
 	if (Array.isArray(body.favoriteModels)) {

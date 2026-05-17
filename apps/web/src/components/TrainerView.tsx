@@ -15,9 +15,7 @@ import {
 	updateFavoriteModels,
 	updateThreadModel,
 } from "../lib/api";
-import {
-	loadTrainerDraft,
-} from "../lib/trainerStreamState";
+import { loadTrainerDraft } from "../lib/trainerStreamState";
 import { ThreadSidebar } from "./trainer/ThreadSidebar";
 import { TrainerChat } from "./trainer/TrainerChat";
 import { toUIMessage } from "./trainer/trainerHelpers";
@@ -45,7 +43,9 @@ export function TrainerView({
 	const [currentInitialInput, setCurrentInitialInput] =
 		useState(initialMessage);
 	const [defaultModel, setDefaultModel] = useState<string | null>(null);
-	const [availableModels, setAvailableModels] = useState<ModelEntry[]>([...AVAILABLE_MODELS]);
+	const [availableModels, setAvailableModels] = useState<ModelEntry[]>([
+		...AVAILABLE_MODELS,
+	]);
 	const [favorites, setFavorites] = useState<string[]>([]);
 	const initialized = useRef(false);
 

@@ -270,7 +270,9 @@ trainer.get("/chat/:streamId", async (c) => {
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 trainer.get("/models", async (c) => {
-	const openRouterModels = AVAILABLE_MODELS.filter((m) => m.provider === "openrouter");
+	const openRouterModels = AVAILABLE_MODELS.filter(
+		(m) => m.provider === "openrouter",
+	);
 	const ollamaModels = await getOllamaModels();
 	return c.json({ models: [...openRouterModels, ...ollamaModels] });
 });
