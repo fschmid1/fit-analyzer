@@ -329,8 +329,8 @@ export async function fetchStravaStatus(): Promise<StravaStatus> {
 }
 
 export async function syncStravaActivities(
-	daysBack = 30,
-): Promise<{ imported: number; skipped: number }> {
+	daysBack: number | "all" = 30,
+): Promise<{ imported: number; updated: number }> {
 	const res = await fetch(`${API_BASE}/strava/sync?daysBack=${daysBack}`, {
 		method: "POST",
 	});
