@@ -24,7 +24,7 @@ interface StravaConnectProps {
 	onSynced?: () => void;
 }
 
-type DaysBack = 7 | 30 | 90;
+type DaysBack = 7 | 30 | 90 | "all";
 
 export function StravaConnect({ onSynced }: StravaConnectProps) {
 	const [status, setStatus] = useState<StravaStatus | null>(null);
@@ -35,7 +35,7 @@ export function StravaConnect({ onSynced }: StravaConnectProps) {
 	const [webhookRegistered, setWebhookRegistered] = useState<boolean | null>(
 		null,
 	);
-	const [daysBack, setDaysBack] = useState<DaysBack>(30);
+	const [daysBack, setDaysBack] = useState<DaysBack>("all");
 	const [notification, setNotification] = useState<{
 		type: "success" | "error";
 		message: string;
@@ -88,12 +88,12 @@ export function StravaConnect({ onSynced }: StravaConnectProps) {
 			const result = await syncStravaActivities(daysBack);
 			const parts: string[] = [];
 			if (result.imported > 0) parts.push(`${result.imported} imported`);
-			if (result.skipped > 0) parts.push(`${result.skipped} already synced`);
+			if (result.updated > 0) parts.push(`${result.updated} updated`);
 			setNotification({
 				type: "success",
 				message: parts.length > 0 ? parts.join(", ") : "No new rides found",
 			});
-			if (result.imported > 0) onSynced?.();
+			if (result.imported > 0 || result.updated > 0) onSynced?.();
 		} catch (err) {
 			setNotification({
 				type: "error",
@@ -216,15 +216,19 @@ export function StravaConnect({ onSynced }: StravaConnectProps) {
 							<div className="flex items-center gap-2">
 								<select
 									value={daysBack}
-									onChange={(e) =>
-										setDaysBack(Number(e.target.value) as DaysBack)
-									}
+									onChange={(e) => {
+										const val = e.target.value;
+										setDaysBack(
+											val === "all" ? "all" : (Number(val) as DaysBack),
+										);
+									}}
 									className="px-3 py-2 text-sm bg-[#0f0b1a] border border-[rgba(139,92,246,0.2)] text-[#f1f5f9] rounded-xl focus:outline-none focus:border-[rgba(139,92,246,0.5)] cursor-pointer"
 									disabled={syncing}
 								>
 									<option value={7}>Last 7 days</option>
 									<option value={30}>Last 30 days</option>
 									<option value={90}>Last 90 days</option>
+									<option value="all">All time</option>
 								</select>
 
 								<AnimatedButton
@@ -247,8 +251,8 @@ export function StravaConnect({ onSynced }: StravaConnectProps) {
 							</div>
 
 							<p className="text-xs text-[#94a3b8]">
-								Syncs Ride, VirtualRide, and EBikeRide activities.
-								Already-imported rides are skipped automatically.
+								Syncs Ride, VirtualRide, and EBikeRide activities. Previously
+								synced rides are updated with the latest data.
 							</p>
 
 							{/* Webhook auto-sync */}

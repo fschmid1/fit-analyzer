@@ -32,6 +32,11 @@ function asFiniteNumber(value: unknown): number | null {
 	return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function semicirclesToDegrees(value: unknown): number | null {
+	if (typeof value !== "number" || !Number.isFinite(value)) return null;
+	return Math.round(value * (180 / 2 ** 31) * 1_000_000) / 1_000_000;
+}
+
 export function parseFit(arrayBuffer: ArrayBuffer): ParsedActivity {
 	const stream = Stream.fromArrayBuffer(arrayBuffer);
 	const decoder = new Decoder(stream);
@@ -77,6 +82,8 @@ export function parseFit(arrayBuffer: ArrayBuffer): ParsedActivity {
 	const records: ActivityRecord[] = parsedRecordMesgs.map(
 		({ msg, timestamp }) => {
 			const rawSpeed = msg.enhancedSpeed ?? msg.speed ?? null;
+			const rawLat = msg.position_lat ?? msg.positionLat;
+			const rawLng = msg.position_long ?? msg.positionLong;
 			return {
 				timestamp,
 				elapsedSeconds: (timestamp.getTime() - startTime.getTime()) / 1000,
@@ -91,6 +98,8 @@ export function parseFit(arrayBuffer: ArrayBuffer): ParsedActivity {
 					typeof msg.grade === "number"
 						? Math.round(msg.grade * 10) / 10
 						: null,
+				lat: semicirclesToDegrees(rawLat),
+				lng: semicirclesToDegrees(rawLng),
 			};
 		},
 	);

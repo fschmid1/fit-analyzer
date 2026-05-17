@@ -8,6 +8,8 @@ export interface ActivityRecord {
 	cadence: number | null;
 	speed: number | null;
 	gradient: number | null;
+	lat: number | null;
+	lng: number | null;
 }
 
 export interface ActivitySummary {
@@ -66,6 +68,8 @@ export interface StoredRecord {
 	cadence: number | null;
 	speed: number | null;
 	gradient: number | null;
+	lat: number | null;
+	lng: number | null;
 }
 
 /** Activity list item returned by GET /api/activities */

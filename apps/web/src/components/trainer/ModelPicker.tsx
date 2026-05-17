@@ -133,7 +133,7 @@ export function ModelPicker({
 			el.style.height = prev;
 			setMeasuredHeight(Math.min(height, 380));
 		}
-	}, [showPortal, selectedProvider, search, availableModels, favorites]);
+	}, [showPortal]);
 
 	useEffect(() => {
 		if (open) {

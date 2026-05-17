@@ -50,4 +50,4 @@ export const GRADIENT_ACTIVE_DOT = {
 	stroke: "#1a1533",
 	strokeWidth: 2,
 };
-export const DEFAULT_INITIAL_WINDOW_SECONDS = 60 * 60;
+export const DEFAULT_INITIAL_WINDOW_SECONDS = 60 * 30;

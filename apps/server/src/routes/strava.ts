@@ -37,18 +37,24 @@ interface StravaActivity {
 	kilojoules?: number;
 }
 
-interface StravaStream {
+interface StravaNumericStream {
 	type: string;
 	data: number[];
 }
 
+interface StravaLatLngStream {
+	type: string;
+	data: [number, number][];
+}
+
 interface StravaStreams {
-	time?: StravaStream;
-	watts?: StravaStream;
-	heartrate?: StravaStream;
-	cadence?: StravaStream;
-	velocity_smooth?: StravaStream;
-	grade_smooth?: StravaStream;
+	time?: StravaNumericStream;
+	watts?: StravaNumericStream;
+	heartrate?: StravaNumericStream;
+	cadence?: StravaNumericStream;
+	velocity_smooth?: StravaNumericStream;
+	grade_smooth?: StravaNumericStream;
+	latlng?: StravaLatLngStream;
 }
 
 interface StravaLap {
@@ -155,6 +161,10 @@ const checkStravaActivityStmt = db.prepare<{ id: string }, [string, string]>(
 	"SELECT id FROM activities WHERE user_id = ? AND strava_activity_id = ?",
 );
 
+const deleteStravaActivityStmt = db.prepare(
+	"DELETE FROM activities WHERE user_id = ? AND strava_activity_id = ?",
+);
+
 const insertActivityStmt = db.prepare(
 	`INSERT INTO activities
      (id, date, summary, records, laps, intervals, user_id, strava_activity_id)
@@ -227,6 +237,7 @@ function buildRecords(startDate: Date, streams: StravaStreams): StoredRecord[] {
 	const cadData = streams.cadence?.data ?? [];
 	const velData = streams.velocity_smooth?.data ?? [];
 	const gradeData = streams.grade_smooth?.data ?? [];
+	const latLngData = streams.latlng?.data ?? [];
 
 	return timeData.map((elapsed, i) => ({
 		timestamp: new Date(startDate.getTime() + elapsed * 1000).toISOString(),
@@ -234,9 +245,10 @@ function buildRecords(startDate: Date, streams: StravaStreams): StoredRecord[] {
 		power: wattsData[i] ?? null,
 		heartRate: hrData[i] ?? null,
 		cadence: cadData[i] ?? null,
-		// Strava velocity_smooth is m/s → convert to km/h to match FIT parser output
 		speed: velData[i] != null ? Math.round(velData[i] * 3.6 * 10) / 10 : null,
 		gradient: gradeData[i] ?? null,
+		lat: latLngData[i]?.[0] ?? null,
+		lng: latLngData[i]?.[1] ?? null,
 	}));
 }
 
@@ -328,11 +340,10 @@ async function importSingleActivity(
 	userId: string,
 	stravaActivityId: number,
 	accessToken: string,
-): Promise<boolean> {
+): Promise<"imported" | "updated" | null> {
 	const stravaId = String(stravaActivityId);
 
-	// Skip if already imported
-	if (checkStravaActivityStmt.get(userId, stravaId)) return false;
+	const alreadyExists = checkStravaActivityStmt.get(userId, stravaId);
 
 	// Fetch full activity details
 	const actRes = await fetch(
@@ -347,11 +358,11 @@ async function importSingleActivity(
 
 	// Only import rides
 	if (!RIDE_TYPES.has(activity.type) && !RIDE_TYPES.has(activity.sport_type))
-		return false;
+		return null;
 
 	// Fetch streams
 	const streamsRes = await fetch(
-		`https://www.strava.com/api/v3/activities/${stravaActivityId}/streams?keys=time,watts,heartrate,cadence,velocity_smooth,grade_smooth&key_by_type=true`,
+		`https://www.strava.com/api/v3/activities/${stravaActivityId}/streams?keys=time,watts,heartrate,cadence,velocity_smooth,grade_smooth,latlng&key_by_type=true`,
 		{ headers: { Authorization: `Bearer ${accessToken}` } },
 	);
 	const streams: StravaStreams = streamsRes.ok
@@ -381,6 +392,10 @@ async function importSingleActivity(
 	const summary = buildSummary(activity, records, timeArr, wattsArr);
 	const laps = buildLaps(rawLaps, timeArr);
 
+	if (alreadyExists) {
+		deleteStravaActivityStmt.run(userId, stravaId);
+	}
+
 	const id = crypto.randomUUID();
 	insertActivityStmt.run(
 		id,
@@ -392,12 +407,14 @@ async function importSingleActivity(
 		stravaId,
 	);
 
-	await handleNewActivityForWaxedChainReminder(userId, records);
+	if (alreadyExists) {
+		await handleNewActivityForWaxedChainReminder(userId, records);
+	}
 
 	console.log(
-		`[strava] Imported activity ${stravaActivityId} (${activity.name}) → ${id}`,
+		`[strava] ${alreadyExists ? "Re-imported" : "Imported"} activity ${stravaActivityId} (${activity.name}) → ${id}`,
 	);
-	return true;
+	return alreadyExists ? "updated" : "imported";
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
@@ -564,7 +581,7 @@ strava.delete("/disconnect", (c) => {
 	return c.json({ ok: true });
 });
 
-/** POST /api/strava/sync — import recent ride activities */
+/** POST /api/strava/sync — import ride activities. Pass daysBack=all for all time. */
 strava.post("/sync", async (c) => {
 	let userId: string;
 	try {
@@ -573,10 +590,7 @@ strava.post("/sync", async (c) => {
 		return c.json({ error: "Unauthorized" }, 401);
 	}
 
-	const daysBack = Number(c.req.query("daysBack") ?? "30");
-	if (Number.isNaN(daysBack) || daysBack < 1 || daysBack > 365) {
-		return c.json({ error: "daysBack must be between 1 and 365" }, 400);
-	}
+	const daysBackParam = c.req.query("daysBack");
 
 	let accessToken: string;
 	try {
@@ -585,38 +599,73 @@ strava.post("/sync", async (c) => {
 		return c.json({ error: (err as Error).message }, 400);
 	}
 
-	const after = Math.floor((Date.now() - daysBack * 86400 * 1000) / 1000);
-
-	const listRes = await fetch(
-		`https://www.strava.com/api/v3/athlete/activities?per_page=100&after=${after}`,
-		{ headers: { Authorization: `Bearer ${accessToken}` } },
-	);
-	if (!listRes.ok) {
-		return c.json({ error: `Strava API error: ${listRes.status}` }, 502);
+	let after: number | undefined;
+	if (daysBackParam === "all") {
+		after = undefined;
+	} else {
+		const daysBack = Number(daysBackParam ?? "30");
+		if (Number.isNaN(daysBack) || daysBack < 1 || daysBack > 365) {
+			return c.json(
+				{ error: "daysBack must be between 1 and 365, or 'all'" },
+				400,
+			);
+		}
+		after = Math.floor((Date.now() - daysBack * 86400 * 1000) / 1000);
 	}
-
-	const allActivities = (await listRes.json()) as StravaActivity[];
-	const rides = allActivities.filter(
-		(a) => RIDE_TYPES.has(a.type) || RIDE_TYPES.has(a.sport_type),
-	);
 
 	let imported = 0;
-	let skipped = 0;
+	let updated = 0;
+	let page = 1;
 
-	for (const activity of rides) {
-		try {
-			const wasImported = await importSingleActivity(
-				userId,
-				activity.id,
-				accessToken,
-			);
-			wasImported ? imported++ : skipped++;
-		} catch (err) {
-			console.error(`[strava] Failed to import activity ${activity.id}:`, err);
+	// eslint-disable-next-line no-constant-condition
+	while (true) {
+		let url = `https://www.strava.com/api/v3/athlete/activities?per_page=100&page=${page}`;
+		if (after != null) {
+			url += `&after=${after}`;
 		}
+
+		const listRes = await fetch(url, {
+			headers: { Authorization: `Bearer ${accessToken}` },
+		});
+		if (!listRes.ok) {
+			if (page === 1) {
+				return c.json({ error: `Strava API error: ${listRes.status}` }, 502);
+			}
+			console.warn(
+				`[strava] Strava API error on page ${page}: ${listRes.status}`,
+			);
+			break;
+		}
+
+		const pageActivities = (await listRes.json()) as StravaActivity[];
+		if (pageActivities.length === 0) break;
+
+		const rides = pageActivities.filter(
+			(a) => RIDE_TYPES.has(a.type) || RIDE_TYPES.has(a.sport_type),
+		);
+
+		for (const activity of rides) {
+			try {
+				const result = await importSingleActivity(
+					userId,
+					activity.id,
+					accessToken,
+				);
+				if (result === "imported") imported++;
+				else if (result === "updated") updated++;
+			} catch (err) {
+				console.error(
+					`[strava] Failed to import activity ${activity.id}:`,
+					err,
+				);
+			}
+		}
+
+		if (pageActivities.length < 100) break;
+		page++;
 	}
 
-	return c.json({ imported, skipped });
+	return c.json({ imported, updated });
 });
 
 // ─── Webhook ──────────────────────────────────────────────────────────────────
@@ -678,18 +727,18 @@ strava.post("/webhook", async (c) => {
 	(async () => {
 		try {
 			const accessToken = await getValidToken(tokenRow.user_id);
-			const imported = await importSingleActivity(
+			const result = await importSingleActivity(
 				tokenRow.user_id,
 				event.object_id,
 				accessToken,
 			);
-			if (imported) {
+			if (result) {
 				console.log(
-					`[strava webhook] Auto-imported activity ${event.object_id} for user ${tokenRow.user_id}`,
+					`[strava webhook] Auto-${result} activity ${event.object_id} for user ${tokenRow.user_id}`,
 				);
 			} else {
 				console.log(
-					`[strava webhook] Activity ${event.object_id} skipped (already exists or not a ride)`,
+					`[strava webhook] Activity ${event.object_id} skipped (not a ride)`,
 				);
 			}
 		} catch (err) {

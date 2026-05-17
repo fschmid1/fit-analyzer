@@ -1,9 +1,10 @@
-import type { ParsedActivity, Interval } from "@fit-analyzer/shared";
-import { StatsBar } from "./StatsBar";
+import type { Interval, ParsedActivity } from "@fit-analyzer/shared";
 import { ActivityChart } from "./ActivityChart";
-import { IntervalList } from "./IntervalList";
-import { SummaryCards } from "./SummaryCards";
 import { CopyBox } from "./CopyBox";
+import { IntervalList } from "./IntervalList";
+import { RouteMap } from "./RouteMap";
+import { StatsBar } from "./StatsBar";
+import { SummaryCards } from "./SummaryCards";
 
 interface AnalysisViewProps {
 	activity: ParsedActivity;
@@ -48,6 +49,8 @@ export function AnalysisView({
 					{activity.records.length.toLocaleString()} data points recorded
 				</p>
 			</div>
+
+			<RouteMap records={activity.records} selectionRange={selectionRange} />
 
 			<StatsBar records={activity.records} selectionRange={selectionRange} />
 

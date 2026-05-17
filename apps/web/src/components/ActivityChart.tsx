@@ -589,7 +589,7 @@ export const ActivityChart = memo(function ActivityChart({
 
 	return (
 		<div className="px-6 pb-4">
-			<div className="bg-[#1a1533]/40 backdrop-blur-md border border-[rgba(139,92,246,0.1)] rounded-2xl p-4 pt-6">
+			<div className="bg-[#1a1533]/40 backdrop-blur-md border border-[rgba(139,92,246,0.1)] rounded-2xl p-4 pt-6 relative z-[500]">
 				{/* Legend + selection hint */}
 				<div className="flex items-center justify-between mb-4">
 					<div className="flex items-center gap-6 ml-12">

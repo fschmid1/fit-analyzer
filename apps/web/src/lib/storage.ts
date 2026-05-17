@@ -15,6 +15,8 @@ interface StoredActivity {
 		cadence: number | null;
 		speed: number | null;
 		gradient: number | null;
+		lat: number | null;
+		lng: number | null;
 	}[];
 	summary: ParsedActivity["summary"];
 	laps: ParsedActivity["laps"];
