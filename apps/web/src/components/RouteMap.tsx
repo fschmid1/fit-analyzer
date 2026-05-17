@@ -79,7 +79,7 @@ export function RouteMap({ records, selectionRange }: RouteMapProps) {
 
 	return (
 		<>
-			<div className="mx-6 mb-4 rounded-xl border border-[rgba(139,92,246,0.1)] overflow-hidden shrink-0">
+			<div className="mx-6 mb-4 rounded-xl border border-[rgba(139,92,246,0.1)] overflow-hidden shrink-0 min-h-0 flex flex-col">
 				<button
 					type="button"
 					onClick={toggle}
@@ -98,7 +98,7 @@ export function RouteMap({ records, selectionRange }: RouteMapProps) {
 					/>
 				</button>
 				{expanded && (
-					<div className="h-[300px] w-full">
+					<div className="h-[500px] w-full">
 						<MapContainer
 							center={allCoords[0]}
 							zoom={13}

@@ -50,8 +50,6 @@ export function AnalysisView({
 				</p>
 			</div>
 
-			<RouteMap records={activity.records} selectionRange={selectionRange} />
-
 			<StatsBar records={activity.records} selectionRange={selectionRange} />
 
 			<ActivityChart
@@ -80,6 +78,8 @@ export function AnalysisView({
 				intervals={allIntervals}
 				onSendToTrainer={onSendToTrainer}
 			/>
+
+			<RouteMap records={activity.records} selectionRange={selectionRange} />
 		</div>
 	);
 }
