@@ -105,7 +105,7 @@ export function RouteMap({ records, selectionRange }: RouteMapProps) {
 					/>
 				</button>
 				{expanded && (
-					<div className="h-[300px] w-full">
+					<div className="h-[800px] w-full">
 						<MapContainer
 							center={allCoords[0]}
 							zoom={13}
