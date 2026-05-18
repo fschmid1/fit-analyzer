@@ -35,7 +35,7 @@ function HeatLayerComponent({ points }: { points: HeatmapPoint[] }) {
             1,
         ]);
         const layer = heatLayer(arr, {
-            radius: 3,
+            radius: 5,
             blur: 5,
             maxZoom: 16,
             gradient: {
