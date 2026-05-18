@@ -4,30 +4,36 @@ import { ChevronDown, Map as MapIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MapContainer, Polyline, TileLayer, useMap } from "react-leaflet";
 
-interface RouteMapProps {
-	records: ActivityRecord[];
-	selectionRange: [number, number] | null;
+interface Point {
+	lat: number;
+	lng: number;
+	gradient: number;
 }
 
-function coordsFromRecords(records: ActivityRecord[]): {
-	all: LatLngTuple[];
-	selected: LatLngTuple[] | null;
-} {
-	const all: LatLngTuple[] = [];
+function gradientColor(gradient: number): string {
+	if (gradient < 0) return "#22c55e";
+	if (gradient < 4) return "#22c55e";
+	if (gradient < 8) return "#eab308";
+	if (gradient < 12) return "#f97316";
+	return "#ef4444";
+}
+
+function pointsFromRecords(records: ActivityRecord[]): Point[] {
+	const result: Point[] = [];
 	for (const r of records) {
 		if (r.lat != null && r.lng != null) {
-			all.push([r.lat, r.lng]);
+			result.push({ lat: r.lat, lng: r.lng, gradient: r.gradient ?? 0 });
 		}
 	}
-	return { all, selected: null };
+	return result;
 }
 
-function coordsForRange(
+function pointsForRange(
 	records: ActivityRecord[],
 	range: [number, number],
-): LatLngTuple[] {
+): Point[] {
 	const [start, end] = range;
-	const result: LatLngTuple[] = [];
+	const result: Point[] = [];
 	for (const r of records) {
 		if (
 			r.elapsedSeconds >= start &&
@@ -35,10 +41,15 @@ function coordsForRange(
 			r.lat != null &&
 			r.lng != null
 		) {
-			result.push([r.lat, r.lng]);
+			result.push({ lat: r.lat, lng: r.lng, gradient: r.gradient ?? 0 });
 		}
 	}
 	return result;
+}
+
+interface RouteMapProps {
+	records: ActivityRecord[];
+	selectionRange: [number, number] | null;
 }
 
 function FitBounds({ coords }: { coords: LatLngTuple[] }) {
@@ -55,23 +66,19 @@ function FitBounds({ coords }: { coords: LatLngTuple[] }) {
 export function RouteMap({ records, selectionRange }: RouteMapProps) {
 	const [expanded, setExpanded] = useState(true);
 
-	const allCoords = useMemo(() => {
-		const result: LatLngTuple[] = [];
-		for (const r of records) {
-			if (r.lat != null && r.lng != null) {
-				result.push([r.lat, r.lng]);
-			}
-		}
-		return result;
-	}, [records]);
+	const allPoints = useMemo(() => pointsFromRecords(records), [records]);
+	const allCoords: LatLngTuple[] = useMemo(
+		() => allPoints.map((p) => [p.lat, p.lng] as LatLngTuple),
+		[allPoints],
+	);
 
-	const selectedCoords = useMemo(() => {
+	const selectedPoints = useMemo(() => {
 		if (!selectionRange) return null;
-		const coords = coordsForRange(records, selectionRange);
-		return coords.length >= 2 ? coords : null;
+		const pts = pointsForRange(records, selectionRange);
+		return pts.length >= 2 ? pts : null;
 	}, [records, selectionRange]);
 
-	const hasGps = allCoords.length >= 2;
+	const hasGps = allPoints.length >= 2;
 
 	const toggle = useCallback(() => setExpanded((prev) => !prev), []);
 
@@ -89,7 +96,7 @@ export function RouteMap({ records, selectionRange }: RouteMapProps) {
 						<MapIcon size={16} stroke="#8b5cf6" />
 						<span className="text-sm font-medium text-[#f1f5f9]">Route</span>
 						<span className="text-xs text-[#94a3b8]">
-							{allCoords.length.toLocaleString()} track points
+							{allPoints.length.toLocaleString()} track points
 						</span>
 					</div>
 					<ChevronDown
@@ -110,24 +117,44 @@ export function RouteMap({ records, selectionRange }: RouteMapProps) {
 								attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 							/>
 							<FitBounds coords={allCoords} />
-							<Polyline
-								positions={allCoords}
-								pathOptions={{
-									color: "#8b5cf6",
-									weight: 3,
-									opacity: 0.35,
-								}}
-							/>
-							{selectedCoords && (
-								<Polyline
-									positions={selectedCoords}
-									pathOptions={{
-										color: "#a78bfa",
-										weight: 4,
-										opacity: 0.9,
-									}}
-								/>
-							)}
+							{allPoints.slice(0, -1).map((a, i) => {
+								const b = allPoints[i + 1];
+								const avgGrad = (a.gradient + b.gradient) / 2;
+								return (
+									<Polyline
+										// biome-ignore lint/suspicious/noArrayIndexKey: immutable segments
+										key={`seg-${i}`}
+										positions={[
+											[a.lat, a.lng],
+											[b.lat, b.lng],
+										]}
+										pathOptions={{
+											color: gradientColor(avgGrad),
+											weight: 3,
+											opacity: 0.85,
+										}}
+									/>
+								);
+							})}
+							{selectedPoints?.slice(0, -1).map((a, i) => {
+								const b = selectedPoints[i + 1];
+								const avgGrad = (a.gradient + b.gradient) / 2;
+								return (
+									<Polyline
+										// biome-ignore lint/suspicious/noArrayIndexKey: immutable segments
+										key={`sel-${i}`}
+										positions={[
+											[a.lat, a.lng],
+											[b.lat, b.lng],
+										]}
+										pathOptions={{
+											color: gradientColor(avgGrad),
+											weight: 5,
+											opacity: 1,
+										}}
+									/>
+								);
+							})}
 						</MapContainer>
 					</div>
 				)}
