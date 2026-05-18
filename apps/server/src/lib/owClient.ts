@@ -1,7 +1,7 @@
 import { db } from "../db.js";
 import { env } from "../env.js";
 
-interface HealthContext {
+export interface HealthContext {
 	rhr: {
 		current: number | null;
 		trend7d: number | null;
@@ -239,21 +239,17 @@ function formatHealthContext(ctx: HealthContext): string {
 	return `\n## Athlete Health Data\nUse this data to contextualize training advice (fatigue, recovery, sleep). This data is fetched live from the athlete's wearables via OpenWearables.\n${parts.join("\n")}\n`;
 }
 
-export async function getHealthContext(
+async function resolveHealthContext(
 	fitUserId: string,
-): Promise<{ text: string }> {
-	if (!isConfigured()) {
-		return { text: "" };
-	}
+): Promise<HealthContext | null> {
+	if (!isConfigured()) return null;
 
 	const owUserId = getOwUserId(fitUserId);
-	if (!owUserId) {
-		return { text: "" };
-	}
+	if (!owUserId) return null;
 
 	const cached = cache.get(owUserId);
 	if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
-		return { text: formatHealthContext(cached.data) };
+		return cached.data;
 	}
 
 	try {
@@ -261,13 +257,25 @@ export async function getHealthContext(
 		const ctx = computeHealthContext(sleepSummaries);
 		pruneCache();
 		cache.set(owUserId, { data: ctx, fetchedAt: Date.now() });
-
-		const text = formatHealthContext(ctx);
-		return { text };
+		return ctx;
 	} catch (err) {
 		console.warn("[ow] failed to fetch health context:", err);
-		return { text: "" };
+		return null;
 	}
+}
+
+export async function getHealthContext(
+	fitUserId: string,
+): Promise<{ text: string }> {
+	const ctx = await resolveHealthContext(fitUserId);
+	if (!ctx) return { text: "" };
+	return { text: formatHealthContext(ctx) };
+}
+
+export async function getRawHealthContext(
+	fitUserId: string,
+): Promise<HealthContext | null> {
+	return resolveHealthContext(fitUserId);
 }
 
 export { getOwUserId };

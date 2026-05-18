@@ -12,6 +12,7 @@ import { AnalysisView } from "./components/AnalysisView";
 import { InstallPrompt } from "./components/InstallPrompt";
 import { TrainerView } from "./components/TrainerView";
 import { SettingsPage } from "./pages/SettingsPage";
+import { StatsPage } from "./pages/StatsPage";
 import {
 	saveCustomIntervals,
 	loadCustomIntervals,
@@ -374,6 +375,7 @@ function App() {
 						/>
 					}
 				/>
+				<Route path="/stats" element={<StatsPage />} />
 				<Route
 					path="/settings"
 					element={

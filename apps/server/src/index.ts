@@ -3,6 +3,7 @@ import { serveStatic } from "hono/bun";
 import { logger } from "hono/logger";
 import { env } from "./env.js";
 import { activities } from "./routes/activities.js";
+import { health } from "./routes/health.js";
 import { me } from "./routes/me.js";
 import { strava } from "./routes/strava.js";
 import { trainer } from "./routes/trainer.js";
@@ -14,6 +15,7 @@ app.use("*", logger());
 
 // API routes
 app.route("/api/activities", activities);
+app.route("/api/health", health);
 app.route("/api/me", me);
 app.route("/api/strava", strava);
 app.route("/api/trainer", trainer);

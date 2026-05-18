@@ -153,6 +153,46 @@ export interface UpdateOpenwearablesSettingsBody {
 	owUserId: string;
 }
 
+// --- Health & stats types ---
+
+export interface HealthData {
+	rhr: {
+		current: number | null;
+		trend7d: number | null;
+		elevated: boolean;
+	} | null;
+	hrv: {
+		current: number | null;
+		trend7d: number | null;
+		declining: boolean;
+	} | null;
+	sleep: {
+		recentNights: {
+			date: string;
+			durationMinutes: number;
+			durationFormatted: string;
+			quality: string | null;
+		}[];
+		avgDurationMinutes7d: number | null;
+		avgDurationFormatted7d: string | null;
+	} | null;
+}
+
+export interface ActivityStats {
+	count: number;
+	totalDurationSeconds: number;
+	totalDurationFormatted: string;
+	totalDistanceKm: number | null;
+	avgPower: number | null;
+	maxPower: number | null;
+	avgHeartRate: number | null;
+	maxHeartRate: number | null;
+	avgCadence: number | null;
+	peak1minPower: number | null;
+	peak5minPower: number | null;
+	totalWork: number | null;
+}
+
 // --- Trainer chat types ---
 
 /** A single persisted trainer chat message */

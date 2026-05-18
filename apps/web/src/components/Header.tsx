@@ -1,6 +1,7 @@
 import {
 	Activity,
 	ArrowLeft,
+	BarChart3,
 	BotMessageSquare,
 	Settings,
 	Upload,
@@ -57,11 +58,13 @@ export function Header({
 	const isHistory = useMatch("/");
 	const isAnalysis = useMatch("/activity/:id");
 	const isTrainer = useMatch("/trainer");
+	const isStats = useMatch("/stats");
 	const isSettings = useMatch("/settings");
 
 	const showBack = !isHistory;
 	const showUpload = !!isAnalysis;
 	const showTrainer = !isTrainer;
+	const showStats = !isStats;
 	const showSettings = !isSettings;
 
 	return (
@@ -111,6 +114,17 @@ export function Header({
 					>
 						<BotMessageSquare className="w-4 h-4" />
 						<span className="hidden sm:inline">Trainer</span>
+					</AnimatedButton>
+				)}
+
+				{showStats && (
+					<AnimatedButton
+						onClick={() => navigate("/stats")}
+						className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-colors duration-200 cursor-pointer"
+						title="Stats"
+					>
+						<BarChart3 className="w-4 h-4" />
+						<span className="hidden sm:inline">Stats</span>
 					</AnimatedButton>
 				)}
 
