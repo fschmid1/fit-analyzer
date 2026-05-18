@@ -2,121 +2,64 @@ import type { HeatmapPoint } from "@fit-analyzer/shared";
 import { ChevronDown, Map as MapIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
+import L from "leaflet";
+import "leaflet.heat";
+
+type HeatLayer = L.Layer & {
+	setLatLngs(latlngs: L.LatLngExpression[]): HeatLayer;
+	setOptions(options: Record<string, unknown>): HeatLayer;
+	redraw(): HeatLayer;
+};
+
+function heatLayer(
+	latlngs: L.LatLngExpression[],
+	options: Record<string, unknown>,
+): HeatLayer {
+	// biome-ignore lint/suspicious/noExplicitAny: leaflet.heat has no TS types
+	return (L as any).heatLayer(latlngs, options) as HeatLayer;
+}
 
 interface HeatmapMapProps {
 	points: HeatmapPoint[];
 }
 
-const BIN_SIZE = 4;
-const DOT_RADIUS = 8;
-
-function HeatmapCanvas({ points }: { points: HeatmapPoint[] }) {
+function HeatLayerComponent({ points }: { points: HeatmapPoint[] }) {
 	const map = useMap();
-	const canvasRef = useRef<HTMLCanvasElement>(null);
-	const pointsRef = useRef(points);
-	pointsRef.current = points;
+	const layerRef = useRef<HeatLayer | null>(null);
 
-	const draw = useCallback(() => {
-		const canvas = canvasRef.current;
-		if (!canvas) return;
-		const ctx = canvas.getContext("2d");
-		if (!ctx) return;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: layer created once, data updated in separate effect
+	useEffect(() => {
+		const arr: [number, number, number][] = points.map((p) => [
+			p.lat,
+			p.lng,
+			1,
+		]);
+		const layer = heatLayer(arr, {
+			radius: 8,
+			blur: 5,
+			maxZoom: 16,
+			gradient: { 0.4: "green", 0.6: "yellow", 0.8: "orange", 1.0: "red" },
+		});
+		layer.addTo(map);
+		layerRef.current = layer;
 
-		const size = map.getSize();
-		canvas.width = size.x;
-		canvas.height = size.y;
-		canvas.style.width = `${size.x}px`;
-		canvas.style.height = `${size.y}px`;
-
-		ctx.clearRect(0, 0, size.x, size.y);
-
-		const bins = new Map<string, number>();
-		const pad = BIN_SIZE * 2;
-		const pts = pointsRef.current;
-
-		for (const p of pts) {
-			const px = map.latLngToContainerPoint([p.lat, p.lng]);
-			if (
-				px.x < -pad ||
-				px.y < -pad ||
-				px.x > size.x + pad ||
-				px.y > size.y + pad
-			) {
-				continue;
-			}
-			const bx = Math.floor(px.x / BIN_SIZE) * BIN_SIZE;
-			const by = Math.floor(px.y / BIN_SIZE) * BIN_SIZE;
-			const key = `${bx},${by}`;
-			bins.set(key, (bins.get(key) ?? 0) + 1);
-		}
-
-		if (bins.size === 0) return;
-
-		let maxHits = 1;
-		for (const v of bins.values()) {
-			if (v > maxHits) maxHits = v;
-		}
-
-		for (const [key, hits] of bins) {
-			const [bx, by] = key.split(",").map(Number);
-			const cx = bx + BIN_SIZE / 2;
-			const cy = by + BIN_SIZE / 2;
-			const ratio = hits / maxHits;
-			const hue = 120 * (1 - ratio);
-			const lightness = 55 - ratio * 20;
-			const alpha = Math.min(1, ratio * 0.85 + 0.15);
-			const color = `hsla(${hue}, 100%, ${lightness}%, ${alpha})`;
-
-			const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, DOT_RADIUS);
-			gradient.addColorStop(0, color);
-			gradient.addColorStop(0.5, color);
-			gradient.addColorStop(1, "transparent");
-
-			ctx.fillStyle = gradient;
-			ctx.beginPath();
-			ctx.arc(cx, cy, DOT_RADIUS, 0, Math.PI * 2);
-			ctx.fill();
-		}
+		return () => {
+			map.removeLayer(layer);
+		};
 	}, [map]);
 
 	useEffect(() => {
-		const onMove = () => draw();
-		map.on("moveend", onMove);
-		map.on("zoomend", onMove);
+		const layer = layerRef.current;
+		if (!layer) return;
+		const arr: [number, number, number][] = points.map((p) => [
+			p.lat,
+			p.lng,
+			1,
+		]);
+		layer.setLatLngs(arr);
+	}, [points]);
 
-		const resizeObserver = new ResizeObserver(() => {
-			draw();
-		});
-		const container = map.getContainer();
-		resizeObserver.observe(container);
-
-		draw();
-
-		return () => {
-			map.off("moveend", onMove);
-			map.off("zoomend", onMove);
-			resizeObserver.disconnect();
-		};
-	}, [map, draw]);
-
-	// biome-ignore lint/correctness/useExhaustiveDependencies: points triggers re-render
-	useEffect(() => {
-		draw();
-	}, [draw, points]);
-
-	return (
-		<canvas
-			ref={canvasRef}
-			style={{
-				position: "absolute",
-				top: 0,
-				left: 0,
-				pointerEvents: "none",
-				zIndex: 1000,
-				filter: "blur(1px)",
-			}}
-		/>
-	);
+	return null;
 }
 
 interface FitBoundsProps {
@@ -182,7 +125,7 @@ export function HeatmapMap({ points }: HeatmapMapProps) {
 							attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 						/>
 						<FitBounds points={points} />
-						<HeatmapCanvas points={points} />
+						<HeatLayerComponent points={points} />
 					</MapContainer>
 				</div>
 			)}
