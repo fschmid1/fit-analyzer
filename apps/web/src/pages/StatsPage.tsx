@@ -16,7 +16,9 @@ import {
 	Brain,
 } from "lucide-react";
 import { MetricCard } from "../components/MetricCard";
-import { fetchStats, type StatsResponse } from "../lib/api";
+import { fetchStats, fetchHeatmap, type StatsResponse } from "../lib/api";
+import type { HeatmapResponse } from "@fit-analyzer/shared";
+import { HeatmapMap } from "../components/HeatmapMap";
 import { AnimatedButton } from "../components/AnimatedButton";
 
 type Preset = "7d" | "30d" | "90d" | "year" | "custom";
@@ -55,19 +57,36 @@ export function StatsPage() {
 	const [startDate, setStartDate] = useState(() => dateFromDaysBack(30));
 	const [endDate, setEndDate] = useState(() => todayStr());
 	const [data, setData] = useState<StatsResponse | null>(null);
+	const [heatmapData, setHeatmapData] = useState<HeatmapResponse | null>(null);
+	const [heatmapLoading, setHeatmapLoading] = useState(true);
+	const [heatmapError, setHeatmapError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 
 	const load = useCallback(async (sd: string, ed: string) => {
 		setLoading(true);
 		setError(null);
+		setHeatmapLoading(true);
+		setHeatmapError(null);
 		try {
-			const result = await fetchStats(sd, ed);
-			setData(result);
+			const statsResult = await fetchStats(sd, ed);
+			setData(statsResult);
+			setError(null);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to load stats");
+			setData(null);
 		} finally {
 			setLoading(false);
+		}
+		try {
+			const hdata = await fetchHeatmap(sd, ed);
+			setHeatmapData(hdata);
+			setHeatmapError(null);
+		} catch {
+			setHeatmapError("Failed to load heatmap data");
+			setHeatmapData(null);
+		} finally {
+			setHeatmapLoading(false);
 		}
 	}, []);
 
@@ -380,9 +399,39 @@ export function StatsPage() {
 								</div>
 							</>
 						)}
+
+						{heatmapLoading && (
+							<div className="flex items-center gap-3 text-[#94a3b8] py-4">
+								<Loader2 className="w-4 h-4 animate-spin" />
+								<span className="text-sm">Loading heatmap...</span>
+							</div>
+						)}
+
+						{heatmapError && (
+							<div className="flex items-center gap-3 p-4 bg-[#f59e0b]/10 border border-[#f59e0b]/20 rounded-2xl text-[#fcd34d] mb-4">
+								<AlertCircle className="w-5 h-5 shrink-0" />
+								<p className="text-sm font-medium">{heatmapError}</p>
+							</div>
+						)}
 					</>
 				)}
 			</div>
+
+			{!loading &&
+				!error &&
+				!heatmapLoading &&
+				!heatmapError &&
+				heatmapData &&
+				heatmapData.points.length > 0 && (
+					<div className="-mx-6 mb-6">
+						<div className="px-6 mb-4">
+							<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8]">
+								Heatmap
+							</h3>
+						</div>
+						<HeatmapMap points={heatmapData.points} />
+					</div>
+				)}
 		</div>
 	);
 }

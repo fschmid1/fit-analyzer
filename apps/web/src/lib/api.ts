@@ -4,6 +4,7 @@ import {
 	type ActivityStats,
 	type CoachModelSettings,
 	type HealthData,
+	type HeatmapResponse,
 	type Interval,
 	type ModelEntry,
 	type OpenwearablesSettings,
@@ -53,6 +54,17 @@ export async function fetchStats(
 		`${API_BASE}/health?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
 	);
 	if (!res.ok) throw new Error("Failed to fetch stats");
+	return res.json();
+}
+
+export async function fetchHeatmap(
+	startDate: string,
+	endDate: string,
+): Promise<HeatmapResponse> {
+	const res = await fetch(
+		`${API_BASE}/heatmap?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+	);
+	if (!res.ok) throw new Error("Failed to fetch heatmap data");
 	return res.json();
 }
 

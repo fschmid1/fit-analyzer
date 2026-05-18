@@ -26,6 +26,8 @@ export type {
 	ActivityStats,
 	SleepStages,
 	RecentNight,
+	HeatmapPoint,
+	HeatmapResponse,
 } from "./types.js";
 
 export {

@@ -206,6 +206,17 @@ export interface ActivityStats {
 	totalWork: number | null;
 }
 
+// --- Heatmap types ---
+
+export interface HeatmapPoint {
+	lat: number;
+	lng: number;
+}
+
+export interface HeatmapResponse {
+	points: HeatmapPoint[];
+}
+
 // --- Trainer chat types ---
 
 /** A single persisted trainer chat message */
