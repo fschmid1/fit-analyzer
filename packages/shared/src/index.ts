@@ -22,6 +22,12 @@ export type {
 	SaveTrainerHistoryBody,
 	OpenwearablesSettings,
 	UpdateOpenwearablesSettingsBody,
+	HealthData,
+	ActivityStats,
+	SleepStages,
+	RecentNight,
+	HeatmapPoint,
+	HeatmapResponse,
 } from "./types.js";
 
 export {

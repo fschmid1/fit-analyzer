@@ -1,7 +1,10 @@
 import {
 	AVAILABLE_MODELS,
 	type ActivityListItem,
+	type ActivityStats,
 	type CoachModelSettings,
+	type HealthData,
+	type HeatmapResponse,
 	type Interval,
 	type ModelEntry,
 	type OpenwearablesSettings,
@@ -36,6 +39,33 @@ export async function fetchCurrentUser(): Promise<UserInfo | null> {
 	} catch {
 		return null;
 	}
+}
+
+export interface StatsResponse {
+	health: HealthData | null;
+	activityStats: ActivityStats;
+}
+
+export async function fetchStats(
+	startDate: string,
+	endDate: string,
+): Promise<StatsResponse> {
+	const res = await fetch(
+		`${API_BASE}/health?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+	);
+	if (!res.ok) throw new Error("Failed to fetch stats");
+	return res.json();
+}
+
+export async function fetchHeatmap(
+	startDate: string,
+	endDate: string,
+): Promise<HeatmapResponse> {
+	const res = await fetch(
+		`${API_BASE}/heatmap?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+	);
+	if (!res.ok) throw new Error("Failed to fetch heatmap data");
+	return res.json();
 }
 
 export async function fetchUserSettings(): Promise<UserSettingsResponse> {
