@@ -1,6 +1,21 @@
 import { db } from "../db.js";
 import { env } from "../env.js";
 
+export interface SleepStages {
+	awakeMinutes: number;
+	lightMinutes: number;
+	deepMinutes: number;
+	remMinutes: number;
+}
+
+export interface RecentNight {
+	date: string;
+	durationMinutes: number;
+	quality: string | null;
+	efficiencyPercent: number | null;
+	stages: SleepStages | null;
+}
+
 export interface HealthContext {
 	rhr: {
 		current: number | null;
@@ -13,12 +28,10 @@ export interface HealthContext {
 		declining: boolean;
 	} | null;
 	sleep: {
-		recentNights: {
-			date: string;
-			durationMinutes: number;
-			quality: string | null;
-		}[];
+		recentNights: RecentNight[];
 		avgDurationMinutes7d: number | null;
+		avgEfficiencyPercent7d: number | null;
+		avgStages7d: SleepStages | null;
 	} | null;
 }
 
@@ -114,15 +127,27 @@ function computeHealthContext(
 	let sleep: HealthContext["sleep"] = null;
 
 	if (sleepSummaries && sleepSummaries.length > 0) {
-		const recentNights = sleepSummaries
-			.map((n) => ({
-				date: n.date,
-				durationMinutes: n.duration_minutes,
-				quality:
-					n.efficiency_percent != null
-						? `${n.efficiency_percent.toFixed(0)}% efficiency`
-						: null,
-			}))
+		const recentNights: RecentNight[] = sleepSummaries
+			.map((n) => {
+				const stages: SleepStages | null = n.stages
+					? {
+							awakeMinutes: n.stages.awake_minutes ?? 0,
+							lightMinutes: n.stages.light_minutes ?? 0,
+							deepMinutes: n.stages.deep_minutes ?? 0,
+							remMinutes: n.stages.rem_minutes ?? 0,
+						}
+					: null;
+				return {
+					date: n.date,
+					durationMinutes: n.duration_minutes,
+					quality:
+						n.efficiency_percent != null
+							? `${n.efficiency_percent.toFixed(0)}% efficiency`
+							: null,
+					efficiencyPercent: n.efficiency_percent ?? null,
+					stages,
+				};
+			})
 			.sort((a, b) => b.date.localeCompare(a.date));
 
 		const durations = recentNights
@@ -133,7 +158,43 @@ function computeHealthContext(
 				? durations.reduce((a, b) => a + b, 0) / durations.length
 				: null;
 
-		sleep = { recentNights, avgDurationMinutes7d };
+		const efficiencies = recentNights
+			.map((n) => n.efficiencyPercent)
+			.filter((e): e is number => e != null);
+		const avgEfficiencyPercent7d =
+			efficiencies.length > 0
+				? Math.round(
+						efficiencies.reduce((a, b) => a + b, 0) / efficiencies.length,
+					)
+				: null;
+
+		const nightsWithStages = recentNights.filter((n) => n.stages != null);
+		let avgStages7d: SleepStages | null = null;
+		if (nightsWithStages.length > 0) {
+			const total = nightsWithStages.reduce(
+				(acc, n) => {
+					acc.awakeMinutes += n.stages?.awakeMinutes ?? 0;
+					acc.lightMinutes += n.stages?.lightMinutes ?? 0;
+					acc.deepMinutes += n.stages?.deepMinutes ?? 0;
+					acc.remMinutes += n.stages?.remMinutes ?? 0;
+					return acc;
+				},
+				{ awakeMinutes: 0, lightMinutes: 0, deepMinutes: 0, remMinutes: 0 },
+			);
+			avgStages7d = {
+				awakeMinutes: Math.round(total.awakeMinutes / nightsWithStages.length),
+				lightMinutes: Math.round(total.lightMinutes / nightsWithStages.length),
+				deepMinutes: Math.round(total.deepMinutes / nightsWithStages.length),
+				remMinutes: Math.round(total.remMinutes / nightsWithStages.length),
+			};
+		}
+
+		sleep = {
+			recentNights,
+			avgDurationMinutes7d,
+			avgEfficiencyPercent7d,
+			avgStages7d,
+		};
 
 		const datedHrValues = sleepSummaries
 			.map((n) => ({
@@ -220,6 +281,17 @@ function formatHealthContext(ctx: HealthContext): string {
 				`- Average Sleep (7 days): ${hours}h ${String(mins).padStart(2, "0")}m`,
 			);
 		}
+		if (ctx.sleep.avgEfficiencyPercent7d != null) {
+			parts.push(
+				`- Average Sleep Efficiency (7 days): ${ctx.sleep.avgEfficiencyPercent7d}%`,
+			);
+		}
+		if (ctx.sleep.avgStages7d) {
+			const s = ctx.sleep.avgStages7d;
+			parts.push(
+				`- Avg Sleep Stages (7d): Awake ${s.awakeMinutes}m, Light ${s.lightMinutes}m, Deep ${s.deepMinutes}m, REM ${s.remMinutes}m`,
+			);
+		}
 		if (ctx.sleep.recentNights.length > 0) {
 			const last = ctx.sleep.recentNights[0];
 			if (last.durationMinutes > 0) {
@@ -228,6 +300,9 @@ function formatHealthContext(ctx: HealthContext): string {
 				let lastNight = `- Last Night's Sleep (${last.date}): ${hours}h ${String(mins).padStart(2, "0")}m`;
 				if (last.quality) {
 					lastNight += `, Quality: ${last.quality}`;
+				}
+				if (last.stages) {
+					lastNight += `, Stages: Awake ${last.stages.awakeMinutes}m, Light ${last.stages.lightMinutes}m, Deep ${last.stages.deepMinutes}m, REM ${last.stages.remMinutes}m`;
 				}
 				parts.push(lastNight);
 			}

@@ -43,6 +43,8 @@ function buildHealthData(
 			durationMinutes: n.durationMinutes,
 			durationFormatted: formatSleepDuration(n.durationMinutes),
 			quality: n.quality,
+			efficiencyPercent: n.efficiencyPercent,
+			stages: n.stages ?? null,
 		}));
 		let avgDurationFormatted7d: string | null = null;
 		if (ctx.sleep.avgDurationMinutes7d != null) {
@@ -54,6 +56,8 @@ function buildHealthData(
 			recentNights,
 			avgDurationMinutes7d: ctx.sleep.avgDurationMinutes7d,
 			avgDurationFormatted7d,
+			avgEfficiencyPercent7d: ctx.sleep.avgEfficiencyPercent7d,
+			avgStages7d: ctx.sleep.avgStages7d ?? null,
 		};
 	}
 

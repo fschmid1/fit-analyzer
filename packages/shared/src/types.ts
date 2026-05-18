@@ -155,6 +155,22 @@ export interface UpdateOpenwearablesSettingsBody {
 
 // --- Health & stats types ---
 
+export interface SleepStages {
+	awakeMinutes: number;
+	lightMinutes: number;
+	deepMinutes: number;
+	remMinutes: number;
+}
+
+export interface RecentNight {
+	date: string;
+	durationMinutes: number;
+	durationFormatted: string;
+	quality: string | null;
+	efficiencyPercent: number | null;
+	stages: SleepStages | null;
+}
+
 export interface HealthData {
 	rhr: {
 		current: number | null;
@@ -167,14 +183,11 @@ export interface HealthData {
 		declining: boolean;
 	} | null;
 	sleep: {
-		recentNights: {
-			date: string;
-			durationMinutes: number;
-			durationFormatted: string;
-			quality: string | null;
-		}[];
+		recentNights: RecentNight[];
 		avgDurationMinutes7d: number | null;
 		avgDurationFormatted7d: string | null;
+		avgEfficiencyPercent7d: number | null;
+		avgStages7d: SleepStages | null;
 	} | null;
 }
 

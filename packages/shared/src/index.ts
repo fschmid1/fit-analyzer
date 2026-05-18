@@ -24,6 +24,8 @@ export type {
 	UpdateOpenwearablesSettingsBody,
 	HealthData,
 	ActivityStats,
+	SleepStages,
+	RecentNight,
 } from "./types.js";
 
 export {

@@ -12,6 +12,8 @@ import {
 	BarChart3,
 	Loader2,
 	AlertCircle,
+	Moon,
+	Brain,
 } from "lucide-react";
 import { MetricCard } from "../components/MetricCard";
 import { fetchStats, type StatsResponse } from "../lib/api";
@@ -245,6 +247,35 @@ export function StatsPage() {
 													: "")
 											}
 											color="#06b6d4"
+										/>
+									)}
+									{data.health.sleep?.avgEfficiencyPercent7d != null && (
+										<MetricCard
+											icon={Moon}
+											label="Avg Efficiency (7d)"
+											value={`${data.health.sleep.avgEfficiencyPercent7d}%`}
+											unit=""
+											color="#a78bfa"
+										/>
+									)}
+									{data.health.sleep?.recentNights[0]?.stages && (
+										<MetricCard
+											icon={Brain}
+											label="Last Night Stages"
+											value={`${data.health.sleep.recentNights[0].stages.deepMinutes + data.health.sleep.recentNights[0].stages.remMinutes}m restorative`}
+											unit=""
+											subValue={`Awake ${data.health.sleep.recentNights[0].stages.awakeMinutes}m · Light ${data.health.sleep.recentNights[0].stages.lightMinutes}m · Deep ${data.health.sleep.recentNights[0].stages.deepMinutes}m · REM ${data.health.sleep.recentNights[0].stages.remMinutes}m`}
+											color="#8b5cf6"
+										/>
+									)}
+									{data.health.sleep?.avgStages7d && (
+										<MetricCard
+											icon={Brain}
+											label="Avg Stages (7d)"
+											value={`${data.health.sleep.avgStages7d.deepMinutes + data.health.sleep.avgStages7d.remMinutes}m restorative`}
+											unit=""
+											subValue={`Awake ${data.health.sleep.avgStages7d.awakeMinutes}m · Light ${data.health.sleep.avgStages7d.lightMinutes}m · Deep ${data.health.sleep.avgStages7d.deepMinutes}m · REM ${data.health.sleep.avgStages7d.remMinutes}m`}
+											color="#c084fc"
 										/>
 									)}
 								</div>
