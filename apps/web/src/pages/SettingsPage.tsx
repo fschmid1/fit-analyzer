@@ -19,23 +19,23 @@ export function SettingsPage({ onActivitiesChanged }: SettingsPageProps) {
 				</p>
 
 				<div className="grid gap-8 xl:grid-cols-2 xl:items-start">
-					<section className="flex flex-col gap-6">
-						<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8] mb-3">
+					<section className="flex flex-col gap-4">
+						<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8]">
 							Integrations
 						</h3>
 						<StravaConnect onSynced={onActivitiesChanged} />
 						<OpenwearablesSettings />
 					</section>
 
-					<section>
-						<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8] mb-3">
+					<section className="flex flex-col gap-4">
+						<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8]">
 							Maintenance
 						</h3>
 						<WaxedChainReminderSettings />
 					</section>
 
-					<section className="xl:col-span-2">
-						<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8] mb-3">
+					<section className="xl:col-span-2 flex flex-col gap-4">
+						<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8]">
 							Trainer
 						</h3>
 						<CoachModelSettings />

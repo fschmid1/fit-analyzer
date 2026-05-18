@@ -126,14 +126,18 @@ export function ModelPicker({
 
 	useLayoutEffect(() => {
 		if (contentRef.current && showPortal) {
+			void selectedProvider;
 			const el = contentRef.current;
+			const prevTransition = el.style.transition;
+			el.style.transition = "none";
 			const prev = el.style.height;
 			el.style.height = "auto";
 			const height = el.scrollHeight || 200;
 			el.style.height = prev;
+			el.style.transition = prevTransition;
 			setMeasuredHeight(Math.min(height, 380));
 		}
-	}, [showPortal]);
+	}, [showPortal, selectedProvider]);
 
 	useEffect(() => {
 		if (open) {
