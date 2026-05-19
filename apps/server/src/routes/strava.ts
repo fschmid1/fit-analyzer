@@ -461,7 +461,7 @@ strava.get("/connect", (c) => {
 		redirect_uri: env.STRAVA_REDIRECT_URI,
 		response_type: "code",
 		approval_prompt: "auto",
-		scope: "activity:read_all",
+		scope: "activity:read_all,read",
 		state,
 	});
 
@@ -666,6 +666,128 @@ strava.post("/sync", async (c) => {
 	}
 
 	return c.json({ imported, updated });
+});
+
+// ─── Clubs & Group Events ───────────────────────────────────────────────────
+
+interface StravaClubResponse {
+	id: number;
+	name: string;
+	description: string | null;
+	sport_type: string;
+	city: string | null;
+	state: string | null;
+	country: string | null;
+	member_count: number;
+	cover_photo: string | null;
+}
+
+interface StravaGroupEventResponse {
+	id: number;
+	title: string;
+	sport_type: string;
+	description: string | null;
+	address: string | null;
+	city: string | null;
+	state: string | null;
+	route: { id: number; name: string } | null;
+	organizer: { id: number; name: string } | null;
+	participant_count: number | null;
+	upcoming_occurrences: string[];
+}
+
+/**
+ * GET /api/strava/events — fetches all clubs and their group events,
+ * returning upcoming and past events across all clubs.
+ */
+strava.get("/events", async (c) => {
+	const userId = getUserId(c);
+
+	const accessToken = await getValidToken(userId).catch(() => null);
+	if (!accessToken) {
+		return c.json({ error: "Strava not connected for this user" }, 401);
+	}
+
+	const clubsRes = await fetch(
+		"https://www.strava.com/api/v3/athlete/clubs?per_page=100",
+		{ headers: { Authorization: `Bearer ${accessToken}` } },
+	);
+
+	if (!clubsRes.ok) {
+		return c.json({ error: `Strava API error: ${clubsRes.status}` }, 502);
+	}
+
+	const clubs = (await clubsRes.json()) as StravaClubResponse[];
+
+	const allEvents: Array<{
+		id: number;
+		clubId: number;
+		clubName: string;
+		title: string;
+		sportType: string;
+		description: string | null;
+		address: string | null;
+		city: string | null;
+		state: string | null;
+		route: { id: number; name: string } | null;
+		organizer: { id: number; name: string } | null;
+		participantCount: number | null;
+		upcomingOccurrences: string[];
+		isPast: boolean;
+	}> = [];
+
+	const now = new Date();
+
+	for (const club of clubs) {
+		try {
+			const eventsRes = await fetch(
+				`https://www.strava.com/api/v3/clubs/${club.id}/group_events`,
+				{ headers: { Authorization: `Bearer ${accessToken}` } },
+			);
+
+			if (!eventsRes.ok) continue;
+
+			const events = (await eventsRes.json()) as StravaGroupEventResponse[];
+
+			for (const e of events) {
+				const hasUpcoming = e.upcoming_occurrences.some(
+					(occ) => new Date(occ) >= now,
+				);
+				allEvents.push({
+					id: e.id,
+					clubId: club.id,
+					clubName: club.name,
+					title: e.title,
+					sportType: e.sport_type,
+					description: e.description,
+					address: e.address,
+					city: e.city,
+					state: e.state,
+					route: e.route,
+					organizer: e.organizer,
+					participantCount: e.participant_count,
+					upcomingOccurrences: e.upcoming_occurrences,
+					isPast: !hasUpcoming,
+				});
+			}
+		} catch (_err) {
+			// skip clubs whose group_events endpoint fails
+		}
+	}
+
+	// Sort: upcoming first (soonest first), then past (most recent first)
+	allEvents.sort((a, b) => {
+		if (a.isPast !== b.isPast) return a.isPast ? 1 : -1;
+		const aDate = a.upcomingOccurrences[0]
+			? new Date(a.upcomingOccurrences[0]).getTime()
+			: 0;
+		const bDate = b.upcomingOccurrences[0]
+			? new Date(b.upcomingOccurrences[0]).getTime()
+			: 0;
+		return aDate - bDate;
+	});
+
+	return c.json({ events: allEvents });
 });
 
 // ─── Webhook ──────────────────────────────────────────────────────────────────

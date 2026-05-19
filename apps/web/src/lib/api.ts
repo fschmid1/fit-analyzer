@@ -9,6 +9,7 @@ import {
 	type ModelEntry,
 	type OpenwearablesSettings,
 	type ParsedActivity,
+	type StravaClubEvent,
 	type StoredRecord,
 	type TrainerChatHistory,
 	type TrainerMessage,
@@ -425,6 +426,13 @@ export async function unregisterStravaWebhook(): Promise<void> {
 			(data as { error?: string }).error ?? "Failed to remove webhook",
 		);
 	}
+}
+
+export async function fetchStravaEvents(): Promise<StravaClubEvent[]> {
+	const res = await fetch(`${API_BASE}/strava/events`);
+	if (!res.ok) return [];
+	const data = (await res.json()) as { events?: StravaClubEvent[] };
+	return data.events ?? [];
 }
 
 // ─── Trainer ─────────────────────────────────────────────────────────────────

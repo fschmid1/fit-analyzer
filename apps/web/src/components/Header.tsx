@@ -3,6 +3,7 @@ import {
 	ArrowLeft,
 	BarChart3,
 	BotMessageSquare,
+	Calendar,
 	Settings,
 	Upload,
 } from "lucide-react";
@@ -60,12 +61,14 @@ export function Header({
 	const isTrainer = useMatch("/trainer");
 	const isStats = useMatch("/stats");
 	const isSettings = useMatch("/settings");
+	const isEvents = useMatch("/events");
 
 	const showBack = !isHistory;
 	const showUpload = !!isAnalysis;
 	const showTrainer = !isTrainer;
 	const showStats = !isStats;
 	const showSettings = !isSettings;
+	const showEvents = !isEvents;
 
 	return (
 		<header className="sticky top-0 z-50 flex items-center justify-between gap-3 px-3 py-3 sm:px-6 sm:py-4 border-b border-[rgba(139,92,246,0.1)] bg-[#0f0b1a]">
@@ -125,6 +128,17 @@ export function Header({
 					>
 						<BarChart3 className="w-4 h-4" />
 						<span className="hidden sm:inline">Stats</span>
+					</AnimatedButton>
+				)}
+
+				{showEvents && (
+					<AnimatedButton
+						onClick={() => navigate("/events")}
+						className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-colors duration-200 cursor-pointer"
+						title="Events"
+					>
+						<Calendar className="w-4 h-4" />
+						<span className="hidden sm:inline">Events</span>
 					</AnimatedButton>
 				)}
 

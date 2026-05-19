@@ -13,6 +13,7 @@ import { InstallPrompt } from "./components/InstallPrompt";
 import { TrainerView } from "./components/TrainerView";
 import { SettingsPage } from "./pages/SettingsPage";
 import { StatsPage } from "./pages/StatsPage";
+import { EventsPage } from "./pages/EventsPage";
 import {
 	saveCustomIntervals,
 	loadCustomIntervals,
@@ -376,6 +377,7 @@ function App() {
 					}
 				/>
 				<Route path="/stats" element={<StatsPage />} />
+				<Route path="/events" element={<EventsPage />} />
 				<Route
 					path="/settings"
 					element={

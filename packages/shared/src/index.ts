@@ -28,6 +28,8 @@ export type {
 	RecentNight,
 	HeatmapPoint,
 	HeatmapResponse,
+	StravaClub,
+	StravaClubEvent,
 } from "./types.js";
 
 export {
