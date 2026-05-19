@@ -96,8 +96,6 @@ export function StatsPage() {
 			setStartDate(r.startDate);
 			setEndDate(r.endDate);
 			load(r.startDate, r.endDate);
-		} else {
-			setData(null);
 		}
 	}, [preset, load]);
 

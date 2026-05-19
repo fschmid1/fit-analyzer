@@ -29,10 +29,13 @@ app.get("*", serveStatic({ root: "./public", path: "index.html" }));
 
 const port = env.PORT;
 
-console.log(`Server starting on http://localhost:${port}`);
+const hostname = "0.0.0.0";
+
+console.log(`Server starting on http://${hostname}:${port}`);
 
 export default {
 	port,
+	hostname,
 	fetch: app.fetch,
 	// Allow long-running requests (e.g. LLM compaction) — 255 is the Bun maximum
 	idleTimeout: 255,
