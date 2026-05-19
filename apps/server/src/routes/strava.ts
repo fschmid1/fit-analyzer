@@ -775,16 +775,15 @@ strava.get("/events", async (c) => {
 		}
 	}
 
-	// Sort: upcoming first (soonest first), then past (most recent first)
+	// Sort: newest first (descending by primary date)
 	allEvents.sort((a, b) => {
-		if (a.isPast !== b.isPast) return a.isPast ? 1 : -1;
 		const aDate = a.upcomingOccurrences[0]
 			? new Date(a.upcomingOccurrences[0]).getTime()
 			: 0;
 		const bDate = b.upcomingOccurrences[0]
 			? new Date(b.upcomingOccurrences[0]).getTime()
 			: 0;
-		return aDate - bDate;
+		return bDate - aDate;
 	});
 
 	return c.json({ events: allEvents });
