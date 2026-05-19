@@ -3,15 +3,18 @@ import {
 	AlertCircle,
 	Bike,
 	Calendar,
+	ChevronDown,
 	Clock,
 	Dumbbell,
 	Footprints,
 	Loader2,
+	Map as MapIcon,
 	MapPin,
 	Users,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { fetchStravaEvents } from "../lib/api";
+import { EventRouteMap } from "../components/EventRouteMap";
+import { fetchRouteGpx, fetchStravaEvents } from "../lib/api";
 
 function formatEventDate(dateStr: string): string {
 	const d = new Date(dateStr);
@@ -57,6 +60,32 @@ interface EventCardProps {
 function EventCard({ event }: EventCardProps) {
 	const dates = event.upcomingOccurrences;
 	const primaryDate = dates.length > 0 ? dates[0] : null;
+	const [routeExpanded, setRouteExpanded] = useState(false);
+	const [routeCoords, setRouteCoords] = useState<[number, number][] | null>(
+		null,
+	);
+	const [routeLoading, setRouteLoading] = useState(false);
+	const [routeError, setRouteError] = useState(false);
+
+	const toggleRoute = useCallback(async () => {
+		if (routeExpanded) {
+			setRouteExpanded(false);
+			return;
+		}
+		setRouteExpanded(true);
+		if (routeCoords || routeError) return;
+		if (!event.route) return;
+		setRouteLoading(true);
+		setRouteError(false);
+		try {
+			const coords = await fetchRouteGpx(event.route.id);
+			setRouteCoords(coords);
+		} catch {
+			setRouteError(true);
+		} finally {
+			setRouteLoading(false);
+		}
+	}, [routeExpanded, routeCoords, routeError, event.route]);
 
 	return (
 		<div className="bg-[#1a1533]/70 border border-[rgba(139,92,246,0.1)] rounded-xl p-4 sm:p-5 hover:border-[rgba(139,92,246,0.25)] transition-colors duration-200">
@@ -124,12 +153,6 @@ function EventCard({ event }: EventCardProps) {
 							</span>
 						</div>
 					)}
-					{event.route && (
-						<div className="flex items-center gap-1">
-							<MapPin className="w-3 h-3 text-[#8b5cf6]/60 rotate-45" />
-							<span>{event.route.name}</span>
-						</div>
-					)}
 					{event.organizer && (
 						<div className="text-[#8b5cf6]/60">by {event.organizer.name}</div>
 					)}
@@ -139,6 +162,45 @@ function EventCard({ event }: EventCardProps) {
 					<div className="text-xs text-[#8b5cf6]/50">
 						{event.city}
 						{event.state ? `, ${event.state}` : ""}
+					</div>
+				)}
+
+				{event.route && (
+					<div className="mt-3 rounded-lg border border-[rgba(139,92,246,0.1)] overflow-hidden">
+						<button
+							type="button"
+							onClick={toggleRoute}
+							className="w-full flex items-center justify-between px-3 py-2.5 bg-[#1a1533] hover:bg-[#241e3d] transition-colors"
+						>
+							<div className="flex items-center gap-2">
+								<MapIcon size={14} stroke="#8b5cf6" />
+								<span className="text-xs font-medium text-[#f1f5f9]">
+									{event.route.name}
+								</span>
+							</div>
+							<ChevronDown
+								size={16}
+								className={`text-[#94a3b8] transition-transform duration-200 ${routeExpanded ? "rotate-180" : ""}`}
+							/>
+						</button>
+						{routeExpanded && routeLoading && (
+							<div className="flex items-center justify-center py-6">
+								<Loader2 className="w-5 h-5 animate-spin text-[#8b5cf6]" />
+							</div>
+						)}
+						{routeExpanded && routeError && (
+							<div className="text-xs text-[#94a3b8] text-center py-4">
+								Failed to load route
+							</div>
+						)}
+						{routeExpanded && !routeLoading && !routeError && routeCoords && (
+							<EventRouteMap coordinates={routeCoords} />
+						)}
+						{routeExpanded && !routeLoading && !routeError && !routeCoords && (
+							<div className="text-xs text-[#94a3b8] text-center py-4">
+								No route map available
+							</div>
+						)}
 					</div>
 				)}
 			</div>

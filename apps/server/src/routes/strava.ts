@@ -690,7 +690,13 @@ interface StravaGroupEventResponse {
 	address: string | null;
 	city: string | null;
 	state: string | null;
-	route: { id: number; name: string } | null;
+	route: {
+		id: number;
+		id_str: string;
+		name: string;
+		map?: { summary_polyline?: string } | null;
+		map_urls?: Record<string, string> | null;
+	} | null;
 	organizer: { id: number; name: string } | null;
 	participant_count: number | null;
 	upcoming_occurrences: string[];
@@ -729,7 +735,7 @@ strava.get("/events", async (c) => {
 		address: string | null;
 		city: string | null;
 		state: string | null;
-		route: { id: number; name: string } | null;
+		route: { id: string; name: string } | null;
 		organizer: { id: number; name: string } | null;
 		participantCount: number | null;
 		upcomingOccurrences: string[];
@@ -763,7 +769,12 @@ strava.get("/events", async (c) => {
 					address: e.address,
 					city: e.city,
 					state: e.state,
-					route: e.route,
+			route: e.route
+				? {
+					id: e.route.id_str ?? String(e.route.id),
+					name: e.route.name,
+				}
+				: null,
 					organizer: e.organizer,
 					participantCount: e.participant_count,
 					upcomingOccurrences: e.upcoming_occurrences,
@@ -787,6 +798,43 @@ strava.get("/events", async (c) => {
 	});
 
 	return c.json({ events: allEvents });
+});
+
+/**
+ * GET /api/strava/routes/:id/gpx — exports a route GPX and returns parsed coordinates.
+ */
+strava.get("/routes/:id/gpx", async (c) => {
+	const userId = getUserId(c);
+	const routeId = c.req.param("id");
+
+	const accessToken = await getValidToken(userId).catch(() => null);
+	if (!accessToken) {
+		return c.json({ error: "Strava not connected for this user" }, 401);
+	}
+
+	const gpxRes = await fetch(
+		`https://www.strava.com/api/v3/routes/${routeId}/export_gpx`,
+		{ headers: { Authorization: `Bearer ${accessToken}` } },
+	);
+
+	if (!gpxRes.ok) {
+		console.error(
+			`[strava] Route ${routeId} GPX fetch failed: ${gpxRes.status}`,
+		);
+		return c.json({ coordinates: [] });
+	}
+
+	const gpx = await gpxRes.text();
+	const coords: [number, number][] = [];
+	const trkptRegex = /<trkpt\s+lat="([^"]+)"\s+lon="([^"]+)"/g;
+	let match: RegExpExecArray | null;
+	for (;;) {
+		match = trkptRegex.exec(gpx);
+		if (match === null) break;
+		coords.push([Number.parseFloat(match[1]), Number.parseFloat(match[2])]);
+	}
+
+	return c.json({ coordinates: coords });
 });
 
 // ─── Webhook ──────────────────────────────────────────────────────────────────

@@ -274,7 +274,7 @@ export interface StravaClubEvent {
 	address: string | null;
 	city: string | null;
 	state: string | null;
-	route: { id: number; name: string } | null;
+	route: { id: string; name: string } | null;
 	organizer: { id: number; name: string } | null;
 	participantCount: number | null;
 	upcomingOccurrences: string[];
