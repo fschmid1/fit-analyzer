@@ -9,6 +9,7 @@ import {
 	type ModelEntry,
 	type OpenwearablesSettings,
 	type ParsedActivity,
+	type StravaClubEvent,
 	type StoredRecord,
 	type TrainerChatHistory,
 	type TrainerMessage,
@@ -425,6 +426,33 @@ export async function unregisterStravaWebhook(): Promise<void> {
 			(data as { error?: string }).error ?? "Failed to remove webhook",
 		);
 	}
+}
+
+export async function fetchStravaEvents(): Promise<StravaClubEvent[]> {
+	const res = await fetch(`${API_BASE}/strava/events`);
+	if (!res.ok) {
+		const data = await res.json().catch(() => ({ error: "Failed" }));
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to fetch Strava events",
+		);
+	}
+	const data = (await res.json()) as { events?: StravaClubEvent[] };
+	return data.events ?? [];
+}
+
+export async function fetchRouteGpx(
+	routeId: string,
+): Promise<{ coordinates: [number, number][]; gpx: string | null }> {
+	const res = await fetch(`${API_BASE}/strava/routes/${routeId}/gpx`);
+	if (!res.ok) return { coordinates: [], gpx: null };
+	const data = (await res.json()) as {
+		coordinates?: [number, number][];
+		gpx?: string | null;
+	};
+	return {
+		coordinates: data.coordinates ?? [],
+		gpx: data.gpx ?? null,
+	};
 }
 
 // ─── Trainer ─────────────────────────────────────────────────────────────────

@@ -249,3 +249,34 @@ export interface TrainerChatHistory {
 export interface SaveTrainerHistoryBody {
 	messages: TrainerMessage[];
 }
+
+// --- Strava clubs & events types ---
+
+export interface StravaClub {
+	id: number;
+	name: string;
+	description: string | null;
+	sportType: string;
+	city: string | null;
+	state: string | null;
+	country: string | null;
+	memberCount: number;
+	coverPhoto: string | null;
+}
+
+export interface StravaClubEvent {
+	id: number;
+	clubId: number;
+	clubName: string;
+	title: string;
+	sportType: string;
+	description: string | null;
+	address: string | null;
+	city: string | null;
+	state: string | null;
+	route: { id: string; name: string } | null;
+	organizer: { id: number; name: string } | null;
+	participantCount: number | null;
+	upcomingOccurrences: string[];
+	isPast: boolean;
+}

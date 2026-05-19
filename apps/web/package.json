@@ -12,6 +12,7 @@
 	"dependencies": {
 		"@fit-analyzer/shared": "workspace:*",
 		"@garmin/fitsdk": "^21.195.0",
+		"@mapbox/polyline": "^1.2.1",
 		"@react-spring/web": "^10.0.3",
 		"@tailwindcss/vite": "^4.2.2",
 		"@tanstack/ai-client": "^0.7.6",
