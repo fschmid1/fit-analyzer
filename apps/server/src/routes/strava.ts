@@ -2,6 +2,7 @@ import type {
 	ActivitySummary,
 	LapMarker,
 	StoredRecord,
+	StravaClubEvent,
 } from "@fit-analyzer/shared";
 import { Hono } from "hono";
 import { db } from "../db.js";
@@ -707,11 +708,25 @@ interface StravaGroupEventResponse {
  * returning upcoming and past events across all clubs.
  */
 strava.get("/events", async (c) => {
-	const userId = getUserId(c);
+	let userId: string;
+	try {
+		userId = getUserId(c);
+	} catch {
+		return c.json({ error: "Missing x-authentik-username header" }, 401);
+	}
 
-	const accessToken = await getValidToken(userId).catch(() => null);
-	if (!accessToken) {
-		return c.json({ error: "Strava not connected for this user" }, 401);
+	let accessToken: string;
+	try {
+		accessToken = await getValidToken(userId);
+	} catch (err) {
+		if (
+			err instanceof Error &&
+			err.message === "Strava not connected for this user"
+		) {
+			return c.json({ error: "Strava not connected for this user" }, 401);
+		}
+		console.error("[strava] Token refresh/upstream error:", err);
+		return c.json({ error: "Strava token refresh/upstream error" }, 502);
 	}
 
 	const clubsRes = await fetch(
@@ -725,22 +740,7 @@ strava.get("/events", async (c) => {
 
 	const clubs = (await clubsRes.json()) as StravaClubResponse[];
 
-	const allEvents: Array<{
-		id: number;
-		clubId: number;
-		clubName: string;
-		title: string;
-		sportType: string;
-		description: string | null;
-		address: string | null;
-		city: string | null;
-		state: string | null;
-		route: { id: string; name: string } | null;
-		organizer: { id: number; name: string } | null;
-		participantCount: number | null;
-		upcomingOccurrences: string[];
-		isPast: boolean;
-	}> = [];
+	const allEvents: StravaClubEvent[] = [];
 
 	const now = new Date();
 
@@ -804,12 +804,26 @@ strava.get("/events", async (c) => {
  * GET /api/strava/routes/:id/gpx — returns parsed route coordinates for map display.
  */
 strava.get("/routes/:id/gpx", async (c) => {
-	const userId = getUserId(c);
+	let userId: string;
+	try {
+		userId = getUserId(c);
+	} catch {
+		return c.json({ error: "Missing x-authentik-username header" }, 401);
+	}
 	const routeId = c.req.param("id");
 
-	const accessToken = await getValidToken(userId).catch(() => null);
-	if (!accessToken) {
-		return c.json({ error: "Strava not connected for this user" }, 401);
+	let accessToken: string;
+	try {
+		accessToken = await getValidToken(userId);
+	} catch (err) {
+		if (
+			err instanceof Error &&
+			err.message === "Strava not connected for this user"
+		) {
+			return c.json({ error: "Strava not connected for this user" }, 401);
+		}
+		console.error("[strava] Token refresh/upstream error:", err);
+		return c.json({ error: "Strava token refresh/upstream error" }, 502);
 	}
 
 	const gpxRes = await fetch(
@@ -821,17 +835,28 @@ strava.get("/routes/:id/gpx", async (c) => {
 		console.error(
 			`[strava] Route ${routeId} GPX fetch failed: ${gpxRes.status}`,
 		);
-		return c.json({ coordinates: [] });
+		return c.json(
+			{ error: `Failed to fetch GPX for route ${routeId}: ${gpxRes.status}` },
+			502,
+		);
 	}
 
 	const gpx = await gpxRes.text();
 	const coords: [number, number][] = [];
-	const trkptRegex = /<trkpt\s+lat="([^"]+)"\s+lon="([^"]+)"/g;
+	const trkptRegex = /<trkpt\b[^>]*>/g;
 	let match: RegExpExecArray | null;
 	for (;;) {
 		match = trkptRegex.exec(gpx);
 		if (match === null) break;
-		coords.push([Number.parseFloat(match[1]), Number.parseFloat(match[2])]);
+		const tag = match[0];
+		const latMatch = /lat="([^"]+)"/.exec(tag);
+		const lonMatch = /lon="([^"]+)"/.exec(tag);
+		if (latMatch && lonMatch) {
+			coords.push([
+				Number.parseFloat(latMatch[1]),
+				Number.parseFloat(lonMatch[1]),
+			]);
+		}
 	}
 
 	return c.json({ coordinates: coords, gpx });
@@ -841,12 +866,26 @@ strava.get("/routes/:id/gpx", async (c) => {
  * GET /api/strava/routes/:id/gpx/download — returns raw GPX file for download.
  */
 strava.get("/routes/:id/gpx/download", async (c) => {
-	const userId = getUserId(c);
+	let userId: string;
+	try {
+		userId = getUserId(c);
+	} catch {
+		return c.json({ error: "Missing x-authentik-username header" }, 401);
+	}
 	const routeId = c.req.param("id");
 
-	const accessToken = await getValidToken(userId).catch(() => null);
-	if (!accessToken) {
-		return c.json({ error: "Strava not connected for this user" }, 401);
+	let accessToken: string;
+	try {
+		accessToken = await getValidToken(userId);
+	} catch (err) {
+		if (
+			err instanceof Error &&
+			err.message === "Strava not connected for this user"
+		) {
+			return c.json({ error: "Strava not connected for this user" }, 401);
+		}
+		console.error("[strava] Token refresh/upstream error:", err);
+		return c.json({ error: "Strava token refresh/upstream error" }, 502);
 	}
 
 	const gpxRes = await fetch(

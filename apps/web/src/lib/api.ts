@@ -430,7 +430,12 @@ export async function unregisterStravaWebhook(): Promise<void> {
 
 export async function fetchStravaEvents(): Promise<StravaClubEvent[]> {
 	const res = await fetch(`${API_BASE}/strava/events`);
-	if (!res.ok) return [];
+	if (!res.ok) {
+		const data = await res.json().catch(() => ({ error: "Failed" }));
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to fetch Strava events",
+		);
+	}
 	const data = (await res.json()) as { events?: StravaClubEvent[] };
 	return data.events ?? [];
 }
