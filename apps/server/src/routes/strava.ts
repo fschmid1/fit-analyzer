@@ -769,12 +769,12 @@ strava.get("/events", async (c) => {
 					address: e.address,
 					city: e.city,
 					state: e.state,
-			route: e.route
-				? {
-					id: e.route.id_str ?? String(e.route.id),
-					name: e.route.name,
-				}
-				: null,
+					route: e.route
+						? {
+								id: e.route.id_str ?? String(e.route.id),
+								name: e.route.name,
+							}
+						: null,
 					organizer: e.organizer,
 					participantCount: e.participant_count,
 					upcomingOccurrences: e.upcoming_occurrences,
@@ -801,7 +801,7 @@ strava.get("/events", async (c) => {
 });
 
 /**
- * GET /api/strava/routes/:id/gpx — exports a route GPX and returns parsed coordinates.
+ * GET /api/strava/routes/:id/gpx — returns parsed route coordinates for map display.
  */
 strava.get("/routes/:id/gpx", async (c) => {
 	const userId = getUserId(c);
@@ -834,7 +834,38 @@ strava.get("/routes/:id/gpx", async (c) => {
 		coords.push([Number.parseFloat(match[1]), Number.parseFloat(match[2])]);
 	}
 
-	return c.json({ coordinates: coords });
+	return c.json({ coordinates: coords, gpx });
+});
+
+/**
+ * GET /api/strava/routes/:id/gpx/download — returns raw GPX file for download.
+ */
+strava.get("/routes/:id/gpx/download", async (c) => {
+	const userId = getUserId(c);
+	const routeId = c.req.param("id");
+
+	const accessToken = await getValidToken(userId).catch(() => null);
+	if (!accessToken) {
+		return c.json({ error: "Strava not connected for this user" }, 401);
+	}
+
+	const gpxRes = await fetch(
+		`https://www.strava.com/api/v3/routes/${routeId}/export_gpx`,
+		{ headers: { Authorization: `Bearer ${accessToken}` } },
+	);
+
+	if (!gpxRes.ok) {
+		return c.json({ error: `Failed to fetch GPX: ${gpxRes.status}` }, 502);
+	}
+
+	const gpx = await gpxRes.text();
+
+	return new Response(gpx, {
+		headers: {
+			"Content-Type": "application/gpx+xml",
+			"Content-Disposition": `attachment; filename="route-${routeId}.gpx"`,
+		},
+	});
 });
 
 // ─── Webhook ──────────────────────────────────────────────────────────────────

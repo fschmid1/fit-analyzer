@@ -5,6 +5,7 @@ import {
 	Calendar,
 	ChevronDown,
 	Clock,
+	Download,
 	Dumbbell,
 	Footprints,
 	Loader2,
@@ -64,6 +65,7 @@ function EventCard({ event }: EventCardProps) {
 	const [routeCoords, setRouteCoords] = useState<[number, number][] | null>(
 		null,
 	);
+	const [routeGpx, setRouteGpx] = useState<string | null>(null);
 	const [routeLoading, setRouteLoading] = useState(false);
 	const [routeError, setRouteError] = useState(false);
 
@@ -78,14 +80,28 @@ function EventCard({ event }: EventCardProps) {
 		setRouteLoading(true);
 		setRouteError(false);
 		try {
-			const coords = await fetchRouteGpx(event.route.id);
-			setRouteCoords(coords);
+			const result = await fetchRouteGpx(event.route.id);
+			setRouteCoords(result.coordinates);
+			setRouteGpx(result.gpx);
 		} catch {
 			setRouteError(true);
 		} finally {
 			setRouteLoading(false);
 		}
 	}, [routeExpanded, routeCoords, routeError, event.route]);
+
+	const downloadGpx = useCallback(() => {
+		if (!routeGpx || !event.route) return;
+		const blob = new Blob([routeGpx], { type: "application/gpx+xml" });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement("a");
+		a.href = url;
+		a.download = `${event.route.name.replace(/\s+/g, "_")}.gpx`;
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+	}, [routeGpx, event.route]);
 
 	return (
 		<div className="bg-[#1a1533]/70 border border-[rgba(139,92,246,0.1)] rounded-xl p-4 sm:p-5 hover:border-[rgba(139,92,246,0.25)] transition-colors duration-200">
@@ -172,16 +188,32 @@ function EventCard({ event }: EventCardProps) {
 							onClick={toggleRoute}
 							className="w-full flex items-center justify-between px-3 py-2.5 bg-[#1a1533] hover:bg-[#241e3d] transition-colors"
 						>
-							<div className="flex items-center gap-2">
+							<div className="flex items-center gap-2 min-w-0">
 								<MapIcon size={14} stroke="#8b5cf6" />
-								<span className="text-xs font-medium text-[#f1f5f9]">
+								<span className="text-xs font-medium text-[#f1f5f9] truncate">
 									{event.route.name}
 								</span>
 							</div>
-							<ChevronDown
-								size={16}
-								className={`text-[#94a3b8] transition-transform duration-200 ${routeExpanded ? "rotate-180" : ""}`}
-							/>
+							<div className="flex items-center gap-2 shrink-0">
+								{routeGpx && (
+									<button
+										type="button"
+										onClick={(e) => {
+											e.stopPropagation();
+											downloadGpx();
+										}}
+										className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-[#c4b5fd] bg-[#8b5cf6]/15 hover:bg-[#8b5cf6]/25 border border-[#8b5cf6]/10 transition-colors"
+										title="Download GPX"
+									>
+										<Download size={12} />
+										GPX
+									</button>
+								)}
+								<ChevronDown
+									size={16}
+									className={`text-[#94a3b8] transition-transform duration-200 ${routeExpanded ? "rotate-180" : ""}`}
+								/>
+							</div>
 						</button>
 						{routeExpanded && routeLoading && (
 							<div className="flex items-center justify-center py-6">

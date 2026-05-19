@@ -437,13 +437,17 @@ export async function fetchStravaEvents(): Promise<StravaClubEvent[]> {
 
 export async function fetchRouteGpx(
 	routeId: string,
-): Promise<[number, number][]> {
+): Promise<{ coordinates: [number, number][]; gpx: string | null }> {
 	const res = await fetch(`${API_BASE}/strava/routes/${routeId}/gpx`);
-	if (!res.ok) return [];
+	if (!res.ok) return { coordinates: [], gpx: null };
 	const data = (await res.json()) as {
 		coordinates?: [number, number][];
+		gpx?: string | null;
 	};
-	return data.coordinates ?? [];
+	return {
+		coordinates: data.coordinates ?? [],
+		gpx: data.gpx ?? null,
+	};
 }
 
 // ─── Trainer ─────────────────────────────────────────────────────────────────
