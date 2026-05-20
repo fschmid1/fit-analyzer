@@ -86,6 +86,7 @@ function getDateRange(): { startDate: string; endDate: string } {
 	const end = new Date();
 	const start = new Date();
 	start.setDate(start.getDate() - 7);
+	end.setDate(end.getDate() + 1); // include today
 
 	const fmt = (d: Date) => d.toISOString().split("T")[0];
 	return { startDate: fmt(start), endDate: fmt(end) };
@@ -95,10 +96,13 @@ async function fetchSleepSummaries(
 	owUserId: string,
 ): Promise<SleepRecord[] | null> {
 	const { startDate, endDate } = getDateRange();
+	console.log(
+		`[ow] fetching sleep summaries for user ${owUserId} from ${startDate} to ${endDate}`,
+	);
 	const params = new URLSearchParams({
 		start_date: startDate,
 		end_date: endDate,
-		limit: "7",
+		limit: "8",
 	});
 	const apiKey = env.OW_API_KEY;
 	if (!apiKey) throw new Error("OW_API_KEY not configured");
@@ -179,7 +183,12 @@ function computeHealthContext(
 					acc.remMinutes += n.stages?.remMinutes ?? 0;
 					return acc;
 				},
-				{ awakeMinutes: 0, lightMinutes: 0, deepMinutes: 0, remMinutes: 0 },
+				{
+					awakeMinutes: 0,
+					lightMinutes: 0,
+					deepMinutes: 0,
+					remMinutes: 0,
+				},
 			);
 			avgStages7d = {
 				awakeMinutes: Math.round(total.awakeMinutes / nightsWithStages.length),
@@ -326,9 +335,16 @@ async function resolveHealthContext(
 	if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
 		return cached.data;
 	}
+	console.log(`[ow] cache miss for user ${fitUserId} (OW ID: ${owUserId})`);
 
 	try {
 		const sleepSummaries = await fetchSleepSummaries(owUserId);
+		console.log(
+			`[ow] fetched ${sleepSummaries?.length} sleep summaries for user ${fitUserId} (OW ID: ${owUserId})`,
+		);
+		console.log(
+			`[ow] sleep summaries: ${JSON.stringify(sleepSummaries, null, 2)}`,
+		);
 		const ctx = computeHealthContext(sleepSummaries);
 		pruneCache();
 		cache.set(owUserId, { data: ctx, fetchedAt: Date.now() });
