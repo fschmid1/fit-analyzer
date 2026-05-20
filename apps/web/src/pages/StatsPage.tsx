@@ -119,7 +119,7 @@ export function StatsPage() {
 
 	return (
 		<div className="flex-1 overflow-y-auto p-6 animate-[fadeIn_0.4s_ease-out]">
-			<div className="max-w-6xl">
+			<div className="max-w-7xl xl:max-w-none">
 				<h2 className="text-2xl font-bold text-[#f1f5f9] mb-1">Stats</h2>
 				<p className="text-sm text-[#94a3b8] mb-6">
 					Health data and activity statistics
@@ -161,7 +161,7 @@ export function StatsPage() {
 								<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8] mb-4">
 									Health
 								</h3>
-								<div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3 mb-10">
+								<div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3 mb-10">
 									{data.health.rhr?.current != null && (
 										<MetricCard
 											icon={Heart}
