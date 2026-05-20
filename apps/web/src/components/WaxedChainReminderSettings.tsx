@@ -202,12 +202,12 @@ export function WaxedChainReminderSettings() {
 								aria-checked={enabled}
 								aria-labelledby="waxed-chain-reminders-label"
 								onClick={() => setEnabled((value) => !value)}
-								className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200 cursor-pointer ${
+								className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 cursor-pointer shrink-0 ${
 									enabled ? "bg-emerald-500/70" : "bg-[#241b3d]"
 								}`}
 							>
 								<span
-									className={`inline-block h-5 w-5 rounded-full bg-white transition-transform duration-200 ${
+									className={`inline-block h-4 w-4 rounded-full bg-white transition-transform duration-200 ${
 										enabled ? "translate-x-6" : "translate-x-1"
 									}`}
 								/>
@@ -253,15 +253,15 @@ export function WaxedChainReminderSettings() {
 							</div>
 						)}
 
-						<div className="flex items-center justify-between gap-3 pt-1 border-t border-[rgba(139,92,246,0.1)]">
+						<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-[rgba(139,92,246,0.1)]">
 							<p className="text-xs text-[#94a3b8]">
 								The `ntfy` host and token are read from the server environment.
 							</p>
-							<div className="flex items-center gap-2">
+							<div className="flex flex-wrap items-center gap-2">
 								<AnimatedButton
 									onClick={handleSendTest}
 									disabled={isSendTestDisabled}
-									className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 hover:border-amber-500/40 rounded-xl transition-[color,background-color,border-color] duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+									className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 hover:border-amber-500/40 rounded-xl transition-[color,background-color,border-color] duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									{sendingTest ? (
 										<>
@@ -275,7 +275,7 @@ export function WaxedChainReminderSettings() {
 								<AnimatedButton
 									onClick={handleReset}
 									disabled={isResetDisabled}
-									className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-[#94a3b8] bg-transparent hover:bg-red-500/10 border border-[rgba(139,92,246,0.15)] hover:border-red-500/30 rounded-xl transition-[color,background-color,border-color] duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+									className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-[#94a3b8] bg-transparent hover:bg-red-500/10 border border-[rgba(139,92,246,0.15)] hover:border-red-500/30 rounded-xl transition-[color,background-color,border-color] duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									{resetting ? (
 										<>
@@ -289,7 +289,7 @@ export function WaxedChainReminderSettings() {
 								<AnimatedButton
 									onClick={handleSave}
 									disabled={isSaveDisabled}
-									className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-[color,background-color,border-color] duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+									className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-[color,background-color,border-color] duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									{saving ? (
 										<>

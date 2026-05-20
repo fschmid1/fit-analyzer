@@ -11,15 +11,15 @@ interface SettingsPageProps {
 
 export function SettingsPage({ onActivitiesChanged }: SettingsPageProps) {
 	return (
-		<div className="flex-1 overflow-y-auto p-6 animate-[fadeIn_0.4s_ease-out]">
-			<div className="max-w-full mx-12">
+		<div className="flex-1 overflow-y-auto p-3 animate-[fadeIn_0.4s_ease-out]">
+			<div className="max-w-full mx-2 sm:mx-4 lg:mx-6">
 				<h2 className="text-2xl font-bold text-[#f1f5f9] mb-1">Settings</h2>
-				<p className="text-sm text-[#94a3b8] mb-6">
+				<p className="text-sm text-[#94a3b8] mb-3">
 					Manage integrations and preferences
 				</p>
 
-				<div className="grid gap-8 xl:grid-cols-3 xl:items-start">
-					<section className="flex flex-col gap-4">
+				<div className="grid gap-3 md:gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 xl:items-start">
+					<section className="flex flex-col gap-3">
 						<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8]">
 							Integrations
 						</h3>
@@ -34,7 +34,7 @@ export function SettingsPage({ onActivitiesChanged }: SettingsPageProps) {
 						<WaxedChainReminderSettings />
 					</section>
 
-					<section className="xl:col-span-1 flex flex-col gap-4">
+					<section className="flex flex-col gap-4">
 						<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8]">
 							Trainer
 						</h3>
