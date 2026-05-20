@@ -14,6 +14,7 @@ import { TrainerView } from "./components/TrainerView";
 import { SettingsPage } from "./pages/SettingsPage";
 import { StatsPage } from "./pages/StatsPage";
 import { EventsPage } from "./pages/EventsPage";
+import { computeAverages } from "./lib/stats";
 import {
 	saveCustomIntervals,
 	loadCustomIntervals,
@@ -228,12 +229,7 @@ function App() {
 			);
 			const stats =
 				slice.length > 0
-					? {
-							avgPower: null as number | null,
-							avgHeartRate: null as number | null,
-							avgCadence: null as number | null,
-							duration: 0,
-						}
+					? computeAverages(slice)
 					: {
 							avgPower: null,
 							avgHeartRate: null,
