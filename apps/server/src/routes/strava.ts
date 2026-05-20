@@ -703,45 +703,46 @@ interface StravaGroupEventResponse {
 	upcoming_occurrences: string[];
 }
 
-/**
- * GET /api/strava/events — fetches all clubs and their group events,
- * returning upcoming and past events across all clubs.
- */
-strava.get("/events", async (c) => {
-	let userId: string;
-	try {
-		userId = getUserId(c);
-	} catch {
-		return c.json({ error: "Missing x-authentik-username header" }, 401);
-	}
+const DEFAULT_EVENTS_PAGE_SIZE = 20;
+const MAX_EVENTS_PAGE_SIZE = 50;
+const EVENTS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-	let accessToken: string;
-	try {
-		accessToken = await getValidToken(userId);
-	} catch (err) {
-		if (
-			err instanceof Error &&
-			err.message === "Strava not connected for this user"
-		) {
-			return c.json({ error: "Strava not connected for this user" }, 401);
-		}
-		console.error("[strava] Token refresh/upstream error:", err);
-		return c.json({ error: "Strava token refresh/upstream error" }, 502);
-	}
+interface EventsCacheEntry {
+	events: StravaClubEvent[];
+	timestamp: number;
+}
 
+const eventsCache = new Map<string, EventsCacheEntry>();
+
+function getCachedEvents(userId: string): { events: StravaClubEvent[] } | null {
+	const entry = eventsCache.get(userId);
+	if (!entry) return null;
+	if (Date.now() - entry.timestamp > EVENTS_CACHE_TTL_MS) {
+		eventsCache.delete(userId);
+		return null;
+	}
+	return { events: entry.events };
+}
+
+function setCachedEvents(userId: string, events: StravaClubEvent[]): void {
+	eventsCache.set(userId, { events, timestamp: Date.now() });
+}
+
+async function fetchAllEventsFromStrava(
+	accessToken: string,
+): Promise<StravaClubEvent[]> {
 	const clubsRes = await fetch(
 		"https://www.strava.com/api/v3/athlete/clubs?per_page=100",
 		{ headers: { Authorization: `Bearer ${accessToken}` } },
 	);
 
 	if (!clubsRes.ok) {
-		return c.json({ error: `Strava API error: ${clubsRes.status}` }, 502);
+		throw new Error(`Strava API error: ${clubsRes.status}`);
 	}
 
 	const clubs = (await clubsRes.json()) as StravaClubResponse[];
 
 	const allEvents: StravaClubEvent[] = [];
-
 	const now = new Date();
 
 	for (const club of clubs) {
@@ -786,7 +787,6 @@ strava.get("/events", async (c) => {
 		}
 	}
 
-	// Sort: newest first (descending by primary date)
 	allEvents.sort((a, b) => {
 		const aDate = a.upcomingOccurrences[0]
 			? new Date(a.upcomingOccurrences[0]).getTime()
@@ -797,7 +797,79 @@ strava.get("/events", async (c) => {
 		return bDate - aDate;
 	});
 
-	return c.json({ events: allEvents });
+	return allEvents;
+}
+
+function paginateEvents(
+	allEvents: StravaClubEvent[],
+	page: number,
+	perPage: number,
+) {
+	const total = allEvents.length;
+	const start = (page - 1) * perPage;
+	const pageItems = allEvents.slice(start, start + perPage);
+	return {
+		events: pageItems,
+		hasMore: start + perPage < total,
+		total,
+	};
+}
+
+/**
+ * GET /api/strava/events — fetches all clubs and their group events,
+ * returning upcoming and past events across all clubs.
+ * Supports pagination via ?page=&perPage= query params.
+ * Responses are cached per-user for 5 minutes.
+ */
+strava.get("/events", async (c) => {
+	let userId: string;
+	try {
+		userId = getUserId(c);
+	} catch {
+		return c.json({ error: "Missing x-authentik-username header" }, 401);
+	}
+
+	const page = Math.max(1, Number.parseInt(c.req.query("page") ?? "1", 10) || 1);
+	const rawPerPage = Number.parseInt(c.req.query("perPage") ?? "", 10);
+	const perPage = Math.min(
+		MAX_EVENTS_PAGE_SIZE,
+		Math.max(
+			1,
+			Number.isFinite(rawPerPage) ? rawPerPage : DEFAULT_EVENTS_PAGE_SIZE,
+		),
+	);
+
+	const cached = getCachedEvents(userId);
+	if (cached) {
+		return c.json(paginateEvents(cached.events, page, perPage));
+	}
+
+	let accessToken: string;
+	try {
+		accessToken = await getValidToken(userId);
+	} catch (err) {
+		if (
+			err instanceof Error &&
+			err.message === "Strava not connected for this user"
+		) {
+			return c.json({ error: "Strava not connected for this user" }, 401);
+		}
+		console.error("[strava] Token refresh/upstream error:", err);
+		return c.json({ error: "Strava token refresh/upstream error" }, 502);
+	}
+
+	let allEvents: StravaClubEvent[];
+	try {
+		allEvents = await fetchAllEventsFromStrava(accessToken);
+	} catch (err) {
+		const message =
+			err instanceof Error ? err.message : "Failed to fetch Strava events";
+		return c.json({ error: message }, 502);
+	}
+
+	setCachedEvents(userId, allEvents);
+
+	return c.json(paginateEvents(allEvents, page, perPage));
 });
 
 /**

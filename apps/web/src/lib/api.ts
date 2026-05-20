@@ -428,16 +428,27 @@ export async function unregisterStravaWebhook(): Promise<void> {
 	}
 }
 
-export async function fetchStravaEvents(): Promise<StravaClubEvent[]> {
-	const res = await fetch(`${API_BASE}/strava/events`);
+export interface StravaEventsPage {
+	events: StravaClubEvent[];
+	hasMore: boolean;
+	total: number;
+}
+
+export async function fetchStravaEvents(
+	page = 1,
+	perPage = 20,
+): Promise<StravaEventsPage> {
+	const res = await fetch(
+		`${API_BASE}/strava/events?page=${page}&perPage=${perPage}`,
+	);
 	if (!res.ok) {
 		const data = await res.json().catch(() => ({ error: "Failed" }));
 		throw new Error(
 			(data as { error?: string }).error ?? "Failed to fetch Strava events",
 		);
 	}
-	const data = (await res.json()) as { events?: StravaClubEvent[] };
-	return data.events ?? [];
+	const data = (await res.json()) as StravaEventsPage;
+	return data;
 }
 
 export async function fetchRouteGpx(routeId: string): Promise<{

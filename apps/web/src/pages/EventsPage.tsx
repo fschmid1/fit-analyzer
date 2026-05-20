@@ -13,7 +13,7 @@ import {
 	MapPin,
 	Users,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { EventRouteMap } from "../components/EventRouteMap";
 import { fetchRouteGpx, fetchStravaEvents } from "../lib/api";
 
@@ -240,27 +240,60 @@ function EventCard({ event }: EventCardProps) {
 	);
 }
 
+const PER_PAGE = 20;
+
 export function EventsPage() {
 	const [events, setEvents] = useState<StravaClubEvent[]>([]);
 	const [loading, setLoading] = useState(true);
+	const [loadingMore, setLoadingMore] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [hasMore, setHasMore] = useState(false);
+	const pageRef = useRef(1);
+	const sentinelRef = useRef<HTMLDivElement>(null);
 
-	const load = useCallback(async () => {
-		setLoading(true);
+	const load = useCallback(async (page: number) => {
+		const isFirst = page === 1;
+		if (isFirst) {
+			setLoading(true);
+		} else {
+			setLoadingMore(true);
+		}
 		setError(null);
 		try {
-			const result = await fetchStravaEvents();
-			setEvents(result);
+			const result = await fetchStravaEvents(page, PER_PAGE);
+			setEvents((prev) =>
+				isFirst ? result.events : [...prev, ...result.events],
+			);
+			setHasMore(result.hasMore);
+			pageRef.current = page;
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to load events");
 		} finally {
 			setLoading(false);
+			setLoadingMore(false);
 		}
 	}, []);
 
 	useEffect(() => {
-		load();
+		load(1);
 	}, [load]);
+
+	useEffect(() => {
+		const sentinel = sentinelRef.current;
+		if (!sentinel) return;
+
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
+					load(pageRef.current + 1);
+				}
+			},
+			{ threshold: 0.1 },
+		);
+
+		observer.observe(sentinel);
+		return () => observer.disconnect();
+	}, [hasMore, loadingMore, loading, load]);
 
 	const upcoming = events.filter((e) => !e.isPast);
 	const past = events.filter((e) => e.isPast);
@@ -331,6 +364,14 @@ export function EventsPage() {
 						</div>
 					</section>
 				)}
+
+				{loadingMore && (
+					<div className="flex justify-center py-6">
+						<Loader2 className="w-5 h-5 animate-spin text-[#8b5cf6]" />
+					</div>
+				)}
+
+				<div ref={sentinelRef} className="h-1" />
 			</div>
 		</div>
 	);
