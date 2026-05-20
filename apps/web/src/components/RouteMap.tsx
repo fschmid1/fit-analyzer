@@ -105,17 +105,15 @@ export function RouteMap({ records, selectionRange }: RouteMapProps) {
 					/>
 				</button>
 				{expanded && (
-					<div className="h-[800px] w-full">
+					<div className="h-[800px] w-full relative">
 						<MapContainer
 							center={allCoords[0]}
 							zoom={13}
 							className="h-full w-full"
 							zoomControl={false}
+							attributionControl={false}
 						>
-							<TileLayer
-								url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-								attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-							/>
+							<TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
 							<FitBounds coords={allCoords} />
 							{allPoints.slice(0, -1).map((a, i) => {
 								const b = allPoints[i + 1];
@@ -156,6 +154,7 @@ export function RouteMap({ records, selectionRange }: RouteMapProps) {
 								);
 							})}
 						</MapContainer>
+						<div className="absolute bottom-0 right-0 z-[1000] w-16 h-6 bg-[#1a1533]" />
 					</div>
 				)}
 			</div>

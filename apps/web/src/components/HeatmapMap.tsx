@@ -118,20 +118,19 @@ export function HeatmapMap({ points }: HeatmapMapProps) {
 				/>
 			</button>
 			{expanded && (
-				<div className="h-[800px] w-full">
+				<div className="h-[800px] w-full relative">
 					<MapContainer
 						center={[points[0].lat, points[0].lng]}
 						zoom={13}
 						className="h-full w-full"
 						zoomControl={false}
+						attributionControl={false}
 					>
-						<TileLayer
-							url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-							attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-						/>
+						<TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
 						<FitBounds points={points} />
 						<HeatLayerComponent points={points} />
 					</MapContainer>
+					<div className="absolute bottom-0 right-0 z-[1000] w-16 h-6 bg-[#1a1533]" />
 				</div>
 			)}
 		</div>

@@ -146,11 +146,9 @@ export function EventRouteMap({ coordinates }: EventRouteMapProps) {
 				zoom={13}
 				className="h-full w-full"
 				zoomControl={false}
+				attributionControl={false}
 			>
-				<TileLayer
-					url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-					attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-				/>
+				<TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
 				<FitBounds coords={coords} />
 				{stats.points.slice(0, -1).map((a, i) => {
 					const b = stats.points[i + 1];
@@ -172,6 +170,7 @@ export function EventRouteMap({ coordinates }: EventRouteMapProps) {
 					);
 				})}
 			</MapContainer>
+			<div className="absolute bottom-0 right-0 z-[1000] w-16 h-6 bg-[#1a1533]" />
 			<div className="absolute bottom-2 left-2 z-[1000] flex gap-3">
 				<span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-black/50 text-[#f1f5f9] backdrop-blur-sm border border-white/10">
 					{formatDistance(stats.distanceM)}

@@ -1,24 +1,13 @@
-import {
-	Activity,
-	ArrowLeft,
-	BarChart3,
-	BotMessageSquare,
-	Calendar,
-	Settings,
-	Upload,
-} from "lucide-react";
-import { useMatch, useNavigate } from "react-router-dom";
+import { Activity } from "lucide-react";
 import type { UserInfo } from "../lib/api";
-import { AnimatedButton } from "./AnimatedButton";
+import { Navbar } from "./Navbar";
 
 interface HeaderProps {
-	onBackToHistory: () => void;
 	onUploadNew: () => void;
 	onOpenTrainer: () => void;
 	user?: UserInfo | null;
 }
 
-/** Generate initials from the user's display name or username */
 function getInitials(user: UserInfo): string {
 	const displayName = user.name || user.username;
 	const parts = displayName.trim().split(/\s+/);
@@ -28,7 +17,6 @@ function getInitials(user: UserInfo): string {
 	return displayName.slice(0, 2).toUpperCase();
 }
 
-/** Simple hash to pick a consistent color for a username */
 function getAvatarColor(username: string): string {
 	const colors = [
 		"#8b5cf6",
@@ -49,27 +37,7 @@ function getAvatarColor(username: string): string {
 	return colors[Math.abs(hash) % colors.length];
 }
 
-export function Header({
-	onBackToHistory,
-	onUploadNew,
-	onOpenTrainer,
-	user,
-}: HeaderProps) {
-	const navigate = useNavigate();
-	const isHistory = useMatch("/");
-	const isAnalysis = useMatch("/activity/:id");
-	const isTrainer = useMatch("/trainer");
-	const isStats = useMatch("/stats");
-	const isSettings = useMatch("/settings");
-	const isEvents = useMatch("/events");
-
-	const showBack = !isHistory;
-	const showUpload = !!isAnalysis;
-	const showTrainer = !isTrainer;
-	const showStats = !isStats;
-	const showSettings = !isSettings;
-	const showEvents = !isEvents;
-
+export function Header({ onUploadNew, onOpenTrainer, user }: HeaderProps) {
 	return (
 		<header className="sticky top-0 z-50 flex items-center justify-between gap-3 px-3 py-3 sm:px-6 sm:py-4 border-b border-[rgba(139,92,246,0.1)] bg-[#0f0b1a]">
 			<div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -87,70 +55,7 @@ export function Header({
 			</div>
 
 			<div className="flex items-center gap-2 sm:gap-3 shrink-0">
-				{showBack && (
-					<AnimatedButton
-						onClick={onBackToHistory}
-						className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-colors duration-200 cursor-pointer"
-						title="History"
-					>
-						<ArrowLeft className="w-4 h-4" />
-						<span className="hidden sm:inline">History</span>
-					</AnimatedButton>
-				)}
-
-				{showUpload && (
-					<AnimatedButton
-						onClick={onUploadNew}
-						className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-colors duration-200 cursor-pointer"
-						title="Load New File"
-					>
-						<Upload className="w-4 h-4" />
-						<span className="hidden sm:inline">Load New File</span>
-					</AnimatedButton>
-				)}
-
-				{showTrainer && (
-					<AnimatedButton
-						onClick={onOpenTrainer}
-						className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#c4b5fd] hover:text-[#f1f5f9] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-lg transition-colors duration-200 cursor-pointer"
-						title="Trainer"
-					>
-						<BotMessageSquare className="w-4 h-4" />
-						<span className="hidden sm:inline">Trainer</span>
-					</AnimatedButton>
-				)}
-
-				{showStats && (
-					<AnimatedButton
-						onClick={() => navigate("/stats")}
-						className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-colors duration-200 cursor-pointer"
-						title="Stats"
-					>
-						<BarChart3 className="w-4 h-4" />
-						<span className="hidden sm:inline">Stats</span>
-					</AnimatedButton>
-				)}
-
-				{showEvents && (
-					<AnimatedButton
-						onClick={() => navigate("/events")}
-						className="flex items-center gap-2 px-2 py-2 sm:px-4 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-colors duration-200 cursor-pointer"
-						title="Events"
-					>
-						<Calendar className="w-4 h-4" />
-						<span className="hidden sm:inline">Events</span>
-					</AnimatedButton>
-				)}
-
-				{showSettings && (
-					<AnimatedButton
-						onClick={() => navigate("/settings")}
-						className="flex items-center justify-center w-9 h-9 text-[#94a3b8] hover:text-[#f1f5f9] bg-[#1a1533]/70 hover:bg-[#241e3d] border border-[rgba(139,92,246,0.1)] hover:border-[rgba(139,92,246,0.25)] rounded-lg transition-colors duration-200 cursor-pointer"
-						title="Settings"
-					>
-						<Settings className="w-4 h-4" />
-					</AnimatedButton>
-				)}
+				<Navbar onUploadNew={onUploadNew} onOpenTrainer={onOpenTrainer} />
 
 				{user && (
 					<div className="flex items-center gap-2.5 pl-2 sm:pl-3 border-l border-[rgba(139,92,246,0.15)]">

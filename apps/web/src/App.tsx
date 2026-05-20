@@ -197,15 +197,6 @@ function App() {
 		}
 	}, []);
 
-	const handleBackToHistory = useCallback(() => {
-		setActivity(null);
-		setActivityId(null);
-		loadedActivityId.current = null;
-		resetAnalysisState();
-		navigate("/");
-		loadActivities();
-	}, [resetAnalysisState, navigate, loadActivities]);
-
 	const handleUploadNew = useCallback(() => {
 		navigate("/upload");
 	}, [navigate]);
@@ -342,7 +333,6 @@ function App() {
 	return (
 		<div className="h-dvh flex flex-col bg-[#0f0b1a] overflow-hidden">
 			<Header
-				onBackToHistory={handleBackToHistory}
 				onUploadNew={handleUploadNew}
 				onOpenTrainer={handleOpenTrainer}
 				user={user}
