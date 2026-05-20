@@ -18,8 +18,8 @@ import {
 import { loadTrainerDraft } from "../lib/trainerStreamState";
 import { ThreadSidebar } from "./trainer/ThreadSidebar";
 import { TrainerChat } from "./trainer/TrainerChat";
+import { CoachOnboarding } from "./trainer/CoachOnboarding";
 import { toUIMessage } from "./trainer/trainerHelpers";
-import { Plus } from "lucide-react";
 
 interface TrainerViewProps {
 	initialMessage: string;
@@ -47,6 +47,7 @@ export function TrainerView({
 		...AVAILABLE_MODELS,
 	]);
 	const [favorites, setFavorites] = useState<string[]>([]);
+	const [autoSend, setAutoSend] = useState(false);
 	const initialized = useRef(false);
 
 	// Load threads for this activity
@@ -217,19 +218,24 @@ export function TrainerView({
 
 		if (activeThreadId === null) {
 			return (
-				<div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8 opacity-60">
-					<div className="w-12 h-12 rounded-lg bg-[#8b5cf6]/20 flex items-center justify-center">
-						<Plus className="w-5 h-5 text-[#8b5cf6]" />
-					</div>
-					<p className="text-sm text-[#94a3b8]">No threads yet.</p>
-					<button
-						type="button"
-						onClick={handleCreateThread}
-						className="px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-lg transition-all duration-200 cursor-pointer"
-					>
-						Create first thread
-					</button>
-				</div>
+				<CoachOnboarding
+					onComplete={async (prompt, coachModel) => {
+						const thread = await createThread(
+							activityId,
+							"Cycling Coach Plan",
+							coachModel ?? undefined,
+						);
+						setThreads((prev) => [...prev, thread]);
+						setActiveThreadId(thread.id);
+						setCurrentInitialInput(prompt);
+						setAutoSend(true);
+						setChatKey((k) => k + 1);
+					}}
+					availableModels={availableModels}
+					defaultModel={defaultModel}
+					favorites={favorites}
+					onToggleFavorite={handleToggleFavorite}
+				/>
 			);
 		}
 
@@ -252,6 +258,7 @@ export function TrainerView({
 				activityId={activityId}
 				initialMessages={initialMessages}
 				initialInput={currentInitialInput}
+				autoSend={autoSend}
 				onBack={onBack}
 				onOpenThreads={() => setThreadsOpen(true)}
 				onImported={handleImported}

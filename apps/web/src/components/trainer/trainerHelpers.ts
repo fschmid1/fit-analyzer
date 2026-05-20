@@ -1,6 +1,7 @@
 import type { UIMessage } from "@tanstack/ai-react";
 import type { StreamChunk } from "@tanstack/ai";
 import type { TrainerMessage } from "@fit-analyzer/shared";
+import { randomUUID } from "../../lib/randomUUID";
 
 export function getTextContent(msg: UIMessage): string {
 	return msg.parts
@@ -59,7 +60,7 @@ export function ensureAssistantMessage(
 	return [
 		...messages,
 		{
-			id: messageId ?? crypto.randomUUID(),
+			id: messageId ?? randomUUID(),
 			role: "assistant",
 			parts: [],
 			createdAt: new Date(),

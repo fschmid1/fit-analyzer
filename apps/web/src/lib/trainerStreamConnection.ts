@@ -5,6 +5,7 @@ import {
 	loadActiveTrainerStream,
 	saveActiveTrainerStream,
 } from "./trainerStreamState";
+import { randomUUID } from "./randomUUID";
 
 type Deferred = (chunk: StreamChunk | null) => void;
 
@@ -147,7 +148,7 @@ export function createTrainerStreamConnection(
 		},
 		async send(messages, data, abortSignal) {
 			const activeThreadId = getThreadIdFromData(data);
-			const streamId = crypto.randomUUID();
+			const streamId = randomUUID();
 			saveActiveTrainerStream(activeThreadId, streamId);
 
 			await runStream(

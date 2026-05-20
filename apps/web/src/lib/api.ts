@@ -286,11 +286,12 @@ export async function fetchThreads(
 export async function createThread(
 	activityId: string,
 	name: string,
+	coachModel?: string,
 ): Promise<TrainerThread> {
 	const res = await fetch(`${API_BASE}/trainer/threads/${activityId}`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ name }),
+		body: JSON.stringify({ name, coachModel }),
 	});
 	if (!res.ok) throw new Error("Failed to create thread");
 	const data = await res.json();

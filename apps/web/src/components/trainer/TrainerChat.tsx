@@ -48,6 +48,7 @@ interface TrainerChatProps {
 	activityId: string;
 	initialMessages: UIMessage[];
 	initialInput: string;
+	autoSend?: boolean;
 	onBack: () => void;
 	onOpenThreads: () => void;
 	onImported: () => void;
@@ -64,6 +65,7 @@ export function TrainerChat({
 	activityId,
 	initialMessages,
 	initialInput,
+	autoSend,
 	onBack,
 	onOpenThreads,
 	onImported,
@@ -152,6 +154,19 @@ export function TrainerChat({
 
 		return () => abortController.abort();
 	}, [initialMessages, setMessages, threadId]);
+
+	const autoSentRef = useRef(false);
+
+	useEffect(() => {
+		if (!autoSend || autoSentRef.current) return;
+		const text = inputRef.current.trim();
+		if (!text) return;
+		autoSentRef.current = true;
+		inputRef.current = "";
+		if (textareaRef.current) textareaRef.current.value = "";
+		setHasInput(false);
+		sendMessage(text);
+	}, [autoSend, sendMessage]);
 
 	const handleFileChange = useCallback(
 		async (e: React.ChangeEvent<HTMLInputElement>) => {

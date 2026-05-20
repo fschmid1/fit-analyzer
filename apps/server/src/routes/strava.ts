@@ -829,7 +829,10 @@ strava.get("/events", async (c) => {
 		return c.json({ error: "Missing x-authentik-username header" }, 401);
 	}
 
-	const page = Math.max(1, Number.parseInt(c.req.query("page") ?? "1", 10) || 1);
+	const page = Math.max(
+		1,
+		Number.parseInt(c.req.query("page") ?? "1", 10) || 1,
+	);
 	const rawPerPage = Number.parseInt(c.req.query("perPage") ?? "", 10);
 	const perPage = Math.min(
 		MAX_EVENTS_PAGE_SIZE,
