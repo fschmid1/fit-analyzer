@@ -336,14 +336,14 @@ export function EventsPage() {
 
 	return (
 		<div className="flex-1 overflow-y-auto">
-			<div className="max-w-3xl mx-auto px-3 py-4 sm:px-6 sm:py-6 space-y-8">
+			<div className="max-w-7xl mx-auto px-4 py-4 sm:px-8 sm:py-6 space-y-8">
 				{upcoming.length > 0 && (
 					<section>
 						<h2 className="text-sm font-semibold text-[#8b5cf6] uppercase tracking-wide mb-4">
 							<Calendar className="w-4 h-4 inline-block mr-1.5 -mt-0.5" />
 							Upcoming Events ({upcoming.length})
 						</h2>
-						<div className="space-y-3">
+						<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 							{upcoming.map((event) => (
 								<EventCard key={event.id} event={event} />
 							))}
@@ -357,7 +357,7 @@ export function EventsPage() {
 							<Clock className="w-4 h-4 inline-block mr-1.5 -mt-0.5" />
 							Past Events ({past.length})
 						</h2>
-						<div className="space-y-3">
+						<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 							{past.map((event) => (
 								<EventCard key={event.id} event={event} />
 							))}
