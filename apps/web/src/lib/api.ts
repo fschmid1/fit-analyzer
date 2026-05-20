@@ -440,13 +440,14 @@ export async function fetchStravaEvents(): Promise<StravaClubEvent[]> {
 	return data.events ?? [];
 }
 
-export async function fetchRouteGpx(
-	routeId: string,
-): Promise<{ coordinates: [number, number][]; gpx: string | null }> {
+export async function fetchRouteGpx(routeId: string): Promise<{
+	coordinates: ([number, number] | [number, number, number])[];
+	gpx: string | null;
+}> {
 	const res = await fetch(`${API_BASE}/strava/routes/${routeId}/gpx`);
 	if (!res.ok) return { coordinates: [], gpx: null };
 	const data = (await res.json()) as {
-		coordinates?: [number, number][];
+		coordinates?: ([number, number] | [number, number, number])[];
 		gpx?: string | null;
 	};
 	return {
