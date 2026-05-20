@@ -65,21 +65,21 @@ function generatePrompt(form: FormData): string {
 	const outdoorPct = Number.parseInt(form.outdoorRatio) || 70;
 	const indoorPct = 100 - outdoorPct;
 
-	return `ChatGPT, I'd like you to become my new cycling coach and help me create a customised training plan. Below, I've added some details to guide you in designing a plan that fits my goals, timeline, and lifestyle:
+	return `I'd like you to become my cycling coach and help me create a customised training plan. Below are details to guide you in designing a plan that fits my goals, timeline, and lifestyle:
 
 I'm an amateur cyclist, not a performance athlete, but I'm looking to improve.
 My time for training is limited, so I want a plan that prioritises "bang for buck" workouts—maximising results in the time I can commit.
+
 Format: Provide the plan as a diary with daily workouts, broken down into:
-- Indoor Workouts: Include a corresponding Zwift workout that matches the session (database here: MyWoosh).
+- Indoor Workouts: Include a corresponding Zwift workout that matches the session.
 - Outdoor Rides: Keep these simple and enjoyable—no need for constant stat-checking.
+
 In the first two weeks, help me establish performance baselines to track progress.
 Limit tests to one per week and keep them trainer-based, as the weather isn't ideal for outdoor testing.
 Let me know how to provide weekly feedback so you can adapt the plan as we go.
 Present the training plan in a table format for easy reference.
-Include clear descriptions of each workout and its purpose (e.g., endurance, power, recovery)
-If a workout is Z2 or Z3, give me an indication of the metrics (e.g power, heart rate or exertion level) that the workout should be done at.
-
-CUSTOMISEABLE SECTION:
+Include clear descriptions of each workout and its purpose (e.g., endurance, power, recovery).
+If a workout is Z2 or Z3, give me an indication of the metrics (e.g. power, heart rate or exertion level) that the workout should be done at.
 
 Goals:
 - My primary cycling goal is ${form.primaryGoal.toLowerCase()}.${form.secondaryGoal ? `\n- My secondary cycling goal is ${form.secondaryGoal.toLowerCase()}.` : ""}
@@ -95,8 +95,7 @@ Limitations:
 - I can dedicate about ${form.maxHours} hours per week to training.
 - The equipment I have available includes ${equipment} and I'd like to train at a ratio of around ${outdoorPct}% outdoor / ${indoorPct}% indoor if the weather allows it.
 
-Metrics:
-- I track my rides with ${metrics} and my typical stats are ${metrics}.`;
+${metrics ? `Metrics:\n- I track my rides with ${metrics}.\n` : ""}`;
 }
 
 export function CoachOnboarding({
