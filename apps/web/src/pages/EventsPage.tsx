@@ -62,9 +62,9 @@ function EventCard({ event }: EventCardProps) {
 	const dates = event.upcomingOccurrences;
 	const primaryDate = dates.length > 0 ? dates[0] : null;
 	const [routeExpanded, setRouteExpanded] = useState(false);
-	const [routeCoords, setRouteCoords] = useState<[number, number][] | null>(
-		null,
-	);
+	const [routeCoords, setRouteCoords] = useState<
+		([number, number] | [number, number, number])[] | null
+	>(null);
 	const [routeGpx, setRouteGpx] = useState<string | null>(null);
 	const [routeLoading, setRouteLoading] = useState(false);
 	const [routeError, setRouteError] = useState(false);
@@ -182,58 +182,58 @@ function EventCard({ event }: EventCardProps) {
 				)}
 
 				{event.route && (
-					<div className="mt-3 rounded-lg border border-[rgba(139,92,246,0.1)] overflow-hidden">
-						<button
-							type="button"
-							onClick={toggleRoute}
-							className="w-full flex items-center justify-between px-3 py-2.5 bg-[#1a1533] hover:bg-[#241e3d] transition-colors"
-						>
-							<div className="flex items-center gap-2 min-w-0">
-								<MapIcon size={14} stroke="#8b5cf6" />
-								<span className="text-xs font-medium text-[#f1f5f9] truncate">
-									{event.route.name}
-								</span>
-							</div>
-							<div className="flex items-center gap-2 shrink-0">
-								{routeGpx && (
-									<button
-										type="button"
-										onClick={(e) => {
-											e.stopPropagation();
-											downloadGpx();
-										}}
-										className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-[#c4b5fd] bg-[#8b5cf6]/15 hover:bg-[#8b5cf6]/25 border border-[#8b5cf6]/10 transition-colors"
-										title="Download GPX"
-									>
-										<Download size={12} />
-										GPX
-									</button>
-								)}
+					<>
+						<div className="mt-3 rounded-lg border border-[rgba(139,92,246,0.1)] overflow-hidden">
+							<button
+								type="button"
+								onClick={toggleRoute}
+								className="w-full flex items-center justify-between px-3 py-2.5 bg-[#1a1533] hover:bg-[#241e3d] transition-colors"
+							>
+								<div className="flex items-center gap-2 min-w-0">
+									<MapIcon size={14} stroke="#8b5cf6" />
+									<span className="text-xs font-medium text-[#f1f5f9] truncate">
+										{event.route.name}
+									</span>
+								</div>
 								<ChevronDown
 									size={16}
-									className={`text-[#94a3b8] transition-transform duration-200 ${routeExpanded ? "rotate-180" : ""}`}
+									className={`text-[#94a3b8] shrink-0 transition-transform duration-200 ${routeExpanded ? "rotate-180" : ""}`}
 								/>
-							</div>
-						</button>
-						{routeExpanded && routeLoading && (
-							<div className="flex items-center justify-center py-6">
-								<Loader2 className="w-5 h-5 animate-spin text-[#8b5cf6]" />
-							</div>
+							</button>
+							{routeExpanded && routeLoading && (
+								<div className="flex items-center justify-center py-6">
+									<Loader2 className="w-5 h-5 animate-spin text-[#8b5cf6]" />
+								</div>
+							)}
+							{routeExpanded && routeError && (
+								<div className="text-xs text-[#94a3b8] text-center py-4">
+									Failed to load route
+								</div>
+							)}
+							{routeExpanded && !routeLoading && !routeError && routeCoords && (
+								<EventRouteMap coordinates={routeCoords} />
+							)}
+							{routeExpanded &&
+								!routeLoading &&
+								!routeError &&
+								!routeCoords && (
+									<div className="text-xs text-[#94a3b8] text-center py-4">
+										No route map available
+									</div>
+								)}
+						</div>
+						{routeGpx && (
+							<button
+								type="button"
+								onClick={downloadGpx}
+								className="mt-2 flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[rgba(139,92,246,0.1)] transition-colors"
+								title="Download GPX"
+							>
+								<Download size={12} />
+								Download GPX
+							</button>
 						)}
-						{routeExpanded && routeError && (
-							<div className="text-xs text-[#94a3b8] text-center py-4">
-								Failed to load route
-							</div>
-						)}
-						{routeExpanded && !routeLoading && !routeError && routeCoords && (
-							<EventRouteMap coordinates={routeCoords} />
-						)}
-						{routeExpanded && !routeLoading && !routeError && !routeCoords && (
-							<div className="text-xs text-[#94a3b8] text-center py-4">
-								No route map available
-							</div>
-						)}
-					</div>
+					</>
 				)}
 			</div>
 		</div>

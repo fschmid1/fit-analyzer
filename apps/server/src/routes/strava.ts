@@ -842,20 +842,24 @@ strava.get("/routes/:id/gpx", async (c) => {
 	}
 
 	const gpx = await gpxRes.text();
-	const coords: [number, number][] = [];
-	const trkptRegex = /<trkpt\b[^>]*>/g;
+	const coords: ([number, number] | [number, number, number])[] = [];
+	const trkptBlockRegex = /<trkpt\b([^>]*)>([\s\S]*?)<\/trkpt>/g;
 	let match: RegExpExecArray | null;
 	for (;;) {
-		match = trkptRegex.exec(gpx);
+		match = trkptBlockRegex.exec(gpx);
 		if (match === null) break;
-		const tag = match[0];
-		const latMatch = /lat="([^"]+)"/.exec(tag);
-		const lonMatch = /lon="([^"]+)"/.exec(tag);
-		if (latMatch && lonMatch) {
-			coords.push([
-				Number.parseFloat(latMatch[1]),
-				Number.parseFloat(lonMatch[1]),
-			]);
+		const attrs = match[1];
+		const inner = match[2];
+		const latMatch = /lat="([^"]+)"/.exec(attrs);
+		const lonMatch = /lon="([^"]+)"/.exec(attrs);
+		if (!latMatch || !lonMatch) continue;
+		const lat = Number.parseFloat(latMatch[1]);
+		const lon = Number.parseFloat(lonMatch[1]);
+		const eleMatch = /<ele>([^<]*)<\/ele>/.exec(inner);
+		if (eleMatch) {
+			coords.push([lat, lon, Number.parseFloat(eleMatch[1])]);
+		} else {
+			coords.push([lat, lon]);
 		}
 	}
 
