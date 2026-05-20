@@ -48,6 +48,7 @@ export function TrainerView({
 	]);
 	const [favorites, setFavorites] = useState<string[]>([]);
 	const [autoSend, setAutoSend] = useState(false);
+	const [showOnboarding, setShowOnboarding] = useState(false);
 	const initialized = useRef(false);
 
 	// Load threads for this activity
@@ -114,18 +115,15 @@ export function TrainerView({
 
 	const handleSelectThread = useCallback((id: string) => {
 		setActiveThreadId(id);
+		setShowOnboarding(false);
 		setCurrentInitialInput(""); // only pre-fill on first open
 	}, []);
 
 	const activeThread = threads.find((t) => t.id === activeThreadId);
 
 	const handleCreateThread = useCallback(async () => {
-		const name = `Thread ${threads.length + 1}`;
-		const thread = await createThread(activityId, name);
-		setThreads((prev) => [...prev, thread]);
-		setActiveThreadId(thread.id);
-		setCurrentInitialInput("");
-	}, [activityId, threads.length]);
+		setShowOnboarding(true);
+	}, []);
 
 	const handleRenameThread = useCallback(
 		async (threadId: string, name: string) => {
@@ -216,7 +214,7 @@ export function TrainerView({
 			);
 		}
 
-		if (activeThreadId === null) {
+		if (activeThreadId === null || showOnboarding) {
 			return (
 				<CoachOnboarding
 					onComplete={async (prompt, coachModel) => {
@@ -229,6 +227,7 @@ export function TrainerView({
 						setActiveThreadId(thread.id);
 						setCurrentInitialInput(prompt);
 						setAutoSend(true);
+						setShowOnboarding(false);
 						setChatKey((k) => k + 1);
 					}}
 					availableModels={availableModels}
