@@ -120,6 +120,88 @@ export function computePeakPower(
 }
 
 /**
+ * Scan records for contiguous blocks where power > 0, merge blocks
+ * separated by gaps up to `coastingToleranceSeconds`, then filter to
+ * only segments with avgPower >= minAvgPower and duration >= minSeconds.
+ */
+export function detectPowerIntervals(
+	records: ActivityRecord[],
+	minAvgPower: number,
+	minSeconds: number,
+	coastingToleranceSeconds = 2,
+): Interval[] {
+	if (records.length === 0 || minAvgPower <= 0 || minSeconds <= 0) return [];
+
+	const segments: { startIdx: number; endIdx: number }[] = [];
+	let segmentStart = -1;
+
+	for (let i = 0; i < records.length; i++) {
+		const r = records[i];
+		if (r.power !== null && r.power > 0) {
+			if (segmentStart === -1) segmentStart = i;
+		} else if (segmentStart !== -1) {
+			segments.push({ startIdx: segmentStart, endIdx: i - 1 });
+			segmentStart = -1;
+		}
+	}
+	if (segmentStart !== -1) {
+		segments.push({
+			startIdx: segmentStart,
+			endIdx: records.length - 1,
+		});
+	}
+
+	const merged: { startIdx: number; endIdx: number }[] = [];
+	let current: (typeof segments)[0] | null = null;
+
+	for (const seg of segments) {
+		if (!current) {
+			current = seg;
+			continue;
+		}
+		const gapEnd = records[current.endIdx].elapsedSeconds;
+		const gapStart = records[seg.startIdx].elapsedSeconds;
+		if (gapStart - gapEnd <= coastingToleranceSeconds) {
+			current.endIdx = seg.endIdx;
+		} else {
+			merged.push(current);
+			current = seg;
+		}
+	}
+	if (current) merged.push(current);
+
+	const results: Interval[] = [];
+	if (merged.length === 0) return [];
+
+	const maxSeconds = records[records.length - 1].elapsedSeconds;
+
+	for (const seg of merged) {
+		const startSeconds = records[seg.startIdx].elapsedSeconds;
+		const endSeconds = Math.min(records[seg.endIdx].elapsedSeconds, maxSeconds);
+		const duration = endSeconds - startSeconds;
+
+		if (duration < minSeconds) continue;
+
+		const slice = records.slice(seg.startIdx, seg.endIdx + 1);
+		const stats = computeAverages(slice);
+
+		if (stats.avgPower === null || stats.avgPower < minAvgPower) continue;
+
+		results.push({
+			index: results.length,
+			startSeconds,
+			endSeconds,
+			avgPower: stats.avgPower,
+			avgHeartRate: stats.avgHeartRate,
+			avgCadence: stats.avgCadence,
+			duration,
+		});
+	}
+
+	return results;
+}
+
+/**
  * Generate one interval per lap marker, each starting at the lap's start
  * and lasting `intervalSeconds` (capped at activity end).
  */

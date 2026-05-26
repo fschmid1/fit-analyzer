@@ -4,6 +4,7 @@ import { CopyBox } from "./CopyBox";
 import { IntervalList } from "./IntervalList";
 import { RouteMap } from "./RouteMap";
 import { StatsBar } from "./StatsBar";
+import { AutoDetectIntervals } from "./AutoDetectIntervals";
 import { SummaryCards } from "./SummaryCards";
 
 interface AnalysisViewProps {
@@ -60,6 +61,12 @@ export function AnalysisView({
 				externalZoom={chartZoom}
 				intervalRanges={chartIntervalRanges}
 				onAddInterval={onAddInterval}
+			/>
+
+			<AutoDetectIntervals
+				records={activity.records}
+				onAddInterval={onAddInterval}
+				customIntervals={customIntervals}
 			/>
 
 			<IntervalList
