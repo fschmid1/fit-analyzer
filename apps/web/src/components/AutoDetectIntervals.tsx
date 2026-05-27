@@ -33,9 +33,11 @@ export function AutoDetectIntervals({
 	const hasPower =
 		records.length > 0 && records.some((r) => r.power !== null && r.power > 0);
 
-	const [minPower, setMinPower] = useState(DEFAULT_MIN_POWER);
-	const [minSeconds, setMinSeconds] = useState(DEFAULT_MIN_SECONDS);
-	const [coasting, setCoasting] = useState(DEFAULT_COASTING);
+	const [rawMinPower, setRawMinPower] = useState(String(DEFAULT_MIN_POWER));
+	const [rawMinSeconds, setRawMinSeconds] = useState(
+		String(DEFAULT_MIN_SECONDS),
+	);
+	const [rawCoasting, setRawCoasting] = useState(String(DEFAULT_COASTING));
 	const [debouncedPower, setDebouncedPower] = useState(DEFAULT_MIN_POWER);
 	const [debouncedSeconds, setDebouncedSeconds] = useState(DEFAULT_MIN_SECONDS);
 	const [debouncedCoasting, setDebouncedCoasting] = useState(DEFAULT_COASTING);
@@ -47,36 +49,36 @@ export function AutoDetectIntervals({
 
 	useEffect(() => {
 		if (powerTimerRef.current) clearTimeout(powerTimerRef.current);
-		powerTimerRef.current = setTimeout(
-			() => setDebouncedPower(minPower),
-			DEBOUNCE_MS,
-		);
+		powerTimerRef.current = setTimeout(() => {
+			const v = Number.parseInt(rawMinPower, 10);
+			if (!Number.isNaN(v)) setDebouncedPower(v);
+		}, DEBOUNCE_MS);
 		return () => {
 			if (powerTimerRef.current) clearTimeout(powerTimerRef.current);
 		};
-	}, [minPower]);
+	}, [rawMinPower]);
 
 	useEffect(() => {
 		if (secondsTimerRef.current) clearTimeout(secondsTimerRef.current);
-		secondsTimerRef.current = setTimeout(
-			() => setDebouncedSeconds(minSeconds),
-			DEBOUNCE_MS,
-		);
+		secondsTimerRef.current = setTimeout(() => {
+			const v = Number.parseInt(rawMinSeconds, 10);
+			if (!Number.isNaN(v)) setDebouncedSeconds(v);
+		}, DEBOUNCE_MS);
 		return () => {
 			if (secondsTimerRef.current) clearTimeout(secondsTimerRef.current);
 		};
-	}, [minSeconds]);
+	}, [rawMinSeconds]);
 
 	useEffect(() => {
 		if (coastingTimerRef.current) clearTimeout(coastingTimerRef.current);
-		coastingTimerRef.current = setTimeout(
-			() => setDebouncedCoasting(coasting),
-			DEBOUNCE_MS,
-		);
+		coastingTimerRef.current = setTimeout(() => {
+			const v = Number.parseFloat(rawCoasting);
+			if (!Number.isNaN(v) && v >= 0) setDebouncedCoasting(v);
+		}, DEBOUNCE_MS);
 		return () => {
 			if (coastingTimerRef.current) clearTimeout(coastingTimerRef.current);
 		};
-	}, [coasting]);
+	}, [rawCoasting]);
 
 	const detectedIntervals: Interval[] = useMemo(() => {
 		if (!hasPower) return [];
@@ -168,11 +170,8 @@ export function AutoDetectIntervals({
 									type="number"
 									min="0"
 									step="5"
-									value={minPower}
-									onChange={(e) => {
-										const v = Number.parseInt(e.target.value, 10);
-										if (!Number.isNaN(v)) setMinPower(v);
-									}}
+									value={rawMinPower}
+									onChange={(e) => setRawMinPower(e.target.value)}
 									className={inputClass}
 								/>
 								<span className="text-xs text-[#94a3b8]">W</span>
@@ -189,11 +188,8 @@ export function AutoDetectIntervals({
 									type="number"
 									min="0"
 									step="1"
-									value={minSeconds}
-									onChange={(e) => {
-										const v = Number.parseInt(e.target.value, 10);
-										if (!Number.isNaN(v)) setMinSeconds(v);
-									}}
+									value={rawMinSeconds}
+									onChange={(e) => setRawMinSeconds(e.target.value)}
 									className={inputClass}
 								/>
 								<span className="text-xs text-[#94a3b8]">s</span>
@@ -210,11 +206,8 @@ export function AutoDetectIntervals({
 									type="number"
 									min="0"
 									step="0.5"
-									value={coasting}
-									onChange={(e) => {
-										const v = Number.parseFloat(e.target.value);
-										if (!Number.isNaN(v) && v >= 0) setCoasting(v);
-									}}
+									value={rawCoasting}
+									onChange={(e) => setRawCoasting(e.target.value)}
 									className={inputClass}
 								/>
 								<span className="text-xs text-[#94a3b8]">s</span>
