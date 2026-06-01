@@ -1,10 +1,4 @@
-import {
-	useCallback,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Send, Square, X } from "lucide-react";
 import type { UIMessage } from "@tanstack/ai-react";
 import type { ModelEntry, TrainerThread } from "@fit-analyzer/shared";
@@ -54,11 +48,18 @@ export function TrainerCompareView({
 	const [composerFocused, setComposerFocused] = useState(false);
 	const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
 
-	const setColumnRef = useCallback((threadId: string) => {
-		return (h: CompareColumnHandle | null) => {
+	const setColumnRef = useCallback(
+		(threadId: string) => (h: CompareColumnHandle | null) => {
 			refs.current[threadId] = h;
-		};
-	}, []);
+		},
+		[],
+	);
+
+	const columnRefsById = useMemo(() => {
+		const map: Record<string, (h: CompareColumnHandle | null) => void> = {};
+		for (const t of pinnedThreads) map[t.id] = setColumnRef(t.id);
+		return map;
+	}, [pinnedThreads, setColumnRef]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -216,9 +217,7 @@ export function TrainerCompareView({
 							className="snap-start shrink-0 w-full h-full p-2"
 						>
 							<CompareColumn
-								ref={(h) => {
-									refs.current[thread.id] = h;
-								}}
+								ref={columnRefsById[thread.id]}
 								thread={thread}
 								initialMessages={columnInputs[thread.id] ?? []}
 								defaultModel={defaultModel}
@@ -240,9 +239,7 @@ export function TrainerCompareView({
 					{pinnedThreads.map((thread) => (
 						<div key={thread.id} className="min-h-0 min-w-0">
 							<CompareColumn
-								ref={(h) => {
-									refs.current[thread.id] = h;
-								}}
+								ref={columnRefsById[thread.id]}
 								thread={thread}
 								initialMessages={columnInputs[thread.id] ?? []}
 								defaultModel={defaultModel}
