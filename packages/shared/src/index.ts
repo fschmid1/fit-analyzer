@@ -22,6 +22,8 @@ export type {
 	SaveTrainerHistoryBody,
 	OpenwearablesSettings,
 	UpdateOpenwearablesSettingsBody,
+	CompareSettings,
+	UpdateCompareSettingsBody,
 	HealthData,
 	ActivityStats,
 	SleepStages,

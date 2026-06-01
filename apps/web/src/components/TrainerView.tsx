@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type { UIMessage } from "@tanstack/ai-react";
 import type { TrainerThread } from "@fit-analyzer/shared";
 import { AVAILABLE_MODELS, type ModelEntry } from "@fit-analyzer/shared";
@@ -12,6 +12,7 @@ import {
 	fetchUserSettings,
 	forkThread,
 	renameThread,
+	updateCompareSettings,
 	updateFavoriteModels,
 	updateThreadModel,
 } from "../lib/api";
@@ -19,6 +20,7 @@ import { loadTrainerDraft } from "../lib/trainerStreamState";
 import { ThreadSidebar } from "./trainer/ThreadSidebar";
 import { TrainerChat } from "./trainer/TrainerChat";
 import { CoachOnboarding } from "./trainer/CoachOnboarding";
+import { TrainerCompareView, MAX_COMPARE_THREADS } from "./TrainerCompareView";
 import { toUIMessage } from "./trainer/trainerHelpers";
 
 interface TrainerViewProps {
@@ -49,6 +51,9 @@ export function TrainerView({
 	const [favorites, setFavorites] = useState<string[]>([]);
 	const [autoSend, setAutoSend] = useState(false);
 	const [showOnboarding, setShowOnboarding] = useState(false);
+	const [compareMode, setCompareMode] = useState(false);
+	const [pinnedThreadIds, setPinnedThreadIds] = useState<string[]>([]);
+	const settingsHydrated = useRef(false);
 	const initialized = useRef(false);
 
 	// Load threads for this activity
@@ -65,6 +70,22 @@ export function TrainerView({
 				);
 				setActiveThreadId(latest.id);
 			}
+			setPinnedThreadIds((prev) => {
+				const validIds = list.map((t) => t.id);
+				const next = prev.filter((id) => validIds.includes(id));
+				if (
+					next.length === prev.length &&
+					next.every((id, i) => id === prev[i])
+				) {
+					return prev;
+				}
+				if (settingsHydrated.current) {
+					updateCompareSettings({ compareThreadIds: next }).catch(
+						console.error,
+					);
+				}
+				return next;
+			});
 		} catch {
 			setThreads([]);
 		} finally {
@@ -84,6 +105,13 @@ export function TrainerView({
 				if (Array.isArray(data.favoriteModels)) {
 					setFavorites(data.favoriteModels);
 				}
+				if (data.compare) {
+					setCompareMode(!!data.compare.compareEnabled);
+					if (Array.isArray(data.compare.compareThreadIds)) {
+						setPinnedThreadIds(data.compare.compareThreadIds);
+					}
+				}
+				settingsHydrated.current = true;
 			})
 			.catch(() => {
 				/* ignore */
@@ -169,9 +197,39 @@ export function TrainerView({
 				}
 				return next;
 			});
+			setPinnedThreadIds((prev) => {
+				if (!prev.includes(threadId)) return prev;
+				const nextPinned = prev.filter((id) => id !== threadId);
+				updateCompareSettings({ compareThreadIds: nextPinned }).catch(
+					console.error,
+				);
+				return nextPinned;
+			});
 		},
 		[activeThreadId],
 	);
+
+	const handleTogglePin = useCallback((threadId: string) => {
+		setPinnedThreadIds((prev) => {
+			if (prev.includes(threadId)) {
+				const next = prev.filter((id) => id !== threadId);
+				updateCompareSettings({ compareThreadIds: next }).catch(console.error);
+				return next;
+			}
+			if (prev.length >= MAX_COMPARE_THREADS) return prev;
+			const next = [...prev, threadId];
+			updateCompareSettings({ compareThreadIds: next }).catch(console.error);
+			return next;
+		});
+	}, []);
+
+	const handleToggleCompare = useCallback(() => {
+		setCompareMode((prev) => {
+			const next = !prev;
+			updateCompareSettings({ compareEnabled: next }).catch(console.error);
+			return next;
+		});
+	}, []);
 
 	const handleForkThread = useCallback(async (threadId: string) => {
 		const newThread = await forkThread(threadId);
@@ -201,6 +259,14 @@ export function TrainerView({
 
 	// ── render ──────────────────────────────────────────────────────────────────
 
+	const pinnedThreads = useMemo(
+		() =>
+			pinnedThreadIds
+				.map((id) => threads.find((t) => t.id === id))
+				.filter((t): t is TrainerThread => !!t),
+		[pinnedThreadIds, threads],
+	);
+
 	const chatArea = (() => {
 		if (threadsLoading) {
 			return (
@@ -211,6 +277,20 @@ export function TrainerView({
 						<span className="w-2 h-2 rounded-full bg-[#8b5cf6] animate-bounce [animation-delay:300ms]" />
 					</span>
 				</div>
+			);
+		}
+
+		if (compareMode && pinnedThreads.length > 0) {
+			return (
+				<TrainerCompareView
+					pinnedThreads={pinnedThreads}
+					defaultModel={defaultModel}
+					availableModels={availableModels}
+					favorites={favorites}
+					onModelChange={handleModelChange}
+					onToggleFavorite={handleToggleFavorite}
+					onUnpin={handleTogglePin}
+				/>
 			);
 		}
 
@@ -284,6 +364,11 @@ export function TrainerView({
 				onCompact={handleCompactThread}
 				open={threadsOpen}
 				onClose={() => setThreadsOpen(false)}
+				compareMode={compareMode}
+				pinnedThreadIds={pinnedThreadIds}
+				maxPinned={MAX_COMPARE_THREADS}
+				onTogglePin={handleTogglePin}
+				onToggleCompare={threads.length >= 2 ? handleToggleCompare : undefined}
 			/>
 			{threadsOpen && (
 				<button

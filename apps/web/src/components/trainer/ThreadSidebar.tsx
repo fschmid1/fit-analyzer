@@ -4,10 +4,12 @@ import { useDrag } from "@use-gesture/react";
 import {
 	ChevronDown,
 	ChevronRight,
+	Columns,
 	GitFork,
 	Minimize2,
 	MoreVertical,
 	Pencil,
+	Pin,
 	Plus,
 	Trash2,
 	X,
@@ -25,6 +27,11 @@ interface ThreadSidebarProps {
 	onCompact: (id: string) => void;
 	open: boolean;
 	onClose: () => void;
+	compareMode?: boolean;
+	pinnedThreadIds?: string[];
+	maxPinned?: number;
+	onTogglePin?: (id: string) => void;
+	onToggleCompare?: () => void;
 }
 
 interface ContextMenu {
@@ -65,6 +72,11 @@ export function ThreadSidebar({
 	onCompact,
 	open,
 	onClose,
+	compareMode = false,
+	pinnedThreadIds = [],
+	maxPinned = 4,
+	onTogglePin,
+	onToggleCompare,
 }: ThreadSidebarProps) {
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [editingName, setEditingName] = useState("");
@@ -209,72 +221,133 @@ export function ThreadSidebar({
 				<span className="text-[10px] font-semibold text-[#4a4468] uppercase tracking-widest">
 					Threads
 				</span>
-				<button
-					type="button"
-					onClick={onClose}
-					className="flex h-8 w-8 items-center justify-center rounded-lg border border-[rgba(139,92,246,0.1)] bg-[#1a1533]/70 text-[#94a3b8] md:hidden"
-					title="Close threads"
-				>
-					<X className="h-4 w-4" />
-				</button>
+				<div className="flex items-center gap-1">
+					{onToggleCompare && (
+						<button
+							type="button"
+							onClick={onToggleCompare}
+							title={compareMode ? "Exit compare mode" : "Compare threads"}
+							aria-label={compareMode ? "Exit compare mode" : "Compare threads"}
+							aria-pressed={compareMode}
+							className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-colors cursor-pointer ${
+								compareMode
+									? "bg-[#8b5cf6]/20 border-[#8b5cf6]/40 text-[#c4b5fd]"
+									: "border-[rgba(139,92,246,0.1)] bg-[#1a1533]/70 text-[#94a3b8] hover:text-[#c4b5fd]"
+							}`}
+						>
+							<Columns
+								className="h-3.5 w-3.5"
+								fill={compareMode ? "currentColor" : "none"}
+							/>
+						</button>
+					)}
+					<button
+						type="button"
+						onClick={onClose}
+						className="flex h-8 w-8 items-center justify-center rounded-lg border border-[rgba(139,92,246,0.1)] bg-[#1a1533]/70 text-[#94a3b8] md:hidden"
+						title="Close threads"
+					>
+						<X className="h-4 w-4" />
+					</button>
+				</div>
 			</div>
 
 			<div className="flex-1 overflow-y-auto py-1">
-				{threads.map((thread) => (
-					<div
-						key={thread.id}
-						onContextMenu={(e) => handleContextMenu(thread, e)}
-						className={`group flex items-center gap-1.5 px-2 py-2 mx-1 my-0.5 rounded-lg cursor-pointer transition-colors ${
-							thread.id === activeThreadId
-								? "bg-[#8b5cf6]/15 text-[#e2d9f3]"
-								: "text-[#7c6fa0] hover:bg-[#1a1533]/50 hover:text-[#c4b5fd]"
-						}`}
-					>
-						{editingId === thread.id ? (
-							<input
-								value={editingName}
-								onChange={(e) => setEditingName(e.target.value)}
-								onBlur={commitEdit}
-								onKeyDown={(e) => {
-									if (e.key === "Enter") commitEdit();
-									if (e.key === "Escape") setEditingId(null);
-								}}
-								onClick={(e) => e.stopPropagation()}
-								className="flex-1 min-w-0 bg-[#1a1533] border border-[#8b5cf6]/40 rounded px-1.5 py-0.5 text-xs text-[#e2d9f3] outline-none"
-							/>
-						) : (
-							<button
-								type="button"
-								onClick={() => {
-									onSelect(thread.id);
-									onClose();
-								}}
-								className="flex flex-1 min-w-0 items-center text-left"
-								aria-label={`Open thread ${thread.name}`}
-							>
-								<span className="min-w-0 text-xs truncate">{thread.name}</span>
-							</button>
-						)}
+				{threads.map((thread) => {
+					const isPinned = pinnedThreadIds.includes(thread.id);
+					const canPin = isPinned || pinnedThreadIds.length < maxPinned;
+					return (
+						<div
+							key={thread.id}
+							onContextMenu={(e) => handleContextMenu(thread, e)}
+							className={`group flex items-center gap-1.5 px-2 py-2 mx-1 my-0.5 rounded-lg cursor-pointer transition-colors ${
+								thread.id === activeThreadId
+									? "bg-[#8b5cf6]/15 text-[#e2d9f3]"
+									: "text-[#7c6fa0] hover:bg-[#1a1533]/50 hover:text-[#c4b5fd]"
+							} ${isPinned ? "ring-1 ring-[#8b5cf6]/30" : ""}`}
+						>
+							{compareMode && onTogglePin && (
+								<button
+									type="button"
+									onClick={(e) => {
+										e.stopPropagation();
+										if (canPin) onTogglePin(thread.id);
+									}}
+									disabled={!canPin}
+									title={
+										isPinned
+											? `Unpin ${thread.name}`
+											: canPin
+												? `Pin ${thread.name} for compare`
+												: `Max ${maxPinned} threads pinned`
+									}
+									aria-label={
+										isPinned
+											? `Unpin ${thread.name}`
+											: `Pin ${thread.name} for compare`
+									}
+									aria-pressed={isPinned}
+									className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors cursor-pointer disabled:cursor-not-allowed ${
+										isPinned
+											? "text-[#8b5cf6] bg-[#8b5cf6]/15 hover:bg-[#8b5cf6]/25"
+											: "text-[#4a4468] hover:text-[#c4b5fd] hover:bg-[#241e3d] disabled:opacity-30"
+									}`}
+								>
+									<Pin
+										className="h-3.5 w-3.5"
+										fill={isPinned ? "currentColor" : "none"}
+									/>
+								</button>
+							)}
 
-						{thread.messageCount > 0 && editingId !== thread.id && (
-							<span className="text-[10px] text-[#4a4468] shrink-0 tabular-nums">
-								{thread.messageCount}
-							</span>
-						)}
+							{editingId === thread.id ? (
+								<input
+									value={editingName}
+									onChange={(e) => setEditingName(e.target.value)}
+									onBlur={commitEdit}
+									onKeyDown={(e) => {
+										if (e.key === "Enter") commitEdit();
+										if (e.key === "Escape") setEditingId(null);
+									}}
+									onClick={(e) => e.stopPropagation()}
+									className="flex-1 min-w-0 bg-[#1a1533] border border-[#8b5cf6]/40 rounded px-1.5 py-0.5 text-xs text-[#e2d9f3] outline-none"
+								/>
+							) : (
+								<button
+									type="button"
+									onClick={() => {
+										onSelect(thread.id);
+										onClose();
+									}}
+									className="flex flex-1 min-w-0 items-center text-left"
+									aria-label={`Open thread ${thread.name}`}
+								>
+									<span className="min-w-0 text-xs truncate">
+										{thread.name}
+									</span>
+								</button>
+							)}
 
-						{editingId !== thread.id && (
-							<button
-								type="button"
-								onClick={(e) => handleMenuButtonClick(thread, e)}
-								className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[#7c6fa0] opacity-100 transition-colors hover:bg-[#241e3d] hover:text-[#c4b5fd] focus:opacity-100 focus:outline-none focus:ring-1 focus:ring-[#8b5cf6]/40 md:opacity-0 md:group-hover:opacity-100"
-								title={`Actions for ${thread.name}`}
-								aria-label={`Actions for ${thread.name}`}
-							>
-								<MoreVertical className="h-3.5 w-3.5" />
-							</button>
-						)}
-					</div>
-				))}
+							{thread.messageCount > 0 && editingId !== thread.id && (
+								<span className="text-[10px] text-[#4a4468] shrink-0 tabular-nums">
+									{thread.messageCount}
+								</span>
+							)}
+
+							{editingId !== thread.id && (
+								<button
+									type="button"
+									onClick={(e) => handleMenuButtonClick(thread, e)}
+									className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[#7c6fa0] opacity-100 transition-colors hover:bg-[#241e3d] hover:text-[#c4b5fd] focus:opacity-100 focus:outline-none focus:ring-1 focus:ring-[#8b5cf6]/40 md:opacity-0 md:group-hover:opacity-100"
+									title={`Actions for ${thread.name}`}
+									aria-label={`Actions for ${thread.name}`}
+								>
+									<MoreVertical className="h-3.5 w-3.5" />
+								</button>
+							)}
+						</div>
+					);
+				})}
 			</div>
 
 			<div className="p-2 border-t border-[rgba(139,92,246,0.08)]">

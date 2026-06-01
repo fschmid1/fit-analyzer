@@ -3,6 +3,7 @@ import {
 	type ActivityListItem,
 	type ActivityStats,
 	type CoachModelSettings,
+	type CompareSettings,
 	type HealthData,
 	type HeatmapResponse,
 	type Interval,
@@ -30,6 +31,7 @@ export interface UserSettingsResponse {
 	coachModel: CoachModelSettings;
 	favoriteModels: string[];
 	openwearables: OpenwearablesSettings;
+	compare: CompareSettings;
 }
 
 export async function fetchCurrentUser(): Promise<UserInfo | null> {
@@ -185,18 +187,35 @@ export async function updateOpenwearablesSettings(input: {
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ owUserId: input.owUserId }),
 	});
-
 	const data = await res
 		.json()
 		.catch(() => ({ error: "Failed to update settings" }));
-
 	if (!res.ok) {
 		throw new Error(
 			(data as { error?: string }).error ?? "Failed to update settings",
 		);
 	}
-
 	return (data as UserSettingsResponse).openwearables;
+}
+
+export async function updateCompareSettings(input: {
+	compareThreadIds?: string[];
+	compareEnabled?: boolean;
+}): Promise<CompareSettings> {
+	const res = await fetch(`${API_BASE}/me/settings`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(input),
+	});
+	const data = await res
+		.json()
+		.catch(() => ({ error: "Failed to update compare settings" }));
+	if (!res.ok) {
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to update compare settings",
+		);
+	}
+	return (data as UserSettingsResponse).compare;
 }
 
 export async function fetchActivities(): Promise<ActivityListItem[]> {

@@ -5,6 +5,11 @@ import {
 	updateCoachModelSettings,
 } from "../lib/coachModelSettings.js";
 import {
+	getCompareSettings,
+	updateCompareEnabled,
+	updateCompareThreadIds,
+} from "../lib/compareSettings.js";
+import {
 	getFavoriteModels,
 	updateFavoriteModels,
 } from "../lib/favoriteModels.js";
@@ -56,6 +61,7 @@ me.get("/settings", async (c) => {
 		coachModel: await getCoachModelSettings(userId),
 		favoriteModels: getFavoriteModels(userId),
 		openwearables: { owUserId: getOwUserId(userId) },
+		compare: getCompareSettings(userId),
 	});
 });
 
@@ -73,6 +79,8 @@ me.patch("/settings", async (c) => {
 			coachModel?: string;
 			favoriteModels?: string[];
 			owUserId?: string;
+			compareThreadIds?: string[];
+			compareEnabled?: boolean;
 		}
 	>();
 
@@ -84,6 +92,14 @@ me.patch("/settings", async (c) => {
 
 	if (Array.isArray(body.favoriteModels)) {
 		updateFavoriteModels(userId, body.favoriteModels);
+	}
+
+	if (Array.isArray(body.compareThreadIds)) {
+		updateCompareThreadIds(userId, body.compareThreadIds);
+	}
+
+	if (typeof body.compareEnabled === "boolean") {
+		updateCompareEnabled(userId, body.compareEnabled);
 	}
 
 	if (typeof body.owUserId === "string") {
@@ -128,6 +144,7 @@ me.patch("/settings", async (c) => {
 		coachModel: await getCoachModelSettings(userId),
 		favoriteModels: getFavoriteModels(userId),
 		openwearables: { owUserId: getOwUserId(userId) },
+		compare: getCompareSettings(userId),
 	});
 });
 

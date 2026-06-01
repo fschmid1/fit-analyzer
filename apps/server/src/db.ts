@@ -220,4 +220,20 @@ try {
 	/* column already exists */
 }
 
+// Migration: add compare-mode settings to user_settings
+try {
+	db.exec(
+		"ALTER TABLE user_settings ADD COLUMN compare_thread_ids TEXT NOT NULL DEFAULT '[]'",
+	);
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec(
+		"ALTER TABLE user_settings ADD COLUMN compare_enabled INTEGER NOT NULL DEFAULT 0",
+	);
+} catch {
+	/* column already exists */
+}
+
 export { db };

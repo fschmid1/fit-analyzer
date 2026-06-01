@@ -153,6 +153,16 @@ export interface UpdateOpenwearablesSettingsBody {
 	owUserId: string;
 }
 
+export interface CompareSettings {
+	compareThreadIds: string[];
+	compareEnabled: boolean;
+}
+
+export interface UpdateCompareSettingsBody {
+	compareThreadIds?: string[];
+	compareEnabled?: boolean;
+}
+
 // --- Health & stats types ---
 
 export interface SleepStages {

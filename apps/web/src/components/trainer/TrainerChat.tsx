@@ -24,7 +24,6 @@ import {
 	clearTrainerDraft,
 	loadActiveTrainerStream,
 	loadTrainerDraft,
-	saveTrainerDraft,
 } from "../../lib/trainerStreamState";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -42,6 +41,7 @@ import {
 	streamResumedChat,
 	formatTime,
 } from "./trainerHelpers";
+import { useTrainerHistoryPersist } from "./useTrainerHistoryPersist";
 
 interface TrainerChatProps {
 	threadId: string;
@@ -221,27 +221,7 @@ export function TrainerChat({
 		setTimeout(updateScrollButtons, 120);
 	}, [lastMessageId, lastMessageTextLen, updateScrollButtons]);
 
-	const prevStatus = useRef(status);
-	useEffect(() => {
-		const wasStreaming = prevStatus.current === "streaming";
-		const nowReady = status === "ready";
-		if (wasStreaming && nowReady && messages.length > 0) {
-			const toSave = messages
-				.filter((m) => m.role === "user" || m.role === "assistant")
-				.map(toTrainerMessage)
-				.filter((m) => m.content);
-			if (toSave.length > 0)
-				saveTrainerHistory(threadId, toSave).catch(console.error);
-			clearTrainerDraft(threadId);
-		}
-		prevStatus.current = status;
-	}, [status, messages, threadId]);
-
-	useEffect(() => {
-		if (status === "streaming" || status === "submitted") {
-			saveTrainerDraft(threadId, messages);
-		}
-	}, [messages, status, threadId]);
+	useTrainerHistoryPersist(threadId, messages, status);
 
 	const handleSend = useCallback(async () => {
 		const text = inputRef.current.trim();
