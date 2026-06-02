@@ -28,8 +28,10 @@ const BASE_SYSTEM_PROMPT =
 
 async function buildSystemPrompt(userId: string): Promise<string> {
 	const { text: healthText } = await getHealthContext(userId);
-	if (!healthText) return BASE_SYSTEM_PROMPT;
-	return `${BASE_SYSTEM_PROMPT}\n${healthText}`;
+	const now = new Date();
+	const dateTimeText = `Current date and time: ${now.toISOString()}`;
+	if (!healthText) return `${BASE_SYSTEM_PROMPT}\n${dateTimeText}`;
+	return `${BASE_SYSTEM_PROMPT}\n${dateTimeText}\n${healthText}`;
 }
 
 const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 20;
