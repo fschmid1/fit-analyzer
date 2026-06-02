@@ -103,6 +103,7 @@ export function InstallPrompt() {
 			axis: "y",
 			bounds: { top: 0, bottom: 200 },
 			rubberband: true,
+			eventOptions: { passive: false },
 		},
 	);
 

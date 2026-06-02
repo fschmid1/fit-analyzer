@@ -1,15 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useChat } from "@tanstack/ai-react";
-import {
-	ArrowDown,
-	ArrowUp,
-	Menu,
-	Plus,
-	Send,
-	Square,
-	Upload,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, Menu, Send, Square, Upload } from "lucide-react";
 import type { UIMessage } from "@tanstack/ai-react";
 import {
 	AVAILABLE_MODELS,
@@ -25,23 +17,17 @@ import {
 	loadActiveTrainerStream,
 	loadTrainerDraft,
 } from "../../lib/trainerStreamState";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { mdComponents } from "./markdownComponents";
-import { DotsLoader } from "./DotsLoader";
-import { ThinkingBlock } from "./ThinkingBlock";
-import { MessageActions } from "./MessageActions";
 import { ModelPicker } from "./ModelPicker";
 import {
 	getTextContent,
-	getThinkingContent,
 	toTrainerMessage,
 	stripTrailingAssistant,
 	applyResumedChunk,
 	streamResumedChat,
-	formatTime,
 } from "./trainerHelpers";
 import { useTrainerHistoryPersist } from "./useTrainerHistoryPersist";
+import { DotsLoader } from "./DotsLoader";
+import { ChatMessageRow } from "./ChatMessageRow";
 
 interface TrainerChatProps {
 	threadId: string;
@@ -76,7 +62,12 @@ export function TrainerChat({
 	favorites,
 	onToggleFavorite,
 }: TrainerChatProps) {
-	const connectionRef = useRef(createTrainerStreamConnection(threadId));
+	const connectionRef = useRef<ReturnType<
+		typeof createTrainerStreamConnection
+	> | null>(null);
+	if (connectionRef.current === null) {
+		connectionRef.current = createTrainerStreamConnection(threadId);
+	}
 	const {
 		messages,
 		sendMessage,
@@ -381,7 +372,6 @@ export function TrainerChat({
 					)}
 
 					{messages.map((msg, msgIndex) => {
-						const isUser = msg.role === "user";
 						const isLastMsg = msg.id === lastMessageId;
 						const isCurrentlyStreaming = isLastMsg && status === "streaming";
 
@@ -425,73 +415,16 @@ export function TrainerChat({
 							await sendMessage(userText);
 						};
 
-						if (isUser) {
-							const text = getTextContent(msg);
-							if (!text) return null;
-							return (
-								<div key={msg.id} className="flex flex-col items-end gap-1">
-									<div className="min-w-0 max-w-[calc(100%-1rem)] overflow-hidden rounded-lg px-3 py-2.5 text-sm leading-relaxed break-words bg-[#8b5cf6]/20 border border-[#8b5cf6]/30 text-[#e2d9f3] whitespace-pre-wrap [overflow-wrap:anywhere] sm:max-w-[80%] sm:px-4 sm:py-3 sm:text-base">
-										{text}
-									</div>
-									<div className="flex items-center gap-2 pr-1">
-										<MessageActions
-											msg={msg}
-											isCurrentlyStreaming={isCurrentlyStreaming}
-											onDelete={() => setConfirmDeleteMessageId(msg.id)}
-											onRetry={handleRetry}
-											canRetry={true}
-										/>
-										<span className="text-[10px] text-[#4a4468]">
-											{formatTime(msg.createdAt)}
-										</span>
-									</div>
-								</div>
-							);
-						}
-
-						const thinkingContent = getThinkingContent(msg);
-						const textContent = getTextContent(msg);
-						const isThinkingPhase =
-							isCurrentlyStreaming && !!thinkingContent && !textContent;
-
 						return (
-							<div key={msg.id} className="flex flex-col items-start gap-1">
-								<div className="min-w-0 max-w-[calc(100%-1rem)] overflow-hidden rounded-lg px-3 py-2.5 text-sm leading-relaxed break-words bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] text-[#c4b5fd] [overflow-wrap:anywhere] sm:max-w-[80%] sm:px-4 sm:py-3 sm:text-base">
-									{thinkingContent && (
-										<ThinkingBlock
-											content={thinkingContent}
-											isStreaming={isThinkingPhase}
-										/>
-									)}
-									{textContent ? (
-										<ReactMarkdown
-											remarkPlugins={[remarkGfm]}
-											components={mdComponents}
-										>
-											{textContent}
-										</ReactMarkdown>
-									) : isCurrentlyStreaming && !thinkingContent ? (
-										<DotsLoader />
-									) : null}
-									{isCurrentlyStreaming && textContent && (
-										<span className="inline-block w-0.5 h-4 bg-[#8b5cf6] animate-pulse ml-0.5 align-middle" />
-									)}
-								</div>
-								<div className="flex items-center gap-2 pl-1">
-									<MessageActions
-										msg={msg}
-										isCurrentlyStreaming={isCurrentlyStreaming}
-										onDelete={() => setConfirmDeleteMessageId(msg.id)}
-										onRetry={handleRetry}
-										canRetry={true}
-									/>
-									{!isCurrentlyStreaming && textContent && (
-										<span className="text-[10px] text-[#4a4468]">
-											{formatTime(msg.createdAt)}
-										</span>
-									)}
-								</div>
-							</div>
+							<ChatMessageRow
+								key={msg.id}
+								msg={msg}
+								msgIndex={msgIndex}
+								isLastMsg={isLastMsg}
+								isCurrentlyStreaming={isCurrentlyStreaming}
+								onDelete={() => setConfirmDeleteMessageId(msg.id)}
+								onRetry={handleRetry}
+							/>
 						);
 					})}
 

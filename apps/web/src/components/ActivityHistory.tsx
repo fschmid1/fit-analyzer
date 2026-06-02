@@ -74,6 +74,7 @@ function SwipeableRow({
 			axis: "x",
 			bounds: { left: -80, right: 80 },
 			rubberband: true,
+			eventOptions: { passive: false },
 		},
 	);
 

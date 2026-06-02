@@ -9,8 +9,6 @@ import {
 import type { UIMessage } from "@tanstack/ai-react";
 import { useChat } from "@tanstack/ai-react";
 import { ArrowDown, ArrowUp, X } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
 	AVAILABLE_MODELS,
 	getCoachModelDisplayName,
@@ -24,15 +22,10 @@ import {
 	clearTrainerDraft,
 	loadActiveTrainerStream,
 } from "../../lib/trainerStreamState";
-import { mdComponents } from "./markdownComponents";
 import { DotsLoader } from "./DotsLoader";
-import { ThinkingBlock } from "./ThinkingBlock";
 import { ModelPicker } from "./ModelPicker";
 import {
 	applyResumedChunk,
-	formatTime,
-	getTextContent,
-	getThinkingContent,
 	stripTrailingAssistant,
 	streamResumedChat,
 } from "./trainerHelpers";
@@ -40,6 +33,7 @@ import {
 	persistMessagesNow,
 	useTrainerHistoryPersist,
 } from "./useTrainerHistoryPersist";
+import { CompareMessageRow } from "./CompareMessageRow";
 
 export type CompareColumnStatus = "submitted" | "streaming" | "ready" | "error";
 
@@ -81,7 +75,12 @@ export const CompareColumn = forwardRef<
 	},
 	ref,
 ) {
-	const connectionRef = useRef(createTrainerStreamConnection(thread.id));
+	const connectionRef = useRef<ReturnType<
+		typeof createTrainerStreamConnection
+	> | null>(null);
+	if (connectionRef.current === null) {
+		connectionRef.current = createTrainerStreamConnection(thread.id);
+	}
 	const { messages, sendMessage, status, isLoading, stop, error, setMessages } =
 		useChat({
 			connection: connectionRef.current,
@@ -290,60 +289,17 @@ export const CompareColumn = forwardRef<
 						</div>
 					)}
 
-					{messages.map((msg, msgIndex) => {
-						const isUser = msg.role === "user";
+					{messages.map((msg) => {
 						const isLastMsg = msg.id === lastMessageId;
 						const isCurrentlyStreaming = isLastMsg && status === "streaming";
 
-						if (isUser) {
-							const text = getTextContent(msg);
-							if (!text) return null;
-							return (
-								<div key={msg.id} className="flex flex-col items-end gap-1">
-									<div className="min-w-0 max-w-full overflow-hidden rounded-lg px-3 py-2 text-sm leading-relaxed break-words bg-[#8b5cf6]/20 border border-[#8b5cf6]/30 text-[#e2d9f3] whitespace-pre-wrap [overflow-wrap:anywhere]">
-										{text}
-									</div>
-									<span className="text-[10px] text-[#4a4468]">
-										{formatTime(msg.createdAt)}
-									</span>
-								</div>
-							);
-						}
-
-						const thinkingContent = getThinkingContent(msg);
-						const textContent = getTextContent(msg);
-						const isThinkingPhase =
-							isCurrentlyStreaming && !!thinkingContent && !textContent;
-
 						return (
-							<div key={msg.id} className="flex flex-col items-start gap-1">
-								<div className="min-w-0 max-w-full overflow-hidden rounded-lg px-3 py-2 text-sm leading-relaxed break-words bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] text-[#c4b5fd] [overflow-wrap:anywhere]">
-									{thinkingContent && (
-										<ThinkingBlock
-											content={thinkingContent}
-											isStreaming={isThinkingPhase}
-										/>
-									)}
-									{textContent ? (
-										<ReactMarkdown
-											remarkPlugins={[remarkGfm]}
-											components={mdComponents}
-										>
-											{textContent}
-										</ReactMarkdown>
-									) : isCurrentlyStreaming && !thinkingContent ? (
-										<DotsLoader />
-									) : null}
-									{isCurrentlyStreaming && textContent && (
-										<span className="inline-block w-0.5 h-4 bg-[#8b5cf6] animate-pulse ml-0.5 align-middle" />
-									)}
-								</div>
-								{!isCurrentlyStreaming && textContent && (
-									<span className="text-[10px] text-[#4a4468]">
-										{formatTime(msg.createdAt)}
-									</span>
-								)}
-							</div>
+							<CompareMessageRow
+								key={msg.id}
+								msg={msg}
+								isLastMsg={isLastMsg}
+								isCurrentlyStreaming={isCurrentlyStreaming}
+							/>
 						);
 					})}
 

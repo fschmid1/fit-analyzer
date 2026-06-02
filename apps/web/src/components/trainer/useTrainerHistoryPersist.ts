@@ -38,7 +38,10 @@ export function useTrainerHistoryPersist(
 
 	useEffect(() => {
 		if (status === "streaming" || status === "submitted") {
-			saveTrainerDraft(threadId, messages);
+			const id = setTimeout(() => {
+				saveTrainerDraft(threadId, messages);
+			}, 600);
+			return () => clearTimeout(id);
 		}
 	}, [messages, status, threadId]);
 }

@@ -118,6 +118,7 @@ export function ThreadSidebar({
 			bounds: { left: -240, right: 0 },
 			rubberband: true,
 			preventDefault: true,
+			eventOptions: { passive: false },
 		},
 	);
 

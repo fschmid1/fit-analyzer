@@ -425,6 +425,7 @@ export const ActivityChart = memo(function ActivityChart({
 		{
 			target: chartContainerRef,
 			scaleBounds: { min: 0.2, max: 50 },
+			eventOptions: { passive: false },
 			from: () => {
 				if (!fullRange) return [0, 1];
 				const current =
@@ -485,6 +486,7 @@ export const ActivityChart = memo(function ActivityChart({
 				right: Number.POSITIVE_INFINITY,
 			},
 			preventScrollAxis: "x",
+			eventOptions: { passive: false },
 		},
 	);
 

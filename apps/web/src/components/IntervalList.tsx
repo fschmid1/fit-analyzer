@@ -62,6 +62,7 @@ function SwipeableIntervalRow({
 			bounds: { left: -80, right: 80 },
 			rubberband: true,
 			preventDefault: true,
+			eventOptions: { passive: false },
 		},
 	);
 
