@@ -41,7 +41,7 @@ export function TrainerCompareView({
 		{},
 	);
 	const [columnStatus, setColumnStatus] = useState<ColumnSnapshot>({});
-	const [masterText, setMasterText] = useState("");
+	const [hasInput, setHasInput] = useState(false);
 	const refs = useRef<Record<string, CompareColumnHandle | null>>({});
 	const [carouselIndex, setCarouselIndex] = useState(0);
 	const scrollerRef = useRef<HTMLDivElement>(null);
@@ -115,22 +115,21 @@ export function TrainerCompareView({
 	);
 
 	const canSend = useMemo(() => {
-		const text = masterText.trim();
-		if (!text) return false;
+		if (!hasInput) return false;
 		if (anyLoading) return false;
 		return true;
-	}, [masterText, anyLoading]);
+	}, [hasInput, anyLoading]);
 
 	const broadcast = useCallback(async () => {
-		const text = masterText.trim();
+		const text = composerTextareaRef.current?.value.trim();
 		if (!text || anyLoading) return;
-		setMasterText("");
 		if (composerTextareaRef.current) composerTextareaRef.current.value = "";
+		setHasInput(false);
 		const handles = pinnedThreads
 			.map((t) => refs.current[t.id])
 			.filter((h): h is CompareColumnHandle => !!h);
 		await Promise.all(handles.map((h) => h.sendMessage(text)));
-	}, [masterText, anyLoading, pinnedThreads]);
+	}, [anyLoading, pinnedThreads]);
 
 	const stopAll = useCallback(() => {
 		for (const t of pinnedThreads) refs.current[t.id]?.stop();
@@ -288,8 +287,11 @@ export function TrainerCompareView({
 				<div className="flex flex-col gap-2 bg-[#1a1533]/60 border border-[rgba(139,92,246,0.15)] rounded-lg px-3 py-2.5 sm:px-4 sm:py-3">
 					<textarea
 						ref={composerTextareaRef}
-						value={masterText}
-						onChange={(e) => setMasterText(e.target.value)}
+						defaultValue=""
+						onChange={(e) => {
+							const next = !!e.target.value.trim();
+							if (next !== hasInput) setHasInput(next);
+						}}
 						onFocus={() => setComposerFocused(true)}
 						onBlur={() => setComposerFocused(false)}
 						onKeyDown={handleKeyDown}
