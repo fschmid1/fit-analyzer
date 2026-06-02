@@ -513,3 +513,25 @@ export async function importTrainerChat(
 	}
 	return res.json();
 }
+
+/** Extract a filename from a `Content-Disposition: attachment; filename="…"` header. */
+function parseContentDispositionFilename(header: string | null): string | null {
+	if (!header) return null;
+	const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(header);
+	return match?.[1] ? decodeURIComponent(match[1]) : null;
+}
+
+export async function exportTrainerThread(
+	threadId: string,
+): Promise<{ filename: string; markdown: string }> {
+	const res = await fetch(`${API_BASE}/trainer/export/${threadId}`);
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({ error: "Export failed" }));
+		throw new Error((err as { error?: string }).error ?? "Export failed");
+	}
+	const filename =
+		parseContentDispositionFilename(res.headers.get("Content-Disposition")) ??
+		`thread-${threadId}.md`;
+	const markdown = await res.text();
+	return { filename, markdown };
+}

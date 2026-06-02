@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useRef, useState, useMemo } from "react";
 import {
 	ArrowLeft,
 	ArrowRight,
@@ -7,6 +7,7 @@ import {
 	Bike,
 	Timer,
 	Dumbbell,
+	Upload,
 } from "lucide-react";
 import { AVAILABLE_MODELS, type ModelEntry } from "@fit-analyzer/shared";
 import { ModelPicker } from "./ModelPicker";
@@ -100,12 +101,14 @@ ${metrics ? `Metrics:\n- I track my rides with ${metrics}.\n` : ""}`;
 
 export function CoachOnboarding({
 	onComplete,
+	onImport,
 	availableModels,
 	defaultModel,
 	favorites,
 	onToggleFavorite,
 }: {
 	onComplete: (prompt: string, coachModel: string | null) => void;
+	onImport: (file: File) => Promise<void> | void;
 	availableModels: ModelEntry[];
 	defaultModel: string | null;
 	favorites: string[];
@@ -114,6 +117,29 @@ export function CoachOnboarding({
 	const [step, setStep] = useState(0);
 	const [form, setForm] = useState<FormData>(INITIAL_FORM);
 	const [selectedModel, setSelectedModel] = useState<string | null>(null);
+	const [importState, setImportState] = useState<
+		"idle" | "loading" | "done" | "error"
+	>("idle");
+	const [importError, setImportError] = useState<string | null>(null);
+	const importInputRef = useRef<HTMLInputElement>(null);
+
+	const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0];
+		e.target.value = "";
+		if (!file) return;
+		setImportState("loading");
+		setImportError(null);
+		Promise.resolve()
+			.then(() => onImport(file))
+			.then(() => {
+				setImportState("done");
+			})
+			.catch((err) => {
+				setImportError(err instanceof Error ? err.message : "Import failed");
+				setImportState("error");
+				setTimeout(() => setImportState("idle"), 5000);
+			});
+	};
 
 	const update = (field: keyof FormData, value: string | boolean) => {
 		setForm((prev) => ({ ...prev, [field]: value }));
@@ -148,6 +174,13 @@ export function CoachOnboarding({
 
 	return (
 		<div className="flex-1 flex flex-col items-center justify-center px-4 py-8 overflow-y-auto">
+			<input
+				ref={importInputRef}
+				type="file"
+				accept=".md,text/markdown,text/plain"
+				className="hidden"
+				onChange={handleImportFile}
+			/>
 			<div className="w-full max-w-lg">
 				<div className="flex items-center gap-2 mb-8">
 					<Bike className="w-5 h-5 text-[#8b5cf6]" />
@@ -445,6 +478,31 @@ export function CoachOnboarding({
 							Send to Coach
 						</button>
 					)}
+				</div>
+
+				<div className="mt-4 flex items-center gap-2 justify-center">
+					<span className="text-[11px] text-[#4a4468]">or</span>
+					<button
+						type="button"
+						onClick={() => importInputRef.current?.click()}
+						disabled={importState === "loading"}
+						title="Import a ChatGPT markdown export"
+						className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-all duration-200 cursor-pointer disabled:cursor-wait ${
+							importState === "done"
+								? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+								: importState === "error"
+									? "bg-rose-500/10 border-rose-500/20 text-rose-400"
+									: "bg-[#8b5cf6]/10 border-[#8b5cf6]/20 text-[#c4b5fd] hover:bg-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
+						}`}
+					>
+						<Upload className="w-3.5 h-3.5" />
+						<span>
+							{importState === "loading" && "Importing…"}
+							{importState === "done" && "Imported!"}
+							{importState === "error" && (importError ?? "Error")}
+							{importState === "idle" && "Import .md"}
+						</span>
+					</button>
 				</div>
 			</div>
 		</div>

@@ -6,11 +6,13 @@ import {
 	compactTrainerHistory,
 	createThread,
 	deleteThread,
+	exportTrainerThread,
 	fetchAvailableModels,
 	fetchThreads,
 	fetchTrainerHistory,
 	fetchUserSettings,
 	forkThread,
+	importTrainerChat,
 	renameThread,
 	updateCompareSettings,
 	updateFavoriteModels,
@@ -276,6 +278,35 @@ export function TrainerView({
 		}
 	}, []);
 
+	const handleExportThread = useCallback(async (threadId: string) => {
+		const { filename, markdown } = await exportTrainerThread(threadId);
+		const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement("a");
+		a.href = url;
+		a.download = filename;
+		a.rel = "noopener";
+		document.body.appendChild(a);
+		a.click();
+		a.remove();
+		URL.revokeObjectURL(url);
+	}, []);
+
+	const handleOnboardingImport = useCallback(
+		async (file: File) => {
+			const { threadId: importedThreadId } = await importTrainerChat(file);
+			const list = await fetchThreads(activityId);
+			setThreads(list);
+			initialized.current = true;
+			setAutoSend(false);
+			setCurrentInitialInput("");
+			setActiveThreadId(importedThreadId);
+			setShowOnboarding(false);
+			setChatKey((k) => k + 1);
+		},
+		[activityId],
+	);
+
 	// ── render ──────────────────────────────────────────────────────────────────
 
 	const pinnedThreads = useMemo(
@@ -329,6 +360,7 @@ export function TrainerView({
 						setShowOnboarding(false);
 						setChatKey((k) => k + 1);
 					}}
+					onImport={handleOnboardingImport}
 					availableModels={availableModels}
 					defaultModel={defaultModel}
 					favorites={favorites}
@@ -382,6 +414,7 @@ export function TrainerView({
 				onDelete={handleDeleteThread}
 				onFork={handleForkThread}
 				onCompact={handleCompactThread}
+				onExport={handleExportThread}
 				open={threadsOpen}
 				onClose={() => setThreadsOpen(false)}
 				compareMode={compareMode}

@@ -3,6 +3,7 @@
 ## Task Completion Requirements
 
 - All of `bun fmt`, `bun lint`, and `bun typecheck` must pass before considering tasks completed.
+- Validate your changes before declaring a task finished. Run relevant tests, exercise the affected code paths, or otherwise confirm the change actually works. Do not rely solely on the code looking correct.
 
 ## Project Snapshot
 

@@ -11,7 +11,10 @@ import { getCoachModelSettings } from "../lib/coachModelSettings.js";
 import { getOllamaModels } from "../lib/ollamaModelCache.js";
 import { createOllamaTrainerStream } from "../lib/ollamaTrainerStream.js";
 import { getHealthContext } from "../lib/owClient.js";
-import { parseCoachingMarkdown } from "../lib/parseCoachingMarkdown.js";
+import {
+	parseCoachingMarkdown,
+	serializeCoachingMarkdown,
+} from "../lib/parseCoachingMarkdown.js";
 import { createTrainerStream } from "../lib/trainerStream.js";
 import {
 	createTrainerStreamConsumer,
@@ -693,7 +696,13 @@ trainer.post("/import", async (c) => {
 		if (!thread) return c.json({ error: "Thread not found" }, 404);
 	} else {
 		targetThreadId = crypto.randomUUID();
-		createThreadStmt.run(targetThreadId, "general", userId, "Imported Chat");
+		createThreadStmt.run(
+			targetThreadId,
+			"general",
+			userId,
+			"Imported Chat",
+			null,
+		);
 	}
 
 	if (!targetThreadId) {
@@ -715,6 +724,61 @@ trainer.post("/import", async (c) => {
 	})();
 
 	return c.json({ imported: messages.length, threadId: targetThreadId });
+});
+
+// ─── Export ───────────────────────────────────────────────────────────────────
+
+/** Replace characters disallowed in HTTP `filename="…"` with ASCII fallbacks. */
+function toAsciiFilenameBase(name: string): string {
+	const ascii = name
+		.replace(/[^\x20-\x7e]+/g, "_") // collapse any non-ASCII to underscore
+		.replace(/[\\/:*?"<>|]+/g, "_")
+		.replace(/\s+/g, "_")
+		.slice(0, 80);
+	return ascii || "thread";
+}
+
+trainer.get("/export/:threadId", async (c) => {
+	const userId = getUserId(c);
+	const { threadId } = c.req.param();
+
+	const thread = getThreadByIdStmt.get(threadId, userId) as
+		| {
+				id: string;
+				name: string;
+				coachModel: string | null;
+				createdAt: string;
+		  }
+		| undefined;
+	if (!thread) return c.json({ error: "Thread not found" }, 404);
+
+	const messages = getMessagesStmt.all(threadId) as TrainerMessage[];
+	if (messages.length === 0) {
+		return c.json({ error: "Thread has no messages to export" }, 400);
+	}
+
+	const markdown = serializeCoachingMarkdown(messages, {
+		title: thread.name,
+		coachModel: thread.coachModel,
+		createdAt: thread.createdAt,
+	});
+
+	// RFC 6266 + RFC 5987: ship an ASCII fallback in filename="…", and the
+	// real (possibly unicode) name in filename*=UTF-8"…". All modern browsers
+	// honour filename* when present.
+	const safeName = `${thread.name.trim() || "thread"}.md`;
+	const asciiBase = toAsciiFilenameBase(`${thread.name.trim() || "thread"}.md`);
+	const disposition =
+		`attachment; filename="${asciiBase}"; ` +
+		`filename*=UTF-8''${encodeURIComponent(safeName)}`;
+
+	return new Response(markdown, {
+		headers: {
+			"Content-Type": "text/markdown; charset=utf-8",
+			"Content-Disposition": disposition,
+			"Cache-Control": "no-store",
+		},
+	});
 });
 
 export { trainer };

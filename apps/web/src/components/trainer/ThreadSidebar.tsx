@@ -5,7 +5,9 @@ import {
 	ChevronDown,
 	ChevronRight,
 	Columns,
+	Download,
 	GitFork,
+	Loader2,
 	Minimize2,
 	MoreVertical,
 	Pencil,
@@ -26,6 +28,7 @@ interface ThreadSidebarProps {
 	onDelete: (id: string) => void;
 	onFork: (id: string) => void;
 	onCompact: (id: string) => void;
+	onExport: (id: string) => void;
 	open: boolean;
 	onClose: () => void;
 	compareMode?: boolean;
@@ -42,7 +45,7 @@ interface ContextMenu {
 }
 
 const CONTEXT_MENU_WIDTH = 160;
-const CONTEXT_MENU_HEIGHT = 136;
+const CONTEXT_MENU_HEIGHT = 180;
 const CONTEXT_MENU_MARGIN = 8;
 
 function getContextMenuPosition(x: number, y: number) {
@@ -72,6 +75,7 @@ export function ThreadSidebar({
 	onDelete,
 	onFork,
 	onCompact,
+	onExport,
 	open,
 	onClose,
 	compareMode = false,
@@ -84,6 +88,13 @@ export function ThreadSidebar({
 	const [editingName, setEditingName] = useState("");
 	const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
 	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+	const [exportingThreadId, setExportingThreadId] = useState<string | null>(
+		null,
+	);
+	const [exportError, setExportError] = useState<{
+		threadId: string;
+		message: string;
+	} | null>(null);
 	const contextMenuRef = useRef<HTMLDivElement>(null);
 	const sidebarRef = useRef<HTMLDivElement>(null);
 
@@ -212,6 +223,31 @@ export function ThreadSidebar({
 		},
 		[onCompact],
 	);
+
+	const handleExport = useCallback(
+		async (threadId: string) => {
+			setContextMenu(null);
+			setExportingThreadId(threadId);
+			setExportError(null);
+			try {
+				await onExport(threadId);
+			} catch (err) {
+				setExportError({
+					threadId,
+					message: err instanceof Error ? err.message : "Export failed",
+				});
+			} finally {
+				setExportingThreadId(null);
+			}
+		},
+		[onExport],
+	);
+
+	useEffect(() => {
+		if (!exportError) return;
+		const timer = window.setTimeout(() => setExportError(null), 4000);
+		return () => window.clearTimeout(timer);
+	}, [exportError]);
 
 	return (
 		<div
@@ -397,6 +433,23 @@ export function ThreadSidebar({
 						>
 							<GitFork className="w-3.5 h-3.5" />
 							Fork
+						</button>
+						<div className="my-1 border-t border-[rgba(139,92,246,0.1)]" />
+						<button
+							type="button"
+							onClick={() => handleExport(contextMenu.threadId)}
+							disabled={exportingThreadId === contextMenu.threadId}
+							className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-[#c4b5fd] hover:bg-[#8b5cf6]/15 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+							role="menuitem"
+						>
+							{exportingThreadId === contextMenu.threadId ? (
+								<Loader2 className="w-3.5 h-3.5 animate-spin" />
+							) : (
+								<Download className="w-3.5 h-3.5" />
+							)}
+							{exportingThreadId === contextMenu.threadId
+								? "Exporting…"
+								: "Export"}
 						</button>
 						<div className="my-1 border-t border-[rgba(139,92,246,0.1)]" />
 						<button

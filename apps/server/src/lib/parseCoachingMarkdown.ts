@@ -64,3 +64,47 @@ export function parseCoachingMarkdown(raw: string): TrainerMessage[] {
 
 	return messages;
 }
+
+export interface SerializeCoachingMarkdownOptions {
+	/** Thread title (rendered as the `# Title` header line). */
+	title: string;
+	/** Coach model identifier to label assistant sections, e.g. "openrouter:anthropic/claude-3.5". */
+	coachModel?: string | null;
+	/** Base timestamp; defaults to the first message's `createdAt` or now. */
+	createdAt?: string | Date;
+}
+
+/** Format a `Date` as `DD/MM/YYYY, HH:MM:SS` in local time (matches the parser). */
+function formatCreatedAt(value: string | Date): string {
+	const d = value instanceof Date ? value : new Date(value);
+	if (Number.isNaN(d.getTime())) return new Date().toLocaleString("en-GB");
+	const pad = (n: number) => n.toString().padStart(2, "0");
+	return (
+		`${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}, ` +
+		`${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+	);
+}
+
+/**
+ * Serialize `TrainerMessage[]` into the ChatGPT-style markdown that
+ * `parseCoachingMarkdown` consumes, producing a document that round-trips.
+ */
+export function serializeCoachingMarkdown(
+	messages: TrainerMessage[],
+	options: SerializeCoachingMarkdownOptions,
+): string {
+	const { title, coachModel } = options;
+	const createdAt = options.createdAt ?? messages[0]?.createdAt ?? new Date();
+	const assistantLabel = coachModel
+		? `### Assistant (${coachModel})`
+		: "### Assistant";
+
+	const body = messages
+		.map((m) => {
+			const heading = m.role === "user" ? "### User" : assistantLabel;
+			return `${heading}\n${m.content.trim()}`;
+		})
+		.join("\n---\n");
+
+	return `# ${title}\nCreated: ${formatCreatedAt(createdAt)}\n---\n${body}\n`;
+}
