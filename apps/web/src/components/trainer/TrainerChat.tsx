@@ -1,15 +1,27 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useChat } from "@tanstack/ai-react";
-import { ArrowDown, ArrowUp, Menu, Send, Square, Upload } from "lucide-react";
 import type { UIMessage } from "@tanstack/ai-react";
+import {
+	ArrowDown,
+	ArrowUp,
+	Loader2,
+	Menu,
+	Send,
+	Square,
+	Upload,
+} from "lucide-react";
 import {
 	AVAILABLE_MODELS,
 	getCoachModelDisplayName,
 	getModelProvider,
 	type ModelEntry,
 } from "@fit-analyzer/shared";
-import { importTrainerChat, saveTrainerHistory } from "../../lib/api";
+import {
+	fetchTrainerHistory,
+	importTrainerChat,
+	saveTrainerHistory,
+} from "../../lib/api";
 import { createTrainerStreamConnection } from "../../lib/trainerStreamConnection";
 import {
 	clearActiveTrainerStream,
@@ -21,6 +33,7 @@ import { ModelPicker } from "./ModelPicker";
 import {
 	getTextContent,
 	toTrainerMessage,
+	toUIMessage,
 	stripTrailingAssistant,
 	applyResumedChunk,
 	streamResumedChat,
@@ -29,11 +42,17 @@ import { useTrainerHistoryPersist } from "./useTrainerHistoryPersist";
 import { DotsLoader } from "./DotsLoader";
 import { ChatMessageRow } from "./ChatMessageRow";
 
+const PAGE_SIZE = 20;
+const TOP_SENTINEL_THRESHOLD_PX = 200;
+
 interface TrainerChatProps {
 	threadId: string;
 	activityId: string;
 	initialMessages: UIMessage[];
 	initialInput: string;
+	initialNextCursor: string | null;
+	initialHasMore: boolean;
+	initialTotal: number;
 	autoSend?: boolean;
 	onBack: () => void;
 	onOpenThreads: () => void;
@@ -51,6 +70,9 @@ export function TrainerChat({
 	activityId,
 	initialMessages,
 	initialInput,
+	initialNextCursor,
+	initialHasMore,
+	initialTotal,
 	autoSend,
 	onBack,
 	onOpenThreads,
@@ -98,6 +120,20 @@ export function TrainerChat({
 	const [confirmDeleteMessageId, setConfirmDeleteMessageId] = useState<
 		string | null
 	>(null);
+	// `useChat`'s `setMessages` doesn't support the updater form, so we
+	// track the latest messages in a ref for safe async merging.
+	const messagesRef = useRef<UIMessage[]>(messages);
+	messagesRef.current = messages;
+
+	// Pagination state
+	const [nextCursor, setNextCursor] = useState<string | null>(
+		initialNextCursor,
+	);
+	const [hasMore, setHasMore] = useState(initialHasMore);
+	const [totalServerMessages, setTotalServerMessages] = useState(initialTotal);
+	const [loadingMore, setLoadingMore] = useState(false);
+	const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+	const loadingMoreRef = useRef(false);
 
 	const activeModel =
 		threadModel ??
@@ -125,15 +161,8 @@ export function TrainerChat({
 				if (chunk.type === "RUN_FINISHED" || chunk.type === "RUN_ERROR") {
 					clearActiveTrainerStream(threadId);
 					clearTrainerDraft(threadId);
-					const toSave = baseMessages
-						.filter(
-							(message) =>
-								message.role === "user" || message.role === "assistant",
-						)
-						.map(toTrainerMessage)
-						.filter((message) => message.content);
-					if (toSave.length > 0)
-						saveTrainerHistory(threadId, toSave).catch(console.error);
+					// `useTrainerHistoryPersist` will save the full merged history
+					// on the streaming → ready transition.
 				}
 			},
 			abortController.signal,
@@ -250,7 +279,97 @@ export function TrainerChat({
 		}
 	}, [lastMessageId, lastMessageTextLen, updateScrollButtons, status]);
 
-	useTrainerHistoryPersist(threadId, messages, status);
+	// Infinite scroll: load older pages when sentinel is near the top.
+	const loadOlderMessages = useCallback(async () => {
+		if (loadingMoreRef.current) return;
+		if (!hasMore || !nextCursor) return;
+		const scroller = scrollRef.current;
+		if (!scroller) return;
+		loadingMoreRef.current = true;
+		setLoadingMore(true);
+		setLoadMoreError(null);
+		// Snapshot the scroll geometry so we can restore the user's viewport
+		// after the older page is prepended to the message list.
+		const previousScrollHeight = scroller.scrollHeight;
+		const previousScrollTop = scroller.scrollTop;
+		try {
+			const page = await fetchTrainerHistory(threadId, undefined, {
+				cursor: nextCursor,
+				limit: PAGE_SIZE,
+			});
+			const older = page.messages.map(toUIMessage);
+			const known = new Set(messagesRef.current.map((m) => m.id));
+			const additions = older.filter((m) => !known.has(m.id));
+			if (additions.length > 0) {
+				setMessages([...additions, ...messagesRef.current]);
+			}
+			setNextCursor(page.nextCursor);
+			setHasMore(page.hasMore);
+			setTotalServerMessages(page.total);
+			// Wait one frame so the new content is in the DOM, then re-anchor
+			// the scroll position to the first previously-visible message.
+			requestAnimationFrame(() => {
+				const el = scrollRef.current;
+				if (!el) return;
+				const addedHeight = el.scrollHeight - previousScrollHeight;
+				el.scrollTop = previousScrollTop + addedHeight;
+				updateScrollButtons();
+			});
+		} catch (err) {
+			console.error("Failed to load older messages:", err);
+			setLoadMoreError(err instanceof Error ? err.message : "Load failed");
+		} finally {
+			loadingMoreRef.current = false;
+			setLoadingMore(false);
+		}
+	}, [hasMore, nextCursor, threadId, setMessages, updateScrollButtons]);
+
+	const onScroll = useCallback(() => {
+		updateScrollButtons();
+		const el = scrollRef.current;
+		if (!el) return;
+		if (
+			hasMore &&
+			!loadingMoreRef.current &&
+			el.scrollTop <= TOP_SENTINEL_THRESHOLD_PX
+		) {
+			void loadOlderMessages();
+		}
+	}, [hasMore, loadOlderMessages, updateScrollButtons]);
+
+	// Before saving, make sure we have the full server history. The local
+	// window may be a paginated subset, and PUT replaces the whole row set.
+	const ensureFullHistory = useCallback(
+		async (current: UIMessage[]): Promise<UIMessage[]> => {
+			if (!hasMore) return current;
+			// Walk all remaining pages so the saved list is complete.
+			let cursor = nextCursor;
+			let safety = 50;
+			const collected: UIMessage[] = [];
+			while (cursor && safety-- > 0) {
+				const page = await fetchTrainerHistory(threadId, undefined, {
+					cursor,
+					limit: PAGE_SIZE,
+				});
+				collected.push(...page.messages.map(toUIMessage));
+				if (!page.hasMore || !page.nextCursor) break;
+				cursor = page.nextCursor;
+			}
+			// Local state wins over server state for any id collisions
+			// (e.g. messages the user just edited or deleted).
+			const byId = new Map<string, UIMessage>();
+			for (const m of collected) byId.set(m.id, m);
+			for (const m of current) byId.set(m.id, m);
+			return [...byId.values()].sort(
+				(a, b) =>
+					new Date(a.createdAt ?? 0).getTime() -
+					new Date(b.createdAt ?? 0).getTime(),
+			);
+		},
+		[hasMore, nextCursor, threadId],
+	);
+
+	useTrainerHistoryPersist(threadId, messages, status, ensureFullHistory);
 
 	const handleSend = useCallback(async () => {
 		const text = inputRef.current.trim();
@@ -258,6 +377,8 @@ export function TrainerChat({
 		inputRef.current = "";
 		if (textareaRef.current) textareaRef.current.value = "";
 		setHasInput(false);
+		// Optimistic total so the next save recognises the new tail.
+		setTotalServerMessages((n) => n + 2);
 		await sendMessage(text);
 	}, [isLoading, sendMessage]);
 
@@ -276,14 +397,18 @@ export function TrainerChat({
 			setConfirmDeleteMessageId(null);
 			const nextMessages = messages.filter((m) => m.id !== messageId);
 			setMessages(nextMessages);
-			const toSave = nextMessages
-				.filter((m) => m.role === "user" || m.role === "assistant")
-				.map(toTrainerMessage)
-				.filter((m) => m.content);
-			saveTrainerHistory(threadId, toSave).catch(console.error);
+			setTotalServerMessages((n) => Math.max(0, n - 1));
+			(async () => {
+				const full = await ensureFullHistory(nextMessages);
+				const toSave = full
+					.filter((m) => m.role === "user" || m.role === "assistant")
+					.map(toTrainerMessage)
+					.filter((m) => m.content);
+				saveTrainerHistory(threadId, toSave).catch(console.error);
+			})();
 			clearTrainerDraft(threadId);
 		},
-		[messages, setMessages, threadId],
+		[messages, setMessages, threadId, ensureFullHistory],
 	);
 
 	const isGeneralChat = activityId === "general";
@@ -321,7 +446,7 @@ export function TrainerChat({
 						{status === "streaming" && "Responding…"}
 						{(status === "ready" || status === "error") &&
 							(coachModelName
-								? `${coachModelName} via ${getModelProvider(activeModel) === "ollama-cloud" ? "Ollama Cloud" : "OpenRouter"}`
+								? `${coachModelName} via ${getModelProvider(activeModel) === "ollama-cloud" ? "Ollama Cloud" : "OpenRouter"} · ${totalServerMessages} message${totalServerMessages === 1 ? "" : "s"}`
 								: "Coach")}
 					</span>
 				</div>
@@ -357,10 +482,33 @@ export function TrainerChat({
 			<div className="flex-1 relative min-h-0">
 				<div
 					ref={scrollRef}
-					onScroll={updateScrollButtons}
+					onScroll={onScroll}
 					className="absolute inset-0 overflow-y-auto px-3 py-4 sm:px-6 sm:py-6 space-y-4"
 				>
-					{messages.length === 0 && (
+					{hasMore && (
+						<div className="flex justify-center pt-1">
+							{loadingMore ? (
+								<span className="flex items-center gap-2 text-xs text-[#7c6fa0]">
+									<Loader2 className="w-3.5 h-3.5 animate-spin" />
+									Loading earlier messages…
+								</span>
+							) : loadMoreError ? (
+								<button
+									type="button"
+									onClick={() => void loadOlderMessages()}
+									className="text-xs text-rose-400 hover:text-rose-300 cursor-pointer"
+								>
+									{loadMoreError} · Tap to retry
+								</button>
+							) : (
+								<span className="text-[11px] text-[#4a4468]">
+									Scroll up for older messages
+								</span>
+							)}
+						</div>
+					)}
+
+					{messages.length === 0 && !hasMore && (
 						<div className="flex flex-col items-center justify-center h-full text-center gap-3 opacity-50">
 							<div className="w-12 h-12 rounded-lg bg-[#8b5cf6]/20 flex items-center justify-center">
 								<Send className="w-5 h-5 text-[#8b5cf6]" />
@@ -381,12 +529,13 @@ export function TrainerChat({
 								if (isLoading) stop();
 								const truncated = messages.slice(0, msgIndex);
 								setMessages(truncated);
-								const toSave = truncated
+								const full = await ensureFullHistory(truncated);
+								const toSave = full
 									.filter((m) => m.role === "user" || m.role === "assistant")
 									.map(toTrainerMessage)
 									.filter((m) => m.content);
-								if (toSave.length > 0)
-									saveTrainerHistory(threadId, toSave).catch(console.error);
+								saveTrainerHistory(threadId, toSave).catch(console.error);
+								setTotalServerMessages((n) => Math.max(0, n - 1));
 								await sendMessage(msgText);
 								return;
 							}
@@ -406,12 +555,13 @@ export function TrainerChat({
 							if (isLoading) stop();
 							const truncated = messages.slice(0, lastUserIndex);
 							setMessages(truncated);
-							const toSave = truncated
+							const full = await ensureFullHistory(truncated);
+							const toSave = full
 								.filter((m) => m.role === "user" || m.role === "assistant")
 								.map(toTrainerMessage)
 								.filter((m) => m.content);
-							if (toSave.length > 0)
-								saveTrainerHistory(threadId, toSave).catch(console.error);
+							saveTrainerHistory(threadId, toSave).catch(console.error);
+							setTotalServerMessages((n) => Math.max(0, n - 1));
 							await sendMessage(userText);
 						};
 

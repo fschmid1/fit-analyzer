@@ -81,6 +81,8 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_trainer_messages_chat_id
     ON trainer_messages(chat_id);
+  CREATE INDEX IF NOT EXISTS idx_trainer_messages_chat_created
+    ON trainer_messages(chat_id, created_at, id);
 `);
 
 // One-time migration: move messages JSON blob → trainer_messages rows

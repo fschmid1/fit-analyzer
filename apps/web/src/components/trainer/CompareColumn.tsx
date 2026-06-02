@@ -8,7 +8,7 @@ import {
 } from "react";
 import type { UIMessage } from "@tanstack/ai-react";
 import { useChat } from "@tanstack/ai-react";
-import { ArrowDown, ArrowUp, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2, X } from "lucide-react";
 import {
 	AVAILABLE_MODELS,
 	getCoachModelDisplayName,
@@ -16,6 +16,7 @@ import {
 	type ModelEntry,
 	type TrainerThread,
 } from "@fit-analyzer/shared";
+import { fetchTrainerHistory } from "../../lib/api";
 import { createTrainerStreamConnection } from "../../lib/trainerStreamConnection";
 import {
 	clearActiveTrainerStream,
@@ -28,12 +29,13 @@ import {
 	applyResumedChunk,
 	stripTrailingAssistant,
 	streamResumedChat,
+	toUIMessage,
 } from "./trainerHelpers";
-import {
-	persistMessagesNow,
-	useTrainerHistoryPersist,
-} from "./useTrainerHistoryPersist";
+import { useTrainerHistoryPersist } from "./useTrainerHistoryPersist";
 import { CompareMessageRow } from "./CompareMessageRow";
+
+const PAGE_SIZE = 20;
+const TOP_SENTINEL_THRESHOLD_PX = 200;
 
 export type CompareColumnStatus = "submitted" | "streaming" | "ready" | "error";
 
@@ -47,6 +49,9 @@ export interface CompareColumnHandle {
 export interface CompareColumnProps {
 	thread: TrainerThread;
 	initialMessages: UIMessage[];
+	initialNextCursor: string | null;
+	initialHasMore: boolean;
+	initialTotal: number;
 	defaultModel: string | null;
 	availableModels: ModelEntry[];
 	favorites: string[];
@@ -65,6 +70,9 @@ export const CompareColumn = forwardRef<
 	{
 		thread,
 		initialMessages,
+		initialNextCursor,
+		initialHasMore,
+		initialTotal,
 		defaultModel,
 		availableModels,
 		favorites,
@@ -88,6 +96,21 @@ export const CompareColumn = forwardRef<
 			body: { threadId: thread.id },
 		});
 
+	// `useChat`'s `setMessages` doesn't support the updater form, so we
+	// track the latest messages in a ref for safe async merging.
+	const messagesRef = useRef<UIMessage[]>(messages);
+	messagesRef.current = messages;
+
+	// Pagination state
+	const [nextCursor, setNextCursor] = useState<string | null>(
+		initialNextCursor,
+	);
+	const [hasMore, setHasMore] = useState(initialHasMore);
+	const [totalServerMessages, setTotalServerMessages] = useState(initialTotal);
+	const [loadingMore, setLoadingMore] = useState(false);
+	const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+	const loadingMoreRef = useRef(false);
+
 	const sendMessageRef = useRef(sendMessage);
 	const stopRef = useRef(stop);
 	sendMessageRef.current = sendMessage;
@@ -103,6 +126,7 @@ export const CompareColumn = forwardRef<
 		sendMessage: async (text: string) => {
 			const trimmed = text.trim();
 			if (!trimmed) return;
+			setTotalServerMessages((n) => n + 2);
 			await sendMessageRef.current(trimmed);
 		},
 		stop: () => {
@@ -119,6 +143,35 @@ export const CompareColumn = forwardRef<
 	const [scrollBottomShown, setScrollBottomShown] = useState(false);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const bottomRef = useRef<HTMLDivElement>(null);
+
+	// Walk remaining pages so save / persist get a complete message set
+	// even if the in-memory window is paginated.
+	const ensureFullHistory = useCallback(
+		async (current: UIMessage[]): Promise<UIMessage[]> => {
+			if (!hasMore) return current;
+			let cursor = nextCursor;
+			let safety = 50;
+			const collected: UIMessage[] = [];
+			while (cursor && safety-- > 0) {
+				const page = await fetchTrainerHistory(thread.id, undefined, {
+					cursor,
+					limit: PAGE_SIZE,
+				});
+				collected.push(...page.messages.map(toUIMessage));
+				if (!page.hasMore || !page.nextCursor) break;
+				cursor = page.nextCursor;
+			}
+			const byId = new Map<string, UIMessage>();
+			for (const m of collected) byId.set(m.id, m);
+			for (const m of current) byId.set(m.id, m);
+			return [...byId.values()].sort(
+				(a, b) =>
+					new Date(a.createdAt ?? 0).getTime() -
+					new Date(b.createdAt ?? 0).getTime(),
+			);
+		},
+		[hasMore, nextCursor, thread.id],
+	);
 
 	useEffect(() => {
 		const activeStream = loadActiveTrainerStream(thread.id);
@@ -137,7 +190,8 @@ export const CompareColumn = forwardRef<
 				if (chunk.type === "RUN_FINISHED" || chunk.type === "RUN_ERROR") {
 					clearActiveTrainerStream(thread.id);
 					clearTrainerDraft(thread.id);
-					persistMessagesNow(thread.id, baseMessages);
+					// `useTrainerHistoryPersist` will save the full merged history
+					// on the streaming → ready transition.
 				}
 			},
 			abortController.signal,
@@ -150,7 +204,7 @@ export const CompareColumn = forwardRef<
 		return () => abortController.abort();
 	}, [initialMessages, setMessages, thread.id]);
 
-	useTrainerHistoryPersist(thread.id, messages, status);
+	useTrainerHistoryPersist(thread.id, messages, status, ensureFullHistory);
 
 	const onStatusChangeRef = useRef(onStatusChange);
 	useEffect(() => {
@@ -174,6 +228,58 @@ export const CompareColumn = forwardRef<
 			);
 		});
 	}, []);
+
+	const loadOlderMessages = useCallback(async () => {
+		if (loadingMoreRef.current) return;
+		if (!hasMore || !nextCursor) return;
+		const scroller = scrollRef.current;
+		if (!scroller) return;
+		loadingMoreRef.current = true;
+		setLoadingMore(true);
+		setLoadMoreError(null);
+		const previousScrollHeight = scroller.scrollHeight;
+		const previousScrollTop = scroller.scrollTop;
+		try {
+			const page = await fetchTrainerHistory(thread.id, undefined, {
+				cursor: nextCursor,
+				limit: PAGE_SIZE,
+			});
+			const older = page.messages.map(toUIMessage);
+			const known = new Set(messagesRef.current.map((m) => m.id));
+			const additions = older.filter((m) => !known.has(m.id));
+			if (additions.length > 0) {
+				setMessages([...additions, ...messagesRef.current]);
+			}
+			setNextCursor(page.nextCursor);
+			setHasMore(page.hasMore);
+			setTotalServerMessages(page.total);
+			requestAnimationFrame(() => {
+				const el = scrollRef.current;
+				if (!el) return;
+				const addedHeight = el.scrollHeight - previousScrollHeight;
+				el.scrollTop = previousScrollTop + addedHeight;
+			});
+		} catch (err) {
+			console.error("Failed to load older messages:", err);
+			setLoadMoreError(err instanceof Error ? err.message : "Load failed");
+		} finally {
+			loadingMoreRef.current = false;
+			setLoadingMore(false);
+		}
+	}, [hasMore, nextCursor, thread.id, setMessages]);
+
+	const onScroll = useCallback(() => {
+		updateScrollButtons();
+		const el = scrollRef.current;
+		if (!el) return;
+		if (
+			hasMore &&
+			!loadingMoreRef.current &&
+			el.scrollTop <= TOP_SENTINEL_THRESHOLD_PX
+		) {
+			void loadOlderMessages();
+		}
+	}, [hasMore, loadOlderMessages, updateScrollButtons]);
 
 	const scrollToTop = () =>
 		scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
@@ -250,7 +356,7 @@ export const CompareColumn = forwardRef<
 						{status === "submitted" && "Sending…"}
 						{status === "streaming" && "Responding…"}
 						{(status === "ready" || status === "error") &&
-							`${coachModelName} · ${providerLabel}`}
+							`${coachModelName} · ${providerLabel} · ${totalServerMessages} message${totalServerMessages === 1 ? "" : "s"}`}
 					</span>
 				</div>
 				<ModelPicker
@@ -275,10 +381,33 @@ export const CompareColumn = forwardRef<
 			<div className="flex-1 relative min-h-0">
 				<div
 					ref={scrollRef}
-					onScroll={updateScrollButtons}
+					onScroll={onScroll}
 					className="absolute inset-0 overflow-y-auto px-3 py-4 space-y-4"
 				>
-					{messages.length === 0 && (
+					{hasMore && (
+						<div className="flex justify-center pt-1">
+							{loadingMore ? (
+								<span className="flex items-center gap-2 text-[11px] text-[#7c6fa0]">
+									<Loader2 className="w-3 h-3 animate-spin" />
+									Loading earlier…
+								</span>
+							) : loadMoreError ? (
+								<button
+									type="button"
+									onClick={() => void loadOlderMessages()}
+									className="text-[11px] text-rose-400 hover:text-rose-300 cursor-pointer"
+								>
+									{loadMoreError} · Tap to retry
+								</button>
+							) : (
+								<span className="text-[10px] text-[#4a4468]">
+									Scroll up for older messages
+								</span>
+							)}
+						</div>
+					)}
+
+					{messages.length === 0 && !hasMore && (
 						<div className="flex flex-col items-center justify-center h-full text-center gap-3 opacity-50">
 							<div className="w-10 h-10 rounded-lg bg-[#8b5cf6]/20 flex items-center justify-center">
 								<span className="w-2 h-2 rounded-full bg-[#8b5cf6]" />

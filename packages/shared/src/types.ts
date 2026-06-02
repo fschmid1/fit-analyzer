@@ -253,6 +253,12 @@ export interface TrainerChatHistory {
 	threadId: string; // was activityId
 	messages: TrainerMessage[];
 	updatedAt: string;
+	/** Cursor for the next (older) page; null when no more history exists. */
+	nextCursor: string | null;
+	/** True when there are older messages available beyond `messages`. */
+	hasMore: boolean;
+	/** Total number of messages persisted for the thread (useful to detect partial windows). */
+	total: number;
 }
 
 /** PUT body for saving chat history */

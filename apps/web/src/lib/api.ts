@@ -348,12 +348,23 @@ export async function deleteThread(threadId: string): Promise<void> {
 export async function fetchTrainerHistory(
 	threadId: string,
 	signal?: AbortSignal,
+	options?: { cursor?: string | null; limit?: number },
 ): Promise<TrainerChatHistory> {
-	const res = await fetch(`${API_BASE}/trainer/history/${threadId}`, {
-		signal,
-	});
+	const params = new URLSearchParams();
+	if (options?.cursor) params.set("cursor", options.cursor);
+	if (options?.limit) params.set("limit", String(options.limit));
+	const qs = params.toString();
+	const url = `${API_BASE}/trainer/history/${threadId}${qs ? `?${qs}` : ""}`;
+	const res = await fetch(url, { signal });
 	if (!res.ok)
-		return { threadId, messages: [], updatedAt: new Date().toISOString() };
+		return {
+			threadId,
+			messages: [],
+			updatedAt: new Date().toISOString(),
+			nextCursor: null,
+			hasMore: false,
+			total: 0,
+		};
 	return res.json();
 }
 

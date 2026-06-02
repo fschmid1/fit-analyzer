@@ -58,7 +58,16 @@ export function TrainerView({
 	const settingsHydrated = useRef(false);
 	const initialized = useRef(false);
 	const threadCache = useRef<
-		Record<string, { messages: UIMessage[]; stale?: boolean }>
+		Record<
+			string,
+			{
+				messages: UIMessage[];
+				nextCursor: string | null;
+				hasMore: boolean;
+				total: number;
+				stale?: boolean;
+			}
+		>
 	>({});
 
 	// Load threads for this activity
@@ -144,12 +153,19 @@ export function TrainerView({
 			return;
 		}
 		const abortController = new AbortController();
-		fetchTrainerHistory(activeThreadId, abortController.signal)
+		fetchTrainerHistory(activeThreadId, abortController.signal, {
+			limit: 20,
+		})
 			.then((h) => {
 				if (abortController.signal.aborted) return;
 				const draft = loadTrainerDraft(activeThreadId);
 				const messages = draft ?? h.messages.map(toUIMessage);
-				threadCache.current[activeThreadId] = { messages };
+				threadCache.current[activeThreadId] = {
+					messages,
+					nextCursor: h.nextCursor,
+					hasMore: h.hasMore,
+					total: h.total,
+				};
 				setInitialMessages(messages);
 			})
 			.catch(() => {
@@ -268,10 +284,17 @@ export function TrainerView({
 	const handleImported = useCallback(() => {
 		if (!activeThreadId) return;
 		setInitialMessages(null);
-		fetchTrainerHistory(activeThreadId)
+		fetchTrainerHistory(activeThreadId, undefined, { limit: 20 })
 			.then((h) => {
 				const draft = loadTrainerDraft(activeThreadId);
-				setInitialMessages(draft ?? h.messages.map(toUIMessage));
+				const messages = draft ?? h.messages.map(toUIMessage);
+				threadCache.current[activeThreadId] = {
+					messages,
+					nextCursor: h.nextCursor,
+					hasMore: h.hasMore,
+					total: h.total,
+				};
+				setInitialMessages(messages);
 				setChatKey((k) => k + 1);
 			})
 			.catch(() => setInitialMessages([]));
@@ -394,6 +417,11 @@ export function TrainerView({
 				threadId={activeThreadId}
 				activityId={activityId}
 				initialMessages={initialMessages}
+				initialNextCursor={
+					threadCache.current[activeThreadId]?.nextCursor ?? null
+				}
+				initialHasMore={threadCache.current[activeThreadId]?.hasMore ?? false}
+				initialTotal={threadCache.current[activeThreadId]?.total ?? 0}
 				initialInput={currentInitialInput}
 				autoSend={autoSend}
 				onBack={onBack}

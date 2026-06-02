@@ -12,6 +12,7 @@ import {
 import { loadTrainerDraft } from "../lib/trainerStreamState";
 
 export const MAX_COMPARE_THREADS = 4;
+export const TRAINER_PAGE_SIZE = 20;
 
 export interface TrainerCompareViewProps {
 	pinnedThreads: TrainerThread[];
@@ -37,9 +38,15 @@ export function TrainerCompareView({
 	onToggleFavorite,
 	onUnpin,
 }: TrainerCompareViewProps) {
-	const [columnInputs, setColumnInputs] = useState<Record<string, UIMessage[]>>(
-		{},
-	);
+	type ColumnPayload = {
+		messages: UIMessage[];
+		nextCursor: string | null;
+		hasMore: boolean;
+		total: number;
+	};
+	const [columnInputs, setColumnInputs] = useState<
+		Record<string, ColumnPayload>
+	>({});
 	const [columnStatus, setColumnStatus] = useState<ColumnSnapshot>({});
 	const [hasInput, setHasInput] = useState(false);
 	const refs = useRef<Record<string, CompareColumnHandle | null>>({});
@@ -67,20 +74,35 @@ export function TrainerCompareView({
 			const entries = await Promise.all(
 				pinnedThreads.map(async (thread) => {
 					try {
-						const history = await fetchTrainerHistory(thread.id);
+						const history = await fetchTrainerHistory(thread.id, undefined, {
+							limit: TRAINER_PAGE_SIZE,
+						});
 						const draft = loadTrainerDraft(thread.id);
 						return [
 							thread.id,
-							draft ?? history.messages.map(toUIMessage),
+							{
+								messages: draft ?? history.messages.map(toUIMessage),
+								nextCursor: history.nextCursor,
+								hasMore: history.hasMore,
+								total: history.total,
+							},
 						] as const;
 					} catch {
-						return [thread.id, [] as UIMessage[]] as const;
+						return [
+							thread.id,
+							{
+								messages: [] as UIMessage[],
+								nextCursor: null,
+								hasMore: false,
+								total: 0,
+							},
+						] as const;
 					}
 				}),
 			);
 			if (cancelled) return;
-			const next: Record<string, UIMessage[]> = {};
-			for (const [id, msgs] of entries) next[id] = msgs;
+			const next: Record<string, ColumnPayload> = {};
+			for (const [id, payload] of entries) next[id] = payload;
 			setColumnInputs(next);
 		}
 		hydrate();
@@ -210,47 +232,59 @@ export function TrainerCompareView({
 					className="lg:hidden absolute inset-0 overflow-x-auto snap-x snap-mandatory flex"
 					style={{ scrollbarWidth: "none" }}
 				>
-					{pinnedThreads.map((thread) => (
-						<div
-							key={thread.id}
-							className="snap-start shrink-0 w-full h-full p-2"
-						>
-							<CompareColumn
-								ref={columnRefsById[thread.id]}
-								thread={thread}
-								initialMessages={columnInputs[thread.id] ?? []}
-								defaultModel={defaultModel}
-								availableModels={availableModels}
-								favorites={favorites}
-								onModelChange={(modelId) => onModelChange(thread.id, modelId)}
-								onToggleFavorite={onToggleFavorite}
-								onUnpin={() => onUnpin(thread.id)}
-								onStatusChange={(s) => handleStatusChange(thread.id, s)}
-							/>
-						</div>
-					))}
+					{pinnedThreads.map((thread) => {
+						const payload = columnInputs[thread.id];
+						return (
+							<div
+								key={thread.id}
+								className="snap-start shrink-0 w-full h-full p-2"
+							>
+								<CompareColumn
+									ref={columnRefsById[thread.id]}
+									thread={thread}
+									initialMessages={payload?.messages ?? []}
+									initialNextCursor={payload?.nextCursor ?? null}
+									initialHasMore={payload?.hasMore ?? false}
+									initialTotal={payload?.total ?? 0}
+									defaultModel={defaultModel}
+									availableModels={availableModels}
+									favorites={favorites}
+									onModelChange={(modelId) => onModelChange(thread.id, modelId)}
+									onToggleFavorite={onToggleFavorite}
+									onUnpin={() => onUnpin(thread.id)}
+									onStatusChange={(s) => handleStatusChange(thread.id, s)}
+								/>
+							</div>
+						);
+					})}
 				</div>
 
 				{/* Desktop grid */}
 				<div
 					className={`hidden lg:grid absolute inset-0 gap-2 p-2 ${gridCols}`}
 				>
-					{pinnedThreads.map((thread) => (
-						<div key={thread.id} className="min-h-0 min-w-0">
-							<CompareColumn
-								ref={columnRefsById[thread.id]}
-								thread={thread}
-								initialMessages={columnInputs[thread.id] ?? []}
-								defaultModel={defaultModel}
-								availableModels={availableModels}
-								favorites={favorites}
-								onModelChange={(modelId) => onModelChange(thread.id, modelId)}
-								onToggleFavorite={onToggleFavorite}
-								onUnpin={() => onUnpin(thread.id)}
-								onStatusChange={(s) => handleStatusChange(thread.id, s)}
-							/>
-						</div>
-					))}
+					{pinnedThreads.map((thread) => {
+						const payload = columnInputs[thread.id];
+						return (
+							<div key={thread.id} className="min-h-0 min-w-0">
+								<CompareColumn
+									ref={columnRefsById[thread.id]}
+									thread={thread}
+									initialMessages={payload?.messages ?? []}
+									initialNextCursor={payload?.nextCursor ?? null}
+									initialHasMore={payload?.hasMore ?? false}
+									initialTotal={payload?.total ?? 0}
+									defaultModel={defaultModel}
+									availableModels={availableModels}
+									favorites={favorites}
+									onModelChange={(modelId) => onModelChange(thread.id, modelId)}
+									onToggleFavorite={onToggleFavorite}
+									onUnpin={() => onUnpin(thread.id)}
+									onStatusChange={(s) => handleStatusChange(thread.id, s)}
+								/>
+							</div>
+						);
+					})}
 				</div>
 			</div>
 

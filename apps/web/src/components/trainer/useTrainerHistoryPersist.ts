@@ -20,6 +20,7 @@ export function useTrainerHistoryPersist(
 	threadId: string,
 	messages: UIMessage[],
 	status: ChatStatus,
+	ensureFullHistory?: (current: UIMessage[]) => Promise<UIMessage[]>,
 ) {
 	const prevStatus = useRef<ChatStatus>(status);
 
@@ -28,13 +29,19 @@ export function useTrainerHistoryPersist(
 			prevStatus.current === "streaming" || prevStatus.current === "submitted";
 		const nowReady = status === "ready" || status === "error";
 		if (wasStreaming && nowReady) {
-			const toSave = persistable(messages);
-			if (toSave.length > 0)
-				saveTrainerHistory(threadId, toSave).catch(console.error);
-			clearTrainerDraft(threadId);
+			const save = async () => {
+				const full = ensureFullHistory
+					? await ensureFullHistory(messages)
+					: messages;
+				const toSave = persistable(full);
+				if (toSave.length > 0)
+					saveTrainerHistory(threadId, toSave).catch(console.error);
+				clearTrainerDraft(threadId);
+			};
+			void save();
 		}
 		prevStatus.current = status;
-	}, [status, messages, threadId]);
+	}, [status, messages, threadId, ensureFullHistory]);
 
 	useEffect(() => {
 		if (status === "streaming" || status === "submitted") {
@@ -44,10 +51,4 @@ export function useTrainerHistoryPersist(
 			return () => clearTimeout(id);
 		}
 	}, [messages, status, threadId]);
-}
-
-export function persistMessagesNow(threadId: string, messages: UIMessage[]) {
-	const toSave = persistable(messages);
-	if (toSave.length === 0) return;
-	saveTrainerHistory(threadId, toSave).catch(console.error);
 }

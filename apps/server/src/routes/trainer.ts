@@ -143,7 +143,28 @@ const getMessagesStmt = db.prepare(
 	`SELECT id, role, content, created_at as createdAt
      FROM trainer_messages
      WHERE chat_id = ?
-     ORDER BY created_at ASC`,
+     ORDER BY created_at ASC, id ASC`,
+);
+
+const getMessagesPageStmt = db.prepare(
+	`SELECT id, role, content, created_at as createdAt
+     FROM trainer_messages
+     WHERE chat_id = ?
+       AND (created_at < ? OR (created_at = ? AND id < ?))
+     ORDER BY created_at DESC, id DESC
+     LIMIT ?`,
+);
+
+const getMessagesLatestStmt = db.prepare(
+	`SELECT id, role, content, created_at as createdAt
+     FROM trainer_messages
+     WHERE chat_id = ?
+     ORDER BY created_at DESC, id DESC
+     LIMIT ?`,
+);
+
+const countMessagesStmt = db.prepare(
+	"SELECT COUNT(*) as c FROM trainer_messages WHERE chat_id = ?",
 );
 
 const createThreadStmt = db.prepare(
@@ -388,10 +409,59 @@ trainer.get("/history/:threadId", (c) => {
 			threadId,
 			messages: [],
 			updatedAt: new Date().toISOString(),
+			nextCursor: null,
+			hasMore: false,
+			total: 0,
 		});
 	}
-	const messages = getMessagesStmt.all(thread.id) as TrainerMessage[];
-	return c.json({ threadId, messages, updatedAt: thread.updatedAt });
+
+	const DEFAULT_PAGE_SIZE = 20;
+	const MAX_PAGE_SIZE = 100;
+	const rawLimit = Number(c.req.query("limit"));
+	const limit =
+		Number.isFinite(rawLimit) && rawLimit > 0
+			? Math.min(MAX_PAGE_SIZE, Math.floor(rawLimit))
+			: DEFAULT_PAGE_SIZE;
+	const cursor = c.req.query("cursor");
+
+	let page: { id: string; role: string; content: string; createdAt: string }[];
+	if (cursor) {
+		const sep = cursor.indexOf("|");
+		const cursorCreatedAt = sep === -1 ? cursor : cursor.slice(0, sep);
+		const cursorId = sep === -1 ? "" : cursor.slice(sep + 1);
+		// SQLite returns UTC ISO strings; keep as-is for the comparison.
+		page = getMessagesPageStmt.all(
+			thread.id,
+			cursorCreatedAt,
+			cursorCreatedAt,
+			cursorId,
+			limit + 1,
+		) as typeof page;
+	} else {
+		page = getMessagesLatestStmt.all(thread.id, limit + 1) as typeof page;
+	}
+
+	const hasMore = page.length > limit;
+	const trimmed = hasMore ? page.slice(0, limit) : page;
+	// We pulled most-recent-first; flip back to ascending so the chat renders oldest → newest.
+	const messages = trimmed.reverse() as TrainerMessage[];
+
+	let nextCursor: string | null = null;
+	if (hasMore) {
+		const oldest = trimmed[0];
+		nextCursor = `${oldest.createdAt}|${oldest.id}`;
+	}
+
+	const { c: total } = countMessagesStmt.get(thread.id) as { c: number };
+
+	return c.json({
+		threadId,
+		messages,
+		updatedAt: thread.updatedAt,
+		nextCursor,
+		hasMore,
+		total,
+	});
 });
 
 trainer.put("/history/:threadId", async (c) => {
