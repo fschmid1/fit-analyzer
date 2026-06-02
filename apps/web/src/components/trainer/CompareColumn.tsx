@@ -122,11 +122,11 @@ export const CompareColumn = forwardRef<
 
 	useEffect(() => {
 		const activeStream = loadActiveTrainerStream(thread.id);
+		let baseMessages = stripTrailingAssistant(initialMessages);
+		setMessages(baseMessages);
 		if (!activeStream) return;
 
 		const abortController = new AbortController();
-		let baseMessages = stripTrailingAssistant(initialMessages);
-		setMessages(baseMessages);
 
 		streamResumedChat(
 			activeStream.streamId,
