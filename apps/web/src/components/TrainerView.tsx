@@ -390,7 +390,7 @@ export function TrainerView({
 
 		return (
 			<TrainerChat
-				key={chatKey}
+				key={`${activeThreadId}-${chatKey}`}
 				threadId={activeThreadId}
 				activityId={activityId}
 				initialMessages={initialMessages}
