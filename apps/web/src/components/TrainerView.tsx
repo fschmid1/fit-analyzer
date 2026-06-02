@@ -53,8 +53,12 @@ export function TrainerView({
 	const [showOnboarding, setShowOnboarding] = useState(false);
 	const [compareMode, setCompareMode] = useState(false);
 	const [pinnedThreadIds, setPinnedThreadIds] = useState<string[]>([]);
+	const [loadingThreadId, setLoadingThreadId] = useState<string | null>(null);
 	const settingsHydrated = useRef(false);
 	const initialized = useRef(false);
+	const threadCache = useRef<
+		Record<string, { messages: UIMessage[]; stale?: boolean }>
+	>({});
 
 	// Load threads for this activity
 	const loadThreads = useCallback(async () => {
@@ -126,26 +130,41 @@ export function TrainerView({
 			});
 	}, []);
 
-	// When active thread changes, load its messages
+	// When active thread changes, load its messages (background refresh if cached)
 	useEffect(() => {
 		if (!activeThreadId) {
 			setInitialMessages(null);
+			setLoadingThreadId(null);
 			return;
 		}
-		setInitialMessages(null);
+		const cached = threadCache.current[activeThreadId];
+		setLoadingThreadId(activeThreadId);
 		fetchTrainerHistory(activeThreadId)
 			.then((h) => {
 				const draft = loadTrainerDraft(activeThreadId);
-				setInitialMessages(draft ?? h.messages.map(toUIMessage));
+				const messages = draft ?? h.messages.map(toUIMessage);
+				threadCache.current[activeThreadId] = { messages };
+				setInitialMessages(messages);
 			})
-			.catch(() => setInitialMessages([]));
+			.catch(() => setInitialMessages([]))
+			.finally(() => setLoadingThreadId(null));
 	}, [activeThreadId]);
 
-	const handleSelectThread = useCallback((id: string) => {
-		setActiveThreadId(id);
-		setShowOnboarding(false);
-		setCurrentInitialInput(""); // only pre-fill on first open
-	}, []);
+	const handleSelectThread = useCallback(
+		(id: string) => {
+			if (id === activeThreadId) return;
+			const cached = threadCache.current[id];
+			if (cached?.messages) {
+				setInitialMessages(cached.messages);
+			} else {
+				setInitialMessages(null);
+			}
+			setActiveThreadId(id);
+			setShowOnboarding(false);
+			setCurrentInitialInput("");
+		},
+		[activeThreadId],
+	);
 
 	const activeThread = threads.find((t) => t.id === activeThreadId);
 
@@ -356,6 +375,7 @@ export function TrainerView({
 			<ThreadSidebar
 				threads={threads}
 				activeThreadId={activeThreadId}
+				loadingThreadId={loadingThreadId}
 				onSelect={handleSelectThread}
 				onCreate={handleCreateThread}
 				onRename={handleRenameThread}

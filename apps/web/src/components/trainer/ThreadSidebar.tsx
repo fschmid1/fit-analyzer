@@ -19,6 +19,7 @@ import type { TrainerThread } from "@fit-analyzer/shared";
 interface ThreadSidebarProps {
 	threads: TrainerThread[];
 	activeThreadId: string | null;
+	loadingThreadId?: string | null;
 	onSelect: (id: string) => void;
 	onCreate: () => void;
 	onRename: (id: string, name: string) => void;
@@ -64,6 +65,7 @@ function getContextMenuPosition(x: number, y: number) {
 export function ThreadSidebar({
 	threads,
 	activeThreadId,
+	loadingThreadId,
 	onSelect,
 	onCreate,
 	onRename,
@@ -319,12 +321,15 @@ export function ThreadSidebar({
 										onSelect(thread.id);
 										onClose();
 									}}
-									className="flex flex-1 min-w-0 items-center text-left"
+									className="flex flex-1 min-w-0 items-center text-left gap-1.5"
 									aria-label={`Open thread ${thread.name}`}
 								>
 									<span className="min-w-0 text-xs truncate">
 										{thread.name}
 									</span>
+									{loadingThreadId === thread.id && (
+										<span className="shrink-0 w-3 h-3 rounded-full border-2 border-[#8b5cf6]/30 border-t-[#8b5cf6] animate-spin" />
+									)}
 								</button>
 							)}
 
