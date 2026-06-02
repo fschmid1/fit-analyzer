@@ -97,6 +97,7 @@ export function ThreadSidebar({
 	} | null>(null);
 	const contextMenuRef = useRef<HTMLDivElement>(null);
 	const sidebarRef = useRef<HTMLDivElement>(null);
+	const editInputRef = useRef<HTMLInputElement>(null);
 
 	// Swipe-to-close on mobile
 	useDrag(
@@ -189,6 +190,26 @@ export function ThreadSidebar({
 		[threads],
 	);
 
+	useEffect(() => {
+		if (editingId === null) return;
+		const input = editInputRef.current;
+		if (!input) return;
+		const stop = (e: Event) => e.stopPropagation();
+		input.addEventListener("pointerdown", stop);
+		input.addEventListener("mousedown", stop);
+		input.addEventListener("click", stop);
+		const id = window.setTimeout(() => {
+			input.focus();
+			input.select();
+		}, 0);
+		return () => {
+			window.clearTimeout(id);
+			input.removeEventListener("pointerdown", stop);
+			input.removeEventListener("mousedown", stop);
+			input.removeEventListener("click", stop);
+		};
+	}, [editingId]);
+
 	const commitEdit = useCallback(() => {
 		if (editingId && editingName.trim())
 			onRename(editingId, editingName.trim());
@@ -252,6 +273,7 @@ export function ThreadSidebar({
 	return (
 		<div
 			ref={sidebarRef}
+			style={{ touchAction: "pan-y" }}
 			className={`fixed inset-y-0 left-0 z-[60] flex w-72 max-w-[82vw] shrink-0 flex-col overflow-hidden border-r border-[rgba(139,92,246,0.1)] bg-[#080612] shadow-2xl shadow-black/40 transition-transform duration-200 md:static md:z-auto md:w-52 md:max-w-none md:translate-x-0 md:shadow-none ${
 				open ? "translate-x-0" : "-translate-x-full"
 			}`}
@@ -295,15 +317,36 @@ export function ThreadSidebar({
 				{threads.map((thread) => {
 					const isPinned = pinnedThreadIds.includes(thread.id);
 					const canPin = isPinned || pinnedThreadIds.length < maxPinned;
+					const isEditing = editingId === thread.id;
 					return (
 						<div
 							key={thread.id}
+							// biome-ignore lint/a11y/useSemanticElements: row contains nested interactive children (pin, kebab, rename input) so it cannot be a <button>
+							role="button"
+							tabIndex={isEditing ? -1 : 0}
+							aria-label={`Open thread ${thread.name}`}
+							aria-current={thread.id === activeThreadId ? "true" : undefined}
+							onClick={() => {
+								if (isEditing) return;
+								onSelect(thread.id);
+								onClose();
+							}}
+							onKeyDown={(e) => {
+								if (isEditing) return;
+								if (e.key === "Enter" || e.key === " ") {
+									e.preventDefault();
+									onSelect(thread.id);
+									onClose();
+								}
+							}}
 							onContextMenu={(e) => handleContextMenu(thread, e)}
-							className={`group flex items-center gap-1.5 px-2 py-2 mx-1 my-0.5 rounded-lg cursor-pointer transition-colors ${
+							className={`group flex items-center gap-1.5 px-2 py-2 mx-1 my-0.5 rounded-lg cursor-pointer transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-[#8b5cf6]/40 ${
 								thread.id === activeThreadId
 									? "bg-[#8b5cf6]/15 text-[#e2d9f3]"
-									: "text-[#7c6fa0] hover:bg-[#1a1533]/50 hover:text-[#c4b5fd]"
-							} ${isPinned ? "ring-1 ring-[#8b5cf6]/30" : ""}`}
+									: isPinned
+										? "bg-[#8b5cf6]/8 text-[#c4b5fd]"
+										: "text-[#7c6fa0] hover:bg-[#1a1533]/50 hover:text-[#c4b5fd]"
+							}`}
 						>
 							{compareMode && onTogglePin && (
 								<button
@@ -339,8 +382,9 @@ export function ThreadSidebar({
 								</button>
 							)}
 
-							{editingId === thread.id ? (
+							{isEditing ? (
 								<input
+									ref={editInputRef}
 									value={editingName}
 									onChange={(e) => setEditingName(e.target.value)}
 									onBlur={commitEdit}
@@ -348,35 +392,29 @@ export function ThreadSidebar({
 										if (e.key === "Enter") commitEdit();
 										if (e.key === "Escape") setEditingId(null);
 									}}
+									onPointerDown={(e) => e.stopPropagation()}
+									onMouseDown={(e) => e.stopPropagation()}
 									onClick={(e) => e.stopPropagation()}
 									className="flex-1 min-w-0 bg-[#1a1533] border border-[#8b5cf6]/40 rounded px-1.5 py-0.5 text-xs text-[#e2d9f3] outline-none"
 								/>
 							) : (
-								<button
-									type="button"
-									onClick={() => {
-										onSelect(thread.id);
-										onClose();
-									}}
-									className="flex flex-1 min-w-0 items-center text-left gap-1.5"
-									aria-label={`Open thread ${thread.name}`}
-								>
+								<div className="flex flex-1 min-w-0 items-center text-left gap-1.5">
 									<span className="min-w-0 text-xs truncate">
 										{thread.name}
 									</span>
 									{loadingThreadId === thread.id && (
 										<span className="shrink-0 w-3 h-3 rounded-full border-2 border-[#8b5cf6]/30 border-t-[#8b5cf6] animate-spin" />
 									)}
-								</button>
+								</div>
 							)}
 
-							{thread.messageCount > 0 && editingId !== thread.id && (
+							{thread.messageCount > 0 && !isEditing && (
 								<span className="text-[10px] text-[#4a4468] shrink-0 tabular-nums">
 									{thread.messageCount}
 								</span>
 							)}
 
-							{editingId !== thread.id && (
+							{!isEditing && (
 								<button
 									type="button"
 									onClick={(e) => handleMenuButtonClick(thread, e)}

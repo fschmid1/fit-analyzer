@@ -347,8 +347,11 @@ export async function deleteThread(threadId: string): Promise<void> {
 
 export async function fetchTrainerHistory(
 	threadId: string,
+	signal?: AbortSignal,
 ): Promise<TrainerChatHistory> {
-	const res = await fetch(`${API_BASE}/trainer/history/${threadId}`);
+	const res = await fetch(`${API_BASE}/trainer/history/${threadId}`, {
+		signal,
+	});
 	if (!res.ok)
 		return { threadId, messages: [], updatedAt: new Date().toISOString() };
 	return res.json();

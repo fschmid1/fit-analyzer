@@ -140,16 +140,31 @@ export function TrainerView({
 			return;
 		}
 		const cached = threadCache.current[activeThreadId];
+		// If we already have a fresh cache for this thread, skip the refetch —
+		// the optimistic `setInitialMessages` in `handleSelectThread` is enough.
+		if (cached?.messages && !cached.stale) {
+			setLoadingThreadId(null);
+			return;
+		}
+		const abortController = new AbortController();
 		setLoadingThreadId(activeThreadId);
-		fetchTrainerHistory(activeThreadId)
+		fetchTrainerHistory(activeThreadId, abortController.signal)
 			.then((h) => {
+				if (abortController.signal.aborted) return;
 				const draft = loadTrainerDraft(activeThreadId);
 				const messages = draft ?? h.messages.map(toUIMessage);
 				threadCache.current[activeThreadId] = { messages };
 				setInitialMessages(messages);
 			})
-			.catch(() => setInitialMessages([]))
-			.finally(() => setLoadingThreadId(null));
+			.catch(() => {
+				if (abortController.signal.aborted) return;
+				setInitialMessages([]);
+			})
+			.finally(() => {
+				if (abortController.signal.aborted) return;
+				setLoadingThreadId(null);
+			});
+		return () => abortController.abort();
 	}, [activeThreadId]);
 
 	const handleSelectThread = useCallback(
@@ -383,7 +398,7 @@ export function TrainerView({
 
 		return (
 			<TrainerChat
-				key={`${activeThreadId}-${chatKey}`}
+				key={chatKey}
 				threadId={activeThreadId}
 				activityId={activityId}
 				initialMessages={initialMessages}
