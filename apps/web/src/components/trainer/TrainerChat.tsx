@@ -189,11 +189,18 @@ export function TrainerChat({
 		[threadId, onImported],
 	);
 
+	const scrollRafRef = useRef<number>(0);
 	const updateScrollButtons = useCallback(() => {
 		const el = scrollRef.current;
 		if (!el) return;
-		setShowScrollTop(el.scrollTop > 50);
-		setShowScrollBottom(el.scrollTop < el.scrollHeight - el.clientHeight - 50);
+		if (scrollRafRef.current) return;
+		scrollRafRef.current = requestAnimationFrame(() => {
+			scrollRafRef.current = 0;
+			setShowScrollTop(el.scrollTop > 50);
+			setShowScrollBottom(
+				el.scrollTop < el.scrollHeight - el.clientHeight - 50,
+			);
+		});
 	}, []);
 
 	const scrollToTop = useCallback(
@@ -212,14 +219,30 @@ export function TrainerChat({
 	const isFirstRender = useRef(true);
 	const lastMessageId = messages[messages.length - 1]?.id;
 	const lastMessageTextLen = messages[messages.length - 1]?.parts?.length ?? 0;
+	const isAutoScrolling = useRef(false);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: lastMessageTextLen is intentionally included to re-trigger scroll during streaming updates to the same message id
 	useEffect(() => {
 		if (!isFirstRender.current && lastMessageId === undefined) return;
-		const behavior = isFirstRender.current ? "instant" : "smooth";
+		const behavior = isFirstRender.current ? "instant" : "auto";
 		isFirstRender.current = false;
-		bottomRef.current?.scrollIntoView({ behavior });
-		setTimeout(updateScrollButtons, 120);
-	}, [lastMessageId, lastMessageTextLen, updateScrollButtons]);
+		const el = scrollRef.current;
+		if (el) {
+			const wasNearBottom =
+				el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+			if (wasNearBottom || status === "submitted") {
+				isAutoScrolling.current = true;
+				bottomRef.current?.scrollIntoView({ behavior });
+				setTimeout(() => {
+					isAutoScrolling.current = false;
+					updateScrollButtons();
+				}, 60);
+			} else {
+				updateScrollButtons();
+			}
+		} else {
+			bottomRef.current?.scrollIntoView({ behavior });
+		}
+	}, [lastMessageId, lastMessageTextLen, updateScrollButtons, status]);
 
 	useTrainerHistoryPersist(threadId, messages, status);
 
