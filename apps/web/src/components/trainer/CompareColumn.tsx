@@ -182,30 +182,45 @@ export const CompareColumn = forwardRef<
 		bottomRef.current?.scrollIntoView({ behavior: "smooth" });
 
 	const isFirstRender = useRef(true);
+	const prevLastMessageId = useRef<string | undefined>(undefined);
 	const lastMessageId = messages[messages.length - 1]?.id;
 	const lastMessageTextLen = messages[messages.length - 1]?.parts?.length ?? 0;
-	const isAutoScrolling = useRef(false);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: lastMessageTextLen is intentionally included to re-trigger scroll during streaming updates to the same message id
 	useEffect(() => {
-		if (!isFirstRender.current && lastMessageId === undefined) return;
+		if (lastMessageId === undefined) {
+			isFirstRender.current = false;
+			return;
+		}
+
 		const behavior = isFirstRender.current ? "instant" : "auto";
-		isFirstRender.current = false;
+
+		if (isFirstRender.current) {
+			isFirstRender.current = false;
+			prevLastMessageId.current = lastMessageId;
+			bottomRef.current?.scrollIntoView({ behavior });
+			setTimeout(updateScrollButtons, 60);
+			return;
+		}
+
+		if (lastMessageId !== prevLastMessageId.current) {
+			// New message added
+			prevLastMessageId.current = lastMessageId;
+			bottomRef.current?.scrollIntoView({ behavior });
+			setTimeout(updateScrollButtons, 60);
+			return;
+		}
+
+		// Same message, text changed (streaming)
 		const el = scrollRef.current;
 		if (el) {
 			const wasNearBottom =
 				el.scrollHeight - el.scrollTop - el.clientHeight < 80;
 			if (wasNearBottom || status === "submitted") {
-				isAutoScrolling.current = true;
 				bottomRef.current?.scrollIntoView({ behavior });
-				setTimeout(() => {
-					isAutoScrolling.current = false;
-					updateScrollButtons();
-				}, 60);
+				setTimeout(updateScrollButtons, 60);
 			} else {
 				updateScrollButtons();
 			}
-		} else {
-			bottomRef.current?.scrollIntoView({ behavior });
 		}
 	}, [lastMessageId, lastMessageTextLen, updateScrollButtons, status]);
 
