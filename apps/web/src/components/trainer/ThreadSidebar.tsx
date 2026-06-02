@@ -21,7 +21,6 @@ import type { TrainerThread } from "@fit-analyzer/shared";
 interface ThreadSidebarProps {
 	threads: TrainerThread[];
 	activeThreadId: string | null;
-	loadingThreadId?: string | null;
 	onSelect: (id: string) => void;
 	onCreate: () => void;
 	onRename: (id: string, name: string) => void;
@@ -68,7 +67,6 @@ function getContextMenuPosition(x: number, y: number) {
 export function ThreadSidebar({
 	threads,
 	activeThreadId,
-	loadingThreadId,
 	onSelect,
 	onCreate,
 	onRename,
@@ -340,7 +338,7 @@ export function ThreadSidebar({
 								}
 							}}
 							onContextMenu={(e) => handleContextMenu(thread, e)}
-							className={`group flex items-center gap-1.5 px-2 py-2 mx-1 my-0.5 rounded-lg cursor-pointer transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-[#8b5cf6]/40 ${
+							className={`group flex items-center gap-1.5 px-2 py-2 mx-1 my-0.5 rounded-lg cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-[#8b5cf6]/40 ${
 								thread.id === activeThreadId
 									? "bg-[#8b5cf6]/15 text-[#e2d9f3]"
 									: isPinned
@@ -402,9 +400,6 @@ export function ThreadSidebar({
 									<span className="min-w-0 text-xs truncate">
 										{thread.name}
 									</span>
-									{loadingThreadId === thread.id && (
-										<span className="shrink-0 w-3 h-3 rounded-full border-2 border-[#8b5cf6]/30 border-t-[#8b5cf6] animate-spin" />
-									)}
 								</div>
 							)}
 

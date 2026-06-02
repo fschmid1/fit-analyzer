@@ -55,7 +55,6 @@ export function TrainerView({
 	const [showOnboarding, setShowOnboarding] = useState(false);
 	const [compareMode, setCompareMode] = useState(false);
 	const [pinnedThreadIds, setPinnedThreadIds] = useState<string[]>([]);
-	const [loadingThreadId, setLoadingThreadId] = useState<string | null>(null);
 	const settingsHydrated = useRef(false);
 	const initialized = useRef(false);
 	const threadCache = useRef<
@@ -136,18 +135,15 @@ export function TrainerView({
 	useEffect(() => {
 		if (!activeThreadId) {
 			setInitialMessages(null);
-			setLoadingThreadId(null);
 			return;
 		}
 		const cached = threadCache.current[activeThreadId];
 		// If we already have a fresh cache for this thread, skip the refetch —
 		// the optimistic `setInitialMessages` in `handleSelectThread` is enough.
 		if (cached?.messages && !cached.stale) {
-			setLoadingThreadId(null);
 			return;
 		}
 		const abortController = new AbortController();
-		setLoadingThreadId(activeThreadId);
 		fetchTrainerHistory(activeThreadId, abortController.signal)
 			.then((h) => {
 				if (abortController.signal.aborted) return;
@@ -159,10 +155,6 @@ export function TrainerView({
 			.catch(() => {
 				if (abortController.signal.aborted) return;
 				setInitialMessages([]);
-			})
-			.finally(() => {
-				if (abortController.signal.aborted) return;
-				setLoadingThreadId(null);
 			});
 		return () => abortController.abort();
 	}, [activeThreadId]);
@@ -422,7 +414,6 @@ export function TrainerView({
 			<ThreadSidebar
 				threads={threads}
 				activeThreadId={activeThreadId}
-				loadingThreadId={loadingThreadId}
 				onSelect={handleSelectThread}
 				onCreate={handleCreateThread}
 				onRename={handleRenameThread}
