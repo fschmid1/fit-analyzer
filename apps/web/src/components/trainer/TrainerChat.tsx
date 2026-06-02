@@ -289,8 +289,8 @@ export function TrainerChat({
 				.filter((m) => m.role === "user" || m.role === "assistant")
 				.map(toTrainerMessage)
 				.filter((m) => m.content);
-			if (toSave.length > 0)
-				saveTrainerHistory(threadId, toSave).catch(console.error);
+			saveTrainerHistory(threadId, toSave).catch(console.error);
+			clearTrainerDraft(threadId);
 		},
 		[messages, setMessages, threadId],
 	);
