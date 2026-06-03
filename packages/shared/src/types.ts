@@ -17,6 +17,7 @@ export interface ActivitySummary {
 	totalTimerTime: number;
 	totalDistanceKm: number | null;
 	avgPower: number | null;
+	normalizedPower: number | null;
 	maxPower: number | null;
 	avgHeartRate: number | null;
 	maxHeartRate: number | null;
@@ -45,6 +46,7 @@ export interface Interval {
 	startSeconds: number;
 	endSeconds: number;
 	avgPower: number | null;
+	normalizedPower: number | null;
 	avgHeartRate: number | null;
 	avgCadence: number | null;
 	duration: number;
@@ -52,6 +54,7 @@ export interface Interval {
 
 export interface SelectionStats {
 	avgPower: number | null;
+	normalizedPower: number | null;
 	avgHeartRate: number | null;
 	avgCadence: number | null;
 	duration: number;
@@ -207,6 +210,7 @@ export interface ActivityStats {
 	totalDurationFormatted: string;
 	totalDistanceKm: number | null;
 	avgPower: number | null;
+	normalizedPower: number | null;
 	maxPower: number | null;
 	avgHeartRate: number | null;
 	maxHeartRate: number | null;

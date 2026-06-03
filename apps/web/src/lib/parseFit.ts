@@ -5,6 +5,7 @@ import type {
 	LapMarker,
 	ParsedActivity,
 } from "@fit-analyzer/shared";
+import { computeNormalizedPower } from "@fit-analyzer/shared";
 import { computePeakPower } from "./stats";
 
 type FitMessage = Record<string, unknown>;
@@ -111,6 +112,7 @@ export function parseFit(arrayBuffer: ArrayBuffer): ParsedActivity {
 
 	const peak1min = computePeakPower(records, 60);
 	const peak5min = computePeakPower(records, 300);
+	const normalizedPower = computeNormalizedPower(records);
 	const totalTimerTime = asFiniteNumber(session?.totalTimerTime);
 	const totalDistance = asFiniteNumber(session?.totalDistance);
 	const avgPower = asFiniteNumber(session?.avgPower);
@@ -131,6 +133,7 @@ export function parseFit(arrayBuffer: ArrayBuffer): ParsedActivity {
 				? Math.round((totalDistance / 1000) * 10) / 10
 				: null,
 		avgPower: avgPower != null ? Math.round(avgPower) : null,
+		normalizedPower,
 		maxPower: maxPower != null ? Math.round(maxPower) : null,
 		avgHeartRate: avgHeartRate != null ? Math.round(avgHeartRate) : null,
 		maxHeartRate: maxHeartRate != null ? Math.round(maxHeartRate) : null,

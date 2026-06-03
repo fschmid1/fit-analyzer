@@ -30,6 +30,7 @@ export function formatCopyBoxText(
 	);
 	lines.push(`- total_distance_km: ${summary.totalDistanceKm ?? "N/A"}`);
 	lines.push(`- avg_power: ${summary.avgPower ?? "N/A"}`);
+	lines.push(`- normalized_power: ${summary.normalizedPower ?? "N/A"}`);
 	lines.push(`- max_power: ${summary.maxPower ?? "N/A"}`);
 	lines.push(`- avg_heartRate: ${summary.avgHeartRate ?? "N/A"}`);
 	lines.push(`- max_heartRate: ${summary.maxHeartRate ?? "N/A"}`);

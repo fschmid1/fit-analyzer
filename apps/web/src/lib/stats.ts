@@ -1,12 +1,15 @@
-import type {
-	ActivityRecord,
-	Interval,
-	LapMarker,
-	SelectionStats,
+import {
+	buildPowerBySecond,
+	computeNormalizedPower,
+	type ActivityRecord,
+	type Interval,
+	type LapMarker,
+	type SelectionStats,
 } from "@fit-analyzer/shared";
 
 const EMPTY_SELECTION_STATS: SelectionStats = {
 	avgPower: null,
+	normalizedPower: null,
 	avgHeartRate: null,
 	avgCadence: null,
 	duration: 0,
@@ -37,6 +40,7 @@ export function computeAverages(records: ActivityRecord[]): SelectionStats {
 						validPower.length,
 				)
 			: null,
+		normalizedPower: computeNormalizedPower(records),
 		avgHeartRate: validHR.length
 			? Math.round(
 					validHR.reduce((s, r) => s + (r.heartRate ?? 0), 0) / validHR.length,
@@ -63,21 +67,8 @@ export function computePeakPower(
 	const powerRecords = records.filter((r) => r.power !== null);
 	if (powerRecords.length === 0) return null;
 
-	// Build a time-indexed power array using elapsed seconds
-	// We need contiguous second-by-second data for proper sliding window
-	const maxTime = records[records.length - 1].elapsedSeconds;
-	if (maxTime < windowSeconds) return null;
-
-	// Create a second-by-second power array with interpolation for gaps
-	const powerBySecond: (number | null)[] = new Array(
-		Math.floor(maxTime) + 1,
-	).fill(null);
-	for (const r of records) {
-		if (r.power !== null) {
-			const sec = Math.floor(r.elapsedSeconds);
-			powerBySecond[sec] = r.power;
-		}
-	}
+	const powerBySecond = buildPowerBySecond(records);
+	if (powerBySecond.length - 1 < windowSeconds) return null;
 
 	let best = 0;
 	let windowSum = 0;
@@ -192,6 +183,7 @@ export function detectPowerIntervals(
 			startSeconds,
 			endSeconds,
 			avgPower: stats.avgPower,
+			normalizedPower: stats.normalizedPower,
 			avgHeartRate: stats.avgHeartRate,
 			avgCadence: stats.avgCadence,
 			duration,
@@ -233,6 +225,7 @@ export function computeIntervals(
 			startSeconds: start,
 			endSeconds: end,
 			avgPower: stats.avgPower,
+			normalizedPower: stats.normalizedPower,
 			avgHeartRate: stats.avgHeartRate,
 			avgCadence: stats.avgCadence,
 			duration: stats.duration,

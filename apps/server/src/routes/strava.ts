@@ -1,8 +1,9 @@
-import type {
-	ActivitySummary,
-	LapMarker,
-	StoredRecord,
-	StravaClubEvent,
+import {
+	normalizedPowerFromSeconds,
+	type ActivitySummary,
+	type LapMarker,
+	type StoredRecord,
+	type StravaClubEvent,
 } from "@fit-analyzer/shared";
 import { Hono } from "hono";
 import { db } from "../db.js";
@@ -230,6 +231,30 @@ function computePeakPower(
 	return bestAvg > 0 ? Math.round(bestAvg) : null;
 }
 
+/**
+ * Build a per-second power series from a Strava time/watts stream. Strava
+ * streams don't always include every second, so we carry forward the last
+ * known value. Missing leading samples default to 0W.
+ */
+function stravaStreamToPowerBySecond(
+	timeArr: number[],
+	wattsArr: number[],
+): (number | null)[] {
+	if (timeArr.length === 0) return [];
+	const maxTime = Math.floor(timeArr[timeArr.length - 1]);
+	const powerBySecond: (number | null)[] = new Array(maxTime + 1).fill(null);
+	let streamIdx = 0;
+	let lastValue: number | null = null;
+	for (let s = 0; s <= maxTime; s++) {
+		while (streamIdx < timeArr.length && timeArr[streamIdx] <= s + 0.5) {
+			lastValue = wattsArr[streamIdx];
+			streamIdx++;
+		}
+		powerBySecond[s] = lastValue;
+	}
+	return powerBySecond;
+}
+
 /** Build StoredRecord[] from Strava streams (key_by_type format). */
 function buildRecords(startDate: Date, streams: StravaStreams): StoredRecord[] {
 	const timeData = streams.time?.data ?? [];
@@ -309,6 +334,9 @@ function buildSummary(
 				? Math.round((activity.distance / 1000) * 10) / 10
 				: null,
 		avgPower: avg(powerVals),
+		normalizedPower: normalizedPowerFromSeconds(
+			stravaStreamToPowerBySecond(timeArr, wattsArr),
+		),
 		maxPower: max(powerVals),
 		avgHeartRate: avg(hrVals),
 		maxHeartRate: max(hrVals),

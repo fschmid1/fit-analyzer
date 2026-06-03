@@ -87,6 +87,7 @@ function computeActivityStats(
 	let totalDistanceKm = 0;
 	let distanceCount = 0;
 	const powerVals: number[] = [];
+	const normalizedPowerVals: number[] = [];
 	const hrVals: number[] = [];
 	const cadenceVals: number[] = [];
 	const peak1minVals: number[] = [];
@@ -104,6 +105,8 @@ function computeActivityStats(
 			distanceCount++;
 		}
 		if (summary.avgPower != null) powerVals.push(summary.avgPower);
+		if (summary.normalizedPower != null)
+			normalizedPowerVals.push(summary.normalizedPower);
 		if (summary.maxPower != null && summary.maxPower > maxPower) {
 			maxPower = summary.maxPower;
 		}
@@ -129,6 +132,7 @@ function computeActivityStats(
 		totalDistanceKm:
 			distanceCount > 0 ? Math.round(totalDistanceKm * 10) / 10 : null,
 		avgPower: avg(powerVals),
+		normalizedPower: avg(normalizedPowerVals),
 		maxPower: maxPower > 0 ? maxPower : null,
 		avgHeartRate: avg(hrVals),
 		maxHeartRate: maxHeartRate > 0 ? maxHeartRate : null,

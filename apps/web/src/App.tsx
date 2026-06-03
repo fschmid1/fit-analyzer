@@ -232,6 +232,7 @@ function App() {
 					? computeAverages(slice)
 					: {
 							avgPower: null,
+							normalizedPower: null,
 							avgHeartRate: null,
 							avgCadence: null,
 							duration: 0,
@@ -241,6 +242,7 @@ function App() {
 				startSeconds: start,
 				endSeconds: end,
 				avgPower: stats.avgPower,
+				normalizedPower: stats.normalizedPower,
 				avgHeartRate: stats.avgHeartRate,
 				avgCadence: stats.avgCadence,
 				duration: stats.duration,

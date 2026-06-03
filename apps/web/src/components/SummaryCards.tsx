@@ -41,6 +41,13 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
 			color: "#8b5cf6",
 		},
 		{
+			icon: Zap,
+			label: "Normalized Power",
+			value: summary.normalizedPower ?? "N/A",
+			unit: summary.normalizedPower !== null ? "W" : "",
+			color: "#a855f7",
+		},
+		{
 			icon: Heart,
 			label: "Avg Heart Rate",
 			value: summary.avgHeartRate ?? "N/A",

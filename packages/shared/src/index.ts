@@ -40,3 +40,9 @@ export {
 	getModelProvider,
 } from "./coachModels.js";
 export type { AvailableModelId, ModelEntry, Provider } from "./coachModels.js";
+
+export {
+	buildPowerBySecond,
+	computeNormalizedPower,
+	normalizedPowerFromSeconds,
+} from "./power.js";

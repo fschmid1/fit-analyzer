@@ -343,6 +343,13 @@ export function StatsPage() {
 										color="#8b5cf6"
 									/>
 									<MetricCard
+										icon={Zap}
+										label="Normalized Power"
+										value={data.activityStats.normalizedPower ?? "N/A"}
+										unit={data.activityStats.normalizedPower != null ? "W" : ""}
+										color="#a855f7"
+									/>
+									<MetricCard
 										icon={Heart}
 										label="Avg Heart Rate"
 										value={data.activityStats.avgHeartRate ?? "N/A"}

@@ -59,7 +59,7 @@ export function StatsBar({ records, selectionRange }: StatsBarProps) {
 			<p className="text-xs font-medium text-[#8b5cf6] uppercase tracking-wider mb-3">
 				Selected Range
 			</p>
-			<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+			<div className="grid grid-cols-2 md:grid-cols-5 gap-4">
 				<StatItem
 					icon={Clock}
 					label="Duration"
@@ -71,6 +71,16 @@ export function StatsBar({ records, selectionRange }: StatsBarProps) {
 					label="Avg Power"
 					value={stats.avgPower !== null ? `${stats.avgPower} W` : "N/A"}
 					color="#8b5cf6"
+				/>
+				<StatItem
+					icon={Zap}
+					label="Normalized Power"
+					value={
+						stats.normalizedPower !== null
+							? `${stats.normalizedPower} W`
+							: "N/A"
+					}
+					color="#a855f7"
 				/>
 				<StatItem
 					icon={Heart}

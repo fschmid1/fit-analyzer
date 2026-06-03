@@ -132,6 +132,13 @@ function SwipeableRow({
 								</span>
 							)}
 
+							{activity.summary.normalizedPower !== null && (
+								<span className="flex items-center gap-1 text-xs text-[#a855f7]">
+									<Zap className="w-3 h-3" />
+									{activity.summary.normalizedPower}W NP
+								</span>
+							)}
+
 							{activity.summary.maxPower !== null && (
 								<span className="text-xs text-[#8b5cf6]/70">
 									{activity.summary.maxPower}W max
