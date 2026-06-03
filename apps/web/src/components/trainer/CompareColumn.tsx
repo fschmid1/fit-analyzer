@@ -175,33 +175,34 @@ export const CompareColumn = forwardRef<
 
 	useEffect(() => {
 		const activeStream = loadActiveTrainerStream(thread.id);
-		let baseMessages = stripTrailingAssistant(initialMessages);
-		setMessages(baseMessages);
-		if (!activeStream) return;
+		if (activeStream) {
+			let baseMessages = stripTrailingAssistant(initialMessages);
+			setMessages(baseMessages);
+			const abortController = new AbortController();
 
-		const abortController = new AbortController();
+			streamResumedChat(
+				activeStream.streamId,
+				(chunk) => {
+					baseMessages = applyResumedChunk(baseMessages, chunk);
+					setMessages(baseMessages);
 
-		streamResumedChat(
-			activeStream.streamId,
-			(chunk) => {
-				baseMessages = applyResumedChunk(baseMessages, chunk);
-				setMessages(baseMessages);
+					if (chunk.type === "RUN_FINISHED" || chunk.type === "RUN_ERROR") {
+						clearActiveTrainerStream(thread.id);
+						clearTrainerDraft(thread.id);
+					}
+				},
+				abortController.signal,
+			).catch((resumeError) => {
+				if (resumeError instanceof Error && resumeError.name === "AbortError")
+					return;
+				console.error("Failed to resume trainer stream:", resumeError);
+			});
 
-				if (chunk.type === "RUN_FINISHED" || chunk.type === "RUN_ERROR") {
-					clearActiveTrainerStream(thread.id);
-					clearTrainerDraft(thread.id);
-					// `useTrainerHistoryPersist` will save the full merged history
-					// on the streaming → ready transition.
-				}
-			},
-			abortController.signal,
-		).catch((resumeError) => {
-			if (resumeError instanceof Error && resumeError.name === "AbortError")
-				return;
-			console.error("Failed to resume trainer stream:", resumeError);
-		});
+			return () => abortController.abort();
+		}
 
-		return () => abortController.abort();
+		// No active stream: just sync initial history without stripping assistant
+		setMessages(initialMessages);
 	}, [initialMessages, setMessages, thread.id]);
 
 	useTrainerHistoryPersist(thread.id, messages, status, ensureFullHistory);

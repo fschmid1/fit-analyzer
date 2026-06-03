@@ -266,7 +266,7 @@ export function TrainerCompareView({
 					{pinnedThreads.map((thread) => {
 						const payload = columnInputs[thread.id];
 						return (
-							<div key={thread.id} className="min-h-0 min-w-0">
+							<div key={thread.id} className="min-h-0 min-w-0 h-full">
 								<CompareColumn
 									ref={columnRefsById[thread.id]}
 									thread={thread}
