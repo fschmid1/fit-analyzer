@@ -24,7 +24,7 @@ interface StravaConnectProps {
 	onSynced?: () => void;
 }
 
-type DaysBack = 7 | 30 | 90 | "all";
+type DaysBack = 1 | 7 | 30 | 90 | "all";
 
 export function StravaConnect({ onSynced }: StravaConnectProps) {
 	const [status, setStatus] = useState<StravaStatus | null>(null);
@@ -225,6 +225,7 @@ export function StravaConnect({ onSynced }: StravaConnectProps) {
 									className="px-3 py-2 text-sm bg-[#0f0b1a] border border-[rgba(139,92,246,0.2)] text-[#f1f5f9] rounded-xl focus:outline-none focus:border-[rgba(139,92,246,0.5)] cursor-pointer"
 									disabled={syncing}
 								>
+									<option value={1}>Last day</option>
 									<option value={7}>Last 7 days</option>
 									<option value={30}>Last 30 days</option>
 									<option value={90}>Last 90 days</option>

@@ -436,9 +436,7 @@ async function importSingleActivity(
 		stravaId,
 	);
 
-	if (alreadyExists) {
-		await handleNewActivityForWaxedChainReminder(userId, records);
-	}
+	await handleNewActivityForWaxedChainReminder(userId, records);
 
 	console.log(
 		`[strava] ${alreadyExists ? "Re-imported" : "Imported"} activity ${stravaActivityId} (${activity.name}) → ${id}`,
