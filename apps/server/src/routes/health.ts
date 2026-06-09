@@ -64,6 +64,9 @@ function buildHealthData(
 	return {
 		rhr: ctx.rhr,
 		hrv: ctx.hrv,
+		respiratoryRate: ctx.respiratoryRate,
+		spo2: ctx.spo2,
+		temperature: ctx.temperature,
 		sleep,
 	};
 }

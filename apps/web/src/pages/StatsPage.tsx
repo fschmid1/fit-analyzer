@@ -1,4 +1,4 @@
-import type { HeatmapResponse } from "@fit-analyzer/shared";
+import type { HeatmapResponse, RecentNight } from "@fit-analyzer/shared";
 import {
 	Activity,
 	AlertCircle,
@@ -6,19 +6,25 @@ import {
 	Bed,
 	Brain,
 	Clock,
+	Droplets,
 	Flame,
 	Gauge,
 	Heart,
 	Loader2,
 	Moon,
+	MoonStar,
 	Route,
+	Thermometer,
 	TrendingUp,
+	Wind,
 	Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { AnimatedButton } from "../components/AnimatedButton";
+import { HealthMonitorCard } from "../components/HealthMonitorCard";
 import { HeatmapMap } from "../components/HeatmapMap";
 import { MetricCard } from "../components/MetricCard";
+import { TimelineItem } from "../components/TimelineItem";
 import { fetchHeatmap, fetchStats, type StatsResponse } from "../lib/api";
 
 type Preset = "7d" | "30d" | "90d" | "year" | "custom";
@@ -50,6 +56,23 @@ function presetRange(preset: Preset): { startDate: string; endDate: string } {
 		case "custom":
 			return { startDate: "", endDate: "" };
 	}
+}
+
+function formatGermanDate(dateStr: string): string {
+	const [y, m, d] = dateStr.split("-");
+	return `${d}.${m}.${y.slice(2)}`;
+}
+
+function sleepSubtitle(night: RecentNight): string {
+	const parts: string[] = [];
+	if (night.stages) {
+		const restorative = night.stages.deepMinutes + night.stages.remMinutes;
+		parts.push(`${restorative}m restorative`);
+	}
+	if (night.efficiencyPercent != null) {
+		parts.push(`${night.efficiencyPercent.toFixed(0)}% efficiency`);
+	}
+	return parts.join(" · ") || night.quality || "";
 }
 
 export function StatsPage() {
@@ -156,101 +179,102 @@ export function StatsPage() {
 							</div>
 						)}
 
+						{/* Health Monitor */}
 						{data.health && (
-							<>
+							<section className="mb-8">
 								<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8] mb-4">
-									Health
+									Health Monitor
 								</h3>
-								<div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3 mb-10">
-									{data.health.rhr?.current != null && (
-										<MetricCard
-											icon={Heart}
-											label="Resting HR"
-											value={data.health.rhr.current}
-											unit="bpm"
-											subValue={
-												data.health.rhr.trend7d != null
-													? `7d avg: ${data.health.rhr.trend7d} bpm${data.health.rhr.elevated ? " (elevated)" : ""}`
-													: undefined
-											}
-											color={data.health.rhr.elevated ? "#ef4444" : "#a78bfa"}
-										/>
-									)}
-									{data.health.hrv?.current != null && (
-										<MetricCard
-											icon={Activity}
-											label="HRV"
-											value={data.health.hrv.current}
-											unit="ms"
-											subValue={
-												data.health.hrv.trend7d != null
-													? `7d avg: ${data.health.hrv.trend7d} ms${data.health.hrv.declining ? " (declining)" : ""}`
-													: undefined
-											}
-											color={data.health.hrv.declining ? "#f59e0b" : "#22c55e"}
-										/>
-									)}
-									{data.health.sleep?.avgDurationFormatted7d != null && (
-										<MetricCard
-											icon={Bed}
-											label="Avg Sleep (7d)"
-											value={data.health.sleep.avgDurationFormatted7d}
-											unit=""
-											color="#6366f1"
-										/>
-									)}
-									{data.health.sleep?.recentNights[0] && (
-										<MetricCard
-											icon={Bed}
-											label="Last Night Sleep"
-											value={
-												data.health.sleep.recentNights[0].durationFormatted
-											}
-											unit=""
-											subValue={
-												data.health.sleep.recentNights[0].date +
-												(data.health.sleep.recentNights[0].quality
-													? ` | ${data.health.sleep.recentNights[0].quality}`
-													: "")
-											}
-											color="#06b6d4"
-										/>
-									)}
-									{data.health.sleep?.avgEfficiencyPercent7d != null && (
-										<MetricCard
-											icon={Moon}
-											label="Avg Efficiency (7d)"
-											value={`${data.health.sleep.avgEfficiencyPercent7d}%`}
-											unit=""
-											color="#a78bfa"
-										/>
-									)}
-									{data.health.sleep?.recentNights[0]?.stages && (
-										<MetricCard
-											icon={Brain}
-											label="Last Night Stages"
-											value={`${data.health.sleep.recentNights[0].stages.deepMinutes + data.health.sleep.recentNights[0].stages.remMinutes}m restorative`}
-											unit=""
-											subValue={`Awake ${data.health.sleep.recentNights[0].stages.awakeMinutes}m · Light ${data.health.sleep.recentNights[0].stages.lightMinutes}m · Deep ${data.health.sleep.recentNights[0].stages.deepMinutes}m · REM ${data.health.sleep.recentNights[0].stages.remMinutes}m`}
-											color="#8b5cf6"
-										/>
-									)}
-									{data.health.sleep?.avgStages7d && (
-										<MetricCard
-											icon={Brain}
-											label="Avg Stages (7d)"
-											value={`${data.health.sleep.avgStages7d.deepMinutes + data.health.sleep.avgStages7d.remMinutes}m restorative`}
-											unit=""
-											subValue={`Awake ${data.health.sleep.avgStages7d.awakeMinutes}m · Light ${data.health.sleep.avgStages7d.lightMinutes}m · Deep ${data.health.sleep.avgStages7d.deepMinutes}m · REM ${data.health.sleep.avgStages7d.remMinutes}m`}
-											color="#c084fc"
-										/>
-									)}
+								<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+									<HealthMonitorCard
+										icon={Wind}
+										label="RR"
+										value={data.health.respiratoryRate?.current ?? "—"}
+										unit={
+											data.health.respiratoryRate?.current != null ? "rpm" : ""
+										}
+										status={data.health.respiratoryRate?.status ?? "normal"}
+										gaugeType="respiratoryRate"
+										gaugeValue={data.health.respiratoryRate?.current ?? null}
+									/>
+									<HealthMonitorCard
+										icon={Heart}
+										label="RHR"
+										value={data.health.rhr?.current ?? "—"}
+										unit={data.health.rhr?.current != null ? "bpm" : ""}
+										status={data.health.rhr?.status ?? "normal"}
+									/>
+									<HealthMonitorCard
+										icon={Activity}
+										label="HRV"
+										value={data.health.hrv?.current ?? "—"}
+										unit={data.health.hrv?.current != null ? "ms" : ""}
+										status={data.health.hrv?.status ?? "normal"}
+									/>
+									<HealthMonitorCard
+										icon={Droplets}
+										label="SpO2"
+										value={data.health.spo2?.current ?? "—"}
+										unit={data.health.spo2?.current != null ? "%" : ""}
+										status={data.health.spo2?.status ?? "normal"}
+										gaugeType="spo2"
+										gaugeValue={data.health.spo2?.current ?? null}
+									/>
+									<HealthMonitorCard
+										icon={Thermometer}
+										label="Temp"
+										value={data.health.temperature?.current ?? "—"}
+										unit={data.health.temperature?.current != null ? "°C" : ""}
+										status={data.health.temperature?.status ?? "normal"}
+										gaugeType="temperature"
+										gaugeValue={data.health.temperature?.current ?? null}
+									/>
+									<HealthMonitorCard
+										icon={Moon}
+										label="Sleep"
+										value={
+											data.health.sleep?.recentNights[0]?.durationFormatted ??
+											"—"
+										}
+										unit=""
+										status="normal"
+									/>
 								</div>
-							</>
+							</section>
 						)}
 
+						{/* Timeline */}
+						{(() => {
+							const recentNights = data.health?.sleep?.recentNights;
+							if (!recentNights || recentNights.length === 0) return null;
+							return (
+								<section className="mb-8">
+									<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8] mb-4">
+										Timeline
+									</h3>
+									<div className="flex flex-col gap-2">
+										{recentNights.slice(0, 5).map((night) => (
+											<TimelineItem
+												key={night.date}
+												icon={MoonStar}
+												title="Primary Sleep"
+												subtitle={`${formatGermanDate(night.date)} · ${sleepSubtitle(night)}`}
+												badge={
+													night.efficiencyPercent != null
+														? `${night.efficiencyPercent.toFixed(0)}`
+														: undefined
+												}
+												badgeColor="#8b5cf6"
+											/>
+										))}
+									</div>
+								</section>
+							);
+						})()}
+
+						{/* Activity Stats */}
 						{data.activityStats.count > 0 && (
-							<>
+							<section className="mb-8">
 								<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8] mb-1">
 									Activities
 								</h3>
@@ -402,7 +426,7 @@ export function StatsPage() {
 										color="#ec4899"
 									/>
 								</div>
-							</>
+							</section>
 						)}
 
 						{heatmapLoading && (

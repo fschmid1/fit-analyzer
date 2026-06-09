@@ -1,5 +1,6 @@
 import { db } from "../db.js";
 import { env } from "../env.js";
+import type { HealthMetricStatus } from "@fit-analyzer/shared";
 
 export interface SleepStages {
 	awakeMinutes: number;
@@ -20,12 +21,27 @@ export interface HealthContext {
 	rhr: {
 		current: number | null;
 		trend7d: number | null;
-		elevated: boolean;
+		status: HealthMetricStatus;
 	} | null;
 	hrv: {
 		current: number | null;
 		trend7d: number | null;
-		declining: boolean;
+		status: HealthMetricStatus;
+	} | null;
+	respiratoryRate: {
+		current: number | null;
+		trend7d: number | null;
+		status: HealthMetricStatus;
+	} | null;
+	spo2: {
+		current: number | null;
+		trend7d: number | null;
+		status: HealthMetricStatus;
+	} | null;
+	temperature: {
+		current: number | null;
+		trend7d: number | null;
+		status: HealthMetricStatus;
 	} | null;
 	sleep: {
 		recentNights: RecentNight[];
@@ -79,7 +95,37 @@ interface SleepRecord {
 	};
 	avg_heart_rate_bpm?: number;
 	avg_hrv_sdnn_ms?: number;
+	avg_respiratory_rate?: number;
+	avg_spo2_percent?: number;
 	[key: string]: unknown;
+}
+
+interface BodySummaryResponse {
+	source: { provider: string; device: string | null };
+	slow_changing: {
+		weight_kg: number | null;
+		height_cm: number | null;
+		body_fat_percent: number | null;
+		muscle_mass_kg: number | null;
+		bmi: number | null;
+		age: number | null;
+	};
+	averaged: {
+		period_days: number;
+		resting_heart_rate_bpm: number | null;
+		avg_hrv_sdnn_ms: number | null;
+		avg_hrv_rmssd_ms: number | null;
+		period_start: string;
+		period_end: string;
+	};
+	latest: {
+		body_temperature_celsius: number | null;
+		body_temperature_measured_at: string | null;
+		skin_temperature_celsius: number | null;
+		skin_temperature_measured_at: string | null;
+		blood_pressure: { systolic: number; diastolic: number } | null;
+		blood_pressure_measured_at: string | null;
+	};
 }
 
 function getDateRange(): { startDate: string; endDate: string } {
@@ -123,11 +169,69 @@ async function fetchSleepSummaries(
 	return json.data;
 }
 
+async function fetchBodySummary(
+	owUserId: string,
+): Promise<BodySummaryResponse | null> {
+	const apiKey = env.OW_API_KEY;
+	if (!apiKey) throw new Error("OW_API_KEY not configured");
+	const res = await fetch(
+		`${env.OW_BASE_URL}/api/v1/users/${encodeURIComponent(owUserId)}/summaries/body`,
+		{
+			headers: { "X-Open-Wearables-API-Key": apiKey },
+			signal: AbortSignal.timeout(10_000),
+		},
+	);
+	if (!res.ok) {
+		console.warn(
+			`[ow] body fetch failed: ${res.status} ${res.statusText} (response body redacted)`,
+		);
+		return null;
+	}
+	return (await res.json()) as BodySummaryResponse;
+}
+
+function determineStatus(
+	latest: number,
+	avg: number | null,
+	metric: "rhr" | "hrv" | "respiratoryRate" | "spo2" | "temperature",
+): HealthMetricStatus {
+	if (avg == null) return "normal";
+
+	switch (metric) {
+		case "rhr":
+			return latest > avg + 5 ? "elevated" : "normal";
+		case "hrv":
+			return latest < avg * 0.9 ? "lower" : "normal";
+		case "respiratoryRate": {
+			const diff = latest - avg;
+			if (diff > 2) return "higher";
+			if (diff < -2) return "lower";
+			return "normal";
+		}
+		case "spo2": {
+			const diff = latest - avg;
+			if (diff > 1) return "higher";
+			if (diff < -1) return "lower";
+			return "normal";
+		}
+		case "temperature": {
+			const diff = latest - avg;
+			if (diff > 0.3) return "higher";
+			if (diff < -0.3) return "lower";
+			return "normal";
+		}
+	}
+}
+
 function computeHealthContext(
 	sleepSummaries: SleepRecord[] | null,
+	bodySummary: BodySummaryResponse | null,
 ): HealthContext {
 	let rhr: HealthContext["rhr"] = null;
 	let hrv: HealthContext["hrv"] = null;
+	let respiratoryRate: HealthContext["respiratoryRate"] = null;
+	let spo2: HealthContext["spo2"] = null;
+	let temperature: HealthContext["temperature"] = null;
 	let sleep: HealthContext["sleep"] = null;
 
 	if (sleepSummaries && sleepSummaries.length > 0) {
@@ -205,6 +309,7 @@ function computeHealthContext(
 			avgStages7d,
 		};
 
+		// RHR from sleep summaries (per-night avg HR during sleep)
 		const datedHrValues = sleepSummaries
 			.map((n) => ({
 				date: n.date,
@@ -222,10 +327,11 @@ function computeHealthContext(
 			rhr = {
 				current: Math.round(latest),
 				trend7d: Math.round(avg),
-				elevated: latest > avg + 5,
+				status: determineStatus(latest, avg, "rhr"),
 			};
 		}
 
+		// HRV from sleep summaries
 		const datedHrvValues = sleepSummaries
 			.map((n) => ({
 				date: n.date,
@@ -243,12 +349,87 @@ function computeHealthContext(
 			hrv = {
 				current: Math.round(latest),
 				trend7d: Math.round(avg),
-				declining: latest < avg * 0.9,
+				status: determineStatus(latest, avg, "hrv"),
+			};
+		}
+
+		// Respiratory rate from sleep summaries
+		const datedRrValues = sleepSummaries
+			.map((n) => ({
+				date: n.date,
+				value: n.avg_respiratory_rate,
+			}))
+			.filter(
+				(v): v is { date: string; value: number } =>
+					typeof v.value === "number" && v.value > 0,
+			)
+			.sort((a, b) => b.date.localeCompare(a.date));
+		if (datedRrValues.length > 0) {
+			const latest = datedRrValues[0].value;
+			const avg =
+				datedRrValues.reduce((a, b) => a + b.value, 0) / datedRrValues.length;
+			respiratoryRate = {
+				current: Math.round(latest * 10) / 10,
+				trend7d: Math.round(avg * 10) / 10,
+				status: determineStatus(latest, avg, "respiratoryRate"),
+			};
+		}
+
+		// SpO2 from sleep summaries
+		const datedSpo2Values = sleepSummaries
+			.map((n) => ({
+				date: n.date,
+				value: n.avg_spo2_percent,
+			}))
+			.filter(
+				(v): v is { date: string; value: number } =>
+					typeof v.value === "number" && v.value > 0,
+			)
+			.sort((a, b) => b.date.localeCompare(a.date));
+		if (datedSpo2Values.length > 0) {
+			const latest = datedSpo2Values[0].value;
+			const avg =
+				datedSpo2Values.reduce((a, b) => a + b.value, 0) /
+				datedSpo2Values.length;
+			spo2 = {
+				current: Math.round(latest * 10) / 10,
+				trend7d: Math.round(avg * 10) / 10,
+				status: determineStatus(latest, avg, "spo2"),
 			};
 		}
 	}
 
-	return { rhr, hrv, sleep };
+	// Temperature from body summary
+	if (bodySummary?.latest?.body_temperature_celsius != null) {
+		const current = bodySummary.latest.body_temperature_celsius;
+		temperature = {
+			current: Math.round(current * 10) / 10,
+			trend7d: null,
+			status: current > 37.5 ? "higher" : current < 36.0 ? "lower" : "normal",
+		};
+	}
+
+	// Override RHR/HRV from body summary if available (more accurate 7-day average)
+	if (bodySummary?.averaged?.resting_heart_rate_bpm != null) {
+		const current = bodySummary.averaged.resting_heart_rate_bpm;
+		const trend7d = current; // body summary already gives 7-day average
+		rhr = {
+			current: Math.round(current),
+			trend7d: Math.round(trend7d),
+			status: rhr?.status ?? "normal",
+		};
+	}
+
+	if (bodySummary?.averaged?.avg_hrv_sdnn_ms != null) {
+		const current = bodySummary.averaged.avg_hrv_sdnn_ms;
+		hrv = {
+			current: Math.round(current),
+			trend7d: Math.round(current),
+			status: hrv?.status ?? "normal",
+		};
+	}
+
+	return { rhr, hrv, respiratoryRate, spo2, temperature, sleep };
 }
 
 function formatHealthContext(ctx: HealthContext): string {
@@ -259,10 +440,10 @@ function formatHealthContext(ctx: HealthContext): string {
 	);
 
 	if (ctx.rhr?.current != null) {
-		let rhrLine = `- Resting Heart Rate (from sleep): ${ctx.rhr.current} bpm`;
+		let rhrLine = `- Resting Heart Rate: ${ctx.rhr.current} bpm`;
 		if (ctx.rhr.trend7d != null) {
 			rhrLine += ` (7-day avg: ${ctx.rhr.trend7d} bpm)`;
-			if (ctx.rhr.elevated) {
+			if (ctx.rhr.status === "elevated") {
 				rhrLine +=
 					" ⚠ Elevated — may indicate fatigue, illness, or incomplete recovery.";
 			}
@@ -271,15 +452,37 @@ function formatHealthContext(ctx: HealthContext): string {
 	}
 
 	if (ctx.hrv?.current != null) {
-		let hrvLine = `- HRV (from sleep): ${ctx.hrv.current} ms`;
+		let hrvLine = `- HRV: ${ctx.hrv.current} ms`;
 		if (ctx.hrv.trend7d != null) {
 			hrvLine += ` (7-day avg: ${ctx.hrv.trend7d} ms)`;
-			if (ctx.hrv.declining) {
+			if (ctx.hrv.status === "lower") {
 				hrvLine +=
 					" ⚠ Declining — may indicate accumulated stress or overtraining.";
 			}
 		}
 		parts.push(hrvLine);
+	}
+
+	if (ctx.respiratoryRate?.current != null) {
+		let rrLine = `- Respiratory Rate: ${ctx.respiratoryRate.current} rpm`;
+		if (ctx.respiratoryRate.trend7d != null) {
+			rrLine += ` (7-day avg: ${ctx.respiratoryRate.trend7d} rpm)`;
+		}
+		parts.push(rrLine);
+	}
+
+	if (ctx.spo2?.current != null) {
+		let spo2Line = `- SpO2: ${ctx.spo2.current}%`;
+		if (ctx.spo2.trend7d != null) {
+			spo2Line += ` (7-day avg: ${ctx.spo2.trend7d}%)`;
+		}
+		parts.push(spo2Line);
+	}
+
+	if (ctx.temperature?.current != null) {
+		parts.push(
+			`- Body Temperature: ${ctx.temperature.current}°C (${ctx.temperature.status})`,
+		);
 	}
 
 	if (ctx.sleep) {
@@ -338,14 +541,14 @@ async function resolveHealthContext(
 	console.log(`[ow] cache miss for user ${fitUserId} (OW ID: ${owUserId})`);
 
 	try {
-		const sleepSummaries = await fetchSleepSummaries(owUserId);
+		const [sleepSummaries, bodySummary] = await Promise.all([
+			fetchSleepSummaries(owUserId),
+			fetchBodySummary(owUserId),
+		]);
 		console.log(
 			`[ow] fetched ${sleepSummaries?.length} sleep summaries for user ${fitUserId} (OW ID: ${owUserId})`,
 		);
-		console.log(
-			`[ow] sleep summaries: ${JSON.stringify(sleepSummaries, null, 2)}`,
-		);
-		const ctx = computeHealthContext(sleepSummaries);
+		const ctx = computeHealthContext(sleepSummaries, bodySummary);
 		pruneCache();
 		cache.set(owUserId, { data: ctx, fetchedAt: Date.now() });
 		return ctx;

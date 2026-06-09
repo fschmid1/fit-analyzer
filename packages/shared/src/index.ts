@@ -25,6 +25,8 @@ export type {
 	CompareSettings,
 	UpdateCompareSettingsBody,
 	HealthData,
+	HealthMetric,
+	HealthMetricStatus,
 	ActivityStats,
 	SleepStages,
 	RecentNight,

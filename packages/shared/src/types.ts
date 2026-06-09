@@ -184,17 +184,20 @@ export interface RecentNight {
 	stages: SleepStages | null;
 }
 
+export type HealthMetricStatus = "normal" | "lower" | "higher" | "elevated";
+
+export interface HealthMetric {
+	current: number | null;
+	trend7d: number | null;
+	status: HealthMetricStatus;
+}
+
 export interface HealthData {
-	rhr: {
-		current: number | null;
-		trend7d: number | null;
-		elevated: boolean;
-	} | null;
-	hrv: {
-		current: number | null;
-		trend7d: number | null;
-		declining: boolean;
-	} | null;
+	rhr: HealthMetric | null;
+	hrv: HealthMetric | null;
+	respiratoryRate: HealthMetric | null;
+	spo2: HealthMetric | null;
+	temperature: HealthMetric | null;
 	sleep: {
 		recentNights: RecentNight[];
 		avgDurationMinutes7d: number | null;
