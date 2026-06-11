@@ -182,6 +182,59 @@ export function StatsPage() {
 
 				{!loading && !error && data && (
 					<>
+						{/* Date Range Picker */}
+						<section className="mb-6">
+							<div className="flex flex-wrap items-center gap-2 mb-2">
+								{presets.map((p) => (
+									<AnimatedButton
+										key={p.key}
+										onClick={() => handlePreset(p.key)}
+										className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 cursor-pointer ${
+											preset === p.key
+												? "bg-[#8b5cf6]/20 text-[#c4b5fd] border border-[#8b5cf6]/30"
+												: "bg-[#1a1533]/70 text-[#94a3b8] border border-[rgba(139,92,246,0.1)] hover:text-[#f1f5f9] hover:border-[rgba(139,92,246,0.25)]"
+										}`}
+									>
+										{p.label}
+									</AnimatedButton>
+								))}
+							</div>
+
+							{preset === "custom" && (
+								<div className="flex flex-wrap items-end gap-3 mt-2 p-4 bg-[#1a1533]/70 border border-[rgba(139,92,246,0.1)] rounded-2xl">
+									<label className="flex flex-col gap-1.5">
+										<span className="text-xs font-medium text-[#94a3b8] uppercase tracking-wider">
+											Start
+										</span>
+										<input
+											type="date"
+											value={startDate}
+											onChange={(e) => setStartDate(e.target.value)}
+											className="px-3 py-1.5 text-sm bg-[#0f0b1a] border border-[rgba(139,92,246,0.15)] rounded-lg text-[#f1f5f9] focus:outline-none focus:border-[#8b5cf6]/50"
+										/>
+									</label>
+									<label className="flex flex-col gap-1.5">
+										<span className="text-xs font-medium text-[#94a3b8] uppercase tracking-wider">
+											End
+										</span>
+										<input
+											type="date"
+											value={endDate}
+											onChange={(e) => setEndDate(e.target.value)}
+											className="px-3 py-1.5 text-sm bg-[#0f0b1a] border border-[rgba(139,92,246,0.15)] rounded-lg text-[#f1f5f9] focus:outline-none focus:border-[#8b5cf6]/50"
+										/>
+									</label>
+									<AnimatedButton
+										onClick={handleCustomApply}
+										disabled={!startDate || !endDate}
+										className="px-4 py-1.5 text-sm font-medium bg-[#8b5cf6]/20 text-[#c4b5fd] border border-[#8b5cf6]/30 rounded-lg hover:bg-[#8b5cf6]/30 transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+									>
+										Apply
+									</AnimatedButton>
+								</div>
+							)}
+						</section>
+
 						{data.activityStats.count === 0 && !data.health && (
 							<div className="flex flex-col items-center gap-3 py-16 text-[#94a3b8]">
 								<BarChart3 className="w-12 h-12 opacity-30" />
@@ -326,55 +379,6 @@ export function StatsPage() {
 								<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8] mb-1">
 									Activities
 								</h3>
-								<div className="flex flex-wrap items-center gap-2 mb-2">
-									{presets.map((p) => (
-										<AnimatedButton
-											key={p.key}
-											onClick={() => handlePreset(p.key)}
-											className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 cursor-pointer ${
-												preset === p.key
-													? "bg-[#8b5cf6]/20 text-[#c4b5fd] border border-[#8b5cf6]/30"
-													: "bg-[#1a1533]/70 text-[#94a3b8] border border-[rgba(139,92,246,0.1)] hover:text-[#f1f5f9] hover:border-[rgba(139,92,246,0.25)]"
-											}`}
-										>
-											{p.label}
-										</AnimatedButton>
-									))}
-								</div>
-
-								{preset === "custom" && (
-									<div className="flex flex-wrap items-end gap-3 mb-4 p-4 bg-[#1a1533]/70 border border-[rgba(139,92,246,0.1)] rounded-2xl">
-										<label className="flex flex-col gap-1.5">
-											<span className="text-xs font-medium text-[#94a3b8] uppercase tracking-wider">
-												Start
-											</span>
-											<input
-												type="date"
-												value={startDate}
-												onChange={(e) => setStartDate(e.target.value)}
-												className="px-3 py-1.5 text-sm bg-[#0f0b1a] border border-[rgba(139,92,246,0.15)] rounded-lg text-[#f1f5f9] focus:outline-none focus:border-[#8b5cf6]/50"
-											/>
-										</label>
-										<label className="flex flex-col gap-1.5">
-											<span className="text-xs font-medium text-[#94a3b8] uppercase tracking-wider">
-												End
-											</span>
-											<input
-												type="date"
-												value={endDate}
-												onChange={(e) => setEndDate(e.target.value)}
-												className="px-3 py-1.5 text-sm bg-[#0f0b1a] border border-[rgba(139,92,246,0.15)] rounded-lg text-[#f1f5f9] focus:outline-none focus:border-[#8b5cf6]/50"
-											/>
-										</label>
-										<AnimatedButton
-											onClick={handleCustomApply}
-											disabled={!startDate || !endDate}
-											className="px-4 py-1.5 text-sm font-medium bg-[#8b5cf6]/20 text-[#c4b5fd] border border-[#8b5cf6]/30 rounded-lg hover:bg-[#8b5cf6]/30 transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-										>
-											Apply
-										</AnimatedButton>
-									</div>
-								)}
 
 								<p className="text-xs text-[#64748b] mb-4">
 									{data.activityStats.count} ride
