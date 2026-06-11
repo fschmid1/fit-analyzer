@@ -54,4 +54,5 @@ export {
 	normalizedPowerFromSeconds,
 	computeNormalizedCadence,
 	normalizedCadenceFromSeconds,
+	peakPowerFromSeconds,
 } from "./power.js";

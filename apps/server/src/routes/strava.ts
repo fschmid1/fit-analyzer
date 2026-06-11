@@ -1,6 +1,7 @@
 import {
 	normalizedPowerFromSeconds,
 	normalizedCadenceFromSeconds,
+	peakPowerFromSeconds,
 	type ActivitySummary,
 	type LapMarker,
 	type StoredRecord,
@@ -367,6 +368,7 @@ function buildSummary(
 		totalWork,
 		peak1minPower: computePeakPower(timeArr, wattsArr, 60),
 		peak5minPower: computePeakPower(timeArr, wattsArr, 300),
+		peak20minPower: computePeakPower(timeArr, wattsArr, 1200),
 	};
 }
 

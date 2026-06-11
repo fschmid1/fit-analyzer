@@ -4,8 +4,10 @@ import type {
 	ActivityStats,
 	HealthData,
 	HealthHistoryEntry,
+	StoredRecord,
 } from "@fit-analyzer/shared";
 import type { ActivitySummary } from "@fit-analyzer/shared";
+import { buildPowerBySecond, peakPowerFromSeconds } from "@fit-analyzer/shared";
 import { getRawHealthContext } from "../lib/owClient.js";
 import {
 	getHaeHealthContext,
@@ -235,8 +237,72 @@ function computeActivityStats(
 		normalizedCadence: avg(normalizedCadenceVals),
 		peak1minPower: peak1minVals.length > 0 ? Math.max(...peak1minVals) : null,
 		peak5minPower: peak5minVals.length > 0 ? Math.max(...peak5minVals) : null,
+		peak20minPower: null,
 		totalWork: totalWork > 0 ? Math.round(totalWork) : null,
 	};
+}
+
+const allActivitiesStmt = db.prepare(
+	"SELECT summary, records FROM activities WHERE user_id = ?",
+);
+
+function computeAllTimeEstimates(
+	userId: string,
+	healthData: HealthData | null,
+): { estimatedFtp: number | null; estimatedVo2max: number | null } {
+	const rows = allActivitiesStmt.all(userId) as {
+		summary: string;
+		records: string;
+	}[];
+
+	let bestPeak20min = 0;
+	let maxHeartRate = 0;
+
+	for (const row of rows) {
+		const summary = JSON.parse(row.summary) as ActivitySummary;
+
+		if (
+			summary.peak20minPower != null &&
+			summary.peak20minPower > bestPeak20min
+		) {
+			bestPeak20min = summary.peak20minPower;
+		} else {
+			// Fallback: compute on-the-fly from raw records for older activities
+			const records = JSON.parse(row.records) as StoredRecord[];
+			const powerBySecond = buildPowerBySecond(
+				records.map((r) => ({
+					timestamp: new Date(r.timestamp),
+					elapsedSeconds: r.elapsedSeconds,
+					power: r.power,
+					heartRate: r.heartRate,
+					cadence: r.cadence,
+					speed: r.speed,
+					gradient: r.gradient,
+					lat: r.lat,
+					lng: r.lng,
+				})),
+			);
+			const computed = peakPowerFromSeconds(powerBySecond, 1200);
+			if (computed != null && computed > bestPeak20min) {
+				bestPeak20min = computed;
+			}
+		}
+
+		if (summary.maxHeartRate != null && summary.maxHeartRate > maxHeartRate) {
+			maxHeartRate = summary.maxHeartRate;
+		}
+	}
+
+	const estimatedFtp =
+		bestPeak20min > 0 ? Math.round(bestPeak20min * 0.95) : null;
+
+	let estimatedVo2max: number | null = null;
+	const restingHR = healthData?.rhr?.current ?? null;
+	if (maxHeartRate > 0 && restingHR != null && restingHR > 0) {
+		estimatedVo2max = Math.round(15.3 * (maxHeartRate / restingHR) * 10) / 10;
+	}
+
+	return { estimatedFtp, estimatedVo2max };
 }
 
 health.get("/", async (c) => {
@@ -276,6 +342,11 @@ health.get("/", async (c) => {
 		endDate,
 	);
 
+	const { estimatedFtp, estimatedVo2max } = computeAllTimeEstimates(
+		userId,
+		healthData,
+	);
+
 	// Determine last sync timestamp from the active source
 	let lastSyncAt: string | null = null;
 	let history: HealthHistoryEntry[] = [];
@@ -290,6 +361,8 @@ health.get("/", async (c) => {
 		sourceUsed,
 		lastSyncAt,
 		history,
+		estimatedFtp,
+		estimatedVo2max,
 	});
 });
 

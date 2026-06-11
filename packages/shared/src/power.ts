@@ -85,11 +85,57 @@ export function buildCadenceBySecond(
 }
 
 /**
- * Compute Normalized Power (NP) from records using the standard Coggan
- * formula: 30-second rolling averages of (interpolated) per-second power,
- * each raised to the 4th power, mean, then 4th root. Zeros and gaps are
- * treated as zero power. Returns null if there isn't enough data.
+ * Compute the best average power for a rolling time window (in seconds)
+ * from a per-second power array. Gaps (null or zero) are ignored in the
+ * average. Returns null if there aren't enough data points.
  */
+export function peakPowerFromSeconds(
+	powerBySecond: (number | null)[],
+	windowSeconds: number,
+): number | null {
+	if (powerBySecond.length === 0 || powerBySecond.length - 1 < windowSeconds)
+		return null;
+
+	let best = 0;
+	let windowSum = 0;
+	let windowCount = 0;
+
+	// Initialize first window
+	for (let i = 0; i < windowSeconds && i < powerBySecond.length; i++) {
+		const power = powerBySecond[i];
+		if (power != null && power > 0) {
+			windowSum += power;
+			windowCount++;
+		}
+	}
+
+	if (windowCount > 0) {
+		best = windowSum / windowCount;
+	}
+
+	// Slide the window
+	for (let i = windowSeconds; i < powerBySecond.length; i++) {
+		const entering = powerBySecond[i];
+		const leaving = powerBySecond[i - windowSeconds];
+
+		if (entering != null && entering > 0) {
+			windowSum += entering;
+			windowCount++;
+		}
+		if (leaving != null && leaving > 0) {
+			windowSum -= leaving;
+			windowCount--;
+		}
+
+		if (windowCount > 0) {
+			const avg = windowSum / windowCount;
+			if (avg > best) best = avg;
+		}
+	}
+
+	return best > 0 ? Math.round(best) : null;
+}
+
 export function computeNormalizedPower(
 	records: ActivityRecord[],
 ): number | null {
