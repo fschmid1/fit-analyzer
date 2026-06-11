@@ -192,7 +192,8 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 					}
 					break;
 				}
-				case "body_temperature": {
+				case "body_temperature":
+				case "wrist_temperature": {
 					const qty = (raw as HaeQuantityData).qty;
 					if (typeof qty === "number") {
 						// HAE may export in degF or degC
