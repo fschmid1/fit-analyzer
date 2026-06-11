@@ -1,6 +1,12 @@
-import type { LatLngBoundsExpression, LatLngTuple } from "leaflet";
-import { useEffect, useMemo } from "react";
-import { MapContainer, Polyline, TileLayer, useMap } from "react-leaflet";
+import type { LatLngTuple } from "leaflet";
+import { useMemo } from "react";
+import { MapContainer, Polyline, TileLayer } from "react-leaflet";
+import {
+	DirectionIndicators,
+	FitBounds,
+	FlowingRouteOverlay,
+	gradientColor,
+} from "./routeMapShared";
 
 interface Point {
 	lat: number;
@@ -15,14 +21,6 @@ interface RouteStats {
 	minEle: number;
 	maxEle: number;
 	gainM: number;
-}
-
-function gradientColor(gradient: number): string {
-	if (gradient < 0) return "#22c55e";
-	if (gradient < 4) return "#22c55e";
-	if (gradient < 8) return "#eab308";
-	if (gradient < 12) return "#f97316";
-	return "#ef4444";
 }
 
 function computeStats(
@@ -115,17 +113,6 @@ function formatElevation(m: number): string {
 	return `${Math.round(m)} m`;
 }
 
-function FitBounds({ coords }: { coords: LatLngTuple[] }) {
-	const map = useMap();
-	useEffect(() => {
-		if (coords.length >= 2) {
-			const bounds = coords as LatLngBoundsExpression;
-			map.fitBounds(bounds, { padding: [20, 20] });
-		}
-	}, [map, coords]);
-	return null;
-}
-
 interface EventRouteMapProps {
 	coordinates: ([number, number] | [number, number, number])[];
 }
@@ -169,6 +156,8 @@ export function EventRouteMap({ coordinates }: EventRouteMapProps) {
 						/>
 					);
 				})}
+				<FlowingRouteOverlay coords={coords} />
+				<DirectionIndicators coords={coords} />
 			</MapContainer>
 			<div className="absolute bottom-0 right-0 z-[1000] w-16 h-6 bg-[#1a1533]" />
 			<div className="absolute bottom-2 left-2 z-[1000] flex gap-3">

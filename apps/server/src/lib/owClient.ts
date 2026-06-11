@@ -61,7 +61,13 @@ interface CacheEntry {
 	fetchedAt: number;
 }
 
+interface BodyCacheEntry {
+	data: BodySummaryResponse;
+	fetchedAt: number;
+}
+
 const cache = new Map<string, CacheEntry>();
+const bodyCache = new Map<string, BodyCacheEntry>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 function pruneCache() {
@@ -69,6 +75,11 @@ function pruneCache() {
 	for (const [key, entry] of cache) {
 		if (now - entry.fetchedAt >= CACHE_TTL_MS) {
 			cache.delete(key);
+		}
+	}
+	for (const [key, entry] of bodyCache) {
+		if (now - entry.fetchedAt >= CACHE_TTL_MS) {
+			bodyCache.delete(key);
 		}
 	}
 }
@@ -105,7 +116,7 @@ interface SleepRecord {
 	[key: string]: unknown;
 }
 
-interface BodySummaryResponse {
+export interface BodySummaryResponse {
 	source: { provider: string; device: string | null };
 	slow_changing: {
 		weight_kg: number | null;
@@ -131,6 +142,17 @@ interface BodySummaryResponse {
 		blood_pressure: { systolic: number; diastolic: number } | null;
 		blood_pressure_measured_at: string | null;
 	};
+}
+
+export interface OwBodySummary {
+	weightKg: number | null;
+	heightCm: number | null;
+	bodyFatPercent: number | null;
+	muscleMassKg: number | null;
+	bmi: number | null;
+	age: number | null;
+	bloodPressure: { systolic: number; diastolic: number } | null;
+	source: { provider: string; device: string | null };
 }
 
 function getDateRange(): { startDate: string; endDate: string } {
@@ -446,100 +468,6 @@ function computeHealthContext(
 	};
 }
 
-function formatHealthContext(ctx: HealthContext): string {
-	const parts: string[] = [];
-	const now = new Date().toISOString().split("T")[0];
-	parts.push(
-		`*Health data retrieved ${now} from OpenWearables — this is live, up-to-date data.*`,
-	);
-
-	if (ctx.rhr?.current != null) {
-		let rhrLine = `- Resting Heart Rate: ${ctx.rhr.current} bpm`;
-		if (ctx.rhr.trend7d != null) {
-			rhrLine += ` (7-day avg: ${ctx.rhr.trend7d} bpm)`;
-			if (ctx.rhr.status === "elevated") {
-				rhrLine +=
-					" ⚠ Elevated — may indicate fatigue, illness, or incomplete recovery.";
-			}
-		}
-		parts.push(rhrLine);
-	}
-
-	if (ctx.hrv?.current != null) {
-		let hrvLine = `- HRV: ${ctx.hrv.current} ms`;
-		if (ctx.hrv.trend7d != null) {
-			hrvLine += ` (7-day avg: ${ctx.hrv.trend7d} ms)`;
-			if (ctx.hrv.status === "lower") {
-				hrvLine +=
-					" ⚠ Declining — may indicate accumulated stress or overtraining.";
-			}
-		}
-		parts.push(hrvLine);
-	}
-
-	if (ctx.respiratoryRate?.current != null) {
-		let rrLine = `- Respiratory Rate: ${ctx.respiratoryRate.current} rpm`;
-		if (ctx.respiratoryRate.trend7d != null) {
-			rrLine += ` (7-day avg: ${ctx.respiratoryRate.trend7d} rpm)`;
-		}
-		parts.push(rrLine);
-	}
-
-	if (ctx.spo2?.current != null) {
-		let spo2Line = `- SpO2: ${ctx.spo2.current}%`;
-		if (ctx.spo2.trend7d != null) {
-			spo2Line += ` (7-day avg: ${ctx.spo2.trend7d}%)`;
-		}
-		parts.push(spo2Line);
-	}
-
-	if (ctx.temperature?.current != null) {
-		parts.push(
-			`- Body Temperature: ${ctx.temperature.current}°C (${ctx.temperature.status})`,
-		);
-	}
-
-	if (ctx.sleep) {
-		if (ctx.sleep.avgDurationMinutes7d != null) {
-			const hours = Math.floor(ctx.sleep.avgDurationMinutes7d / 60);
-			const mins = Math.round(ctx.sleep.avgDurationMinutes7d % 60);
-			parts.push(
-				`- Average Sleep (7 days): ${hours}h ${String(mins).padStart(2, "0")}m`,
-			);
-		}
-		if (ctx.sleep.avgEfficiencyPercent7d != null) {
-			parts.push(
-				`- Average Sleep Efficiency (7 days): ${ctx.sleep.avgEfficiencyPercent7d}%`,
-			);
-		}
-		if (ctx.sleep.avgStages7d) {
-			const s = ctx.sleep.avgStages7d;
-			parts.push(
-				`- Avg Sleep Stages (7d): Awake ${s.awakeMinutes}m, Light ${s.lightMinutes}m, Deep ${s.deepMinutes}m, REM ${s.remMinutes}m`,
-			);
-		}
-		if (ctx.sleep.recentNights.length > 0) {
-			const last = ctx.sleep.recentNights[0];
-			if (last.durationMinutes > 0) {
-				const hours = Math.floor(last.durationMinutes / 60);
-				const mins = Math.round(last.durationMinutes % 60);
-				let lastNight = `- Last Night's Sleep (${last.date}): ${hours}h ${String(mins).padStart(2, "0")}m`;
-				if (last.quality) {
-					lastNight += `, Quality: ${last.quality}`;
-				}
-				if (last.stages) {
-					lastNight += `, Stages: Awake ${last.stages.awakeMinutes}m, Light ${last.stages.lightMinutes}m, Deep ${last.stages.deepMinutes}m, REM ${last.stages.remMinutes}m`;
-				}
-				parts.push(lastNight);
-			}
-		}
-	}
-
-	if (parts.length <= 1) return "";
-
-	return `\n## Athlete Health Data\nUse this data to contextualize training advice (fatigue, recovery, sleep). This data is fetched live from the athlete's wearables via OpenWearables.\n${parts.join("\n")}\n`;
-}
-
 async function resolveHealthContext(
 	fitUserId: string,
 ): Promise<HealthContext | null> {
@@ -565,6 +493,9 @@ async function resolveHealthContext(
 		const ctx = computeHealthContext(sleepSummaries, bodySummary);
 		pruneCache();
 		cache.set(owUserId, { data: ctx, fetchedAt: Date.now() });
+		if (bodySummary) {
+			bodyCache.set(owUserId, { data: bodySummary, fetchedAt: Date.now() });
+		}
 		return ctx;
 	} catch (err) {
 		console.warn("[ow] failed to fetch health context:", err);
@@ -572,18 +503,56 @@ async function resolveHealthContext(
 	}
 }
 
-export async function getHealthContext(
-	fitUserId: string,
-): Promise<{ text: string }> {
-	const ctx = await resolveHealthContext(fitUserId);
-	if (!ctx) return { text: "" };
-	return { text: formatHealthContext(ctx) };
-}
-
 export async function getRawHealthContext(
 	fitUserId: string,
 ): Promise<HealthContext | null> {
 	return resolveHealthContext(fitUserId);
+}
+
+async function resolveBodySummary(
+	fitUserId: string,
+): Promise<BodySummaryResponse | null> {
+	if (!isConfigured()) return null;
+	const owUserId = getOwUserId(fitUserId);
+	if (!owUserId) return null;
+	const cached = bodyCache.get(owUserId);
+	if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+		return cached.data;
+	}
+	try {
+		const body = await fetchBodySummary(owUserId);
+		if (!body) return null;
+		pruneCache();
+		bodyCache.set(owUserId, { data: body, fetchedAt: Date.now() });
+		return body;
+	} catch (err) {
+		console.warn("[ow] failed to fetch body summary:", err);
+		return null;
+	}
+}
+
+export async function getOwBodySummary(
+	fitUserId: string,
+): Promise<OwBodySummary | null> {
+	const body = await resolveBodySummary(fitUserId);
+	if (!body) return null;
+	return {
+		weightKg: body.slow_changing.weight_kg,
+		heightCm: body.slow_changing.height_cm,
+		bodyFatPercent: body.slow_changing.body_fat_percent,
+		muscleMassKg: body.slow_changing.muscle_mass_kg,
+		bmi: body.slow_changing.bmi,
+		age: body.slow_changing.age,
+		bloodPressure: body.latest.blood_pressure,
+		source: body.source,
+	};
+}
+
+export function clearOwCaches(fitUserId: string): void {
+	const owUserId = getOwUserId(fitUserId);
+	if (!owUserId) return;
+	cache.delete(owUserId);
+	bodyCache.delete(owUserId);
 }
 
 export { getOwUserId };

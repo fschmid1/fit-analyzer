@@ -65,6 +65,21 @@ interface HaeHeartRateReading {
 	max: number;
 }
 
+interface HaeBloodPressureEntry {
+	date: string;
+	systolic: number;
+	diastolic: number;
+}
+
+interface HaeBodyComposition {
+	heightCm: number | null;
+	weightKg: number | null;
+	bodyFatPercent: number | null;
+	leanBodyMassKg: number | null;
+	bmi: number | null;
+	waistCircumferenceCm: number | null;
+}
+
 interface HaeDailySnapshot {
 	rhr: number | null;
 	hrv: number | null;
@@ -74,6 +89,8 @@ interface HaeDailySnapshot {
 	morningHeartRate: number | null;
 	sleep: HaeSleepData | null;
 	heartRateReadings: HaeHeartRateReading[];
+	bloodPressure: HaeBloodPressureEntry | null;
+	bodyComposition: HaeBodyComposition;
 }
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
@@ -116,6 +133,21 @@ function mergeHeartRateReadings(
 	);
 }
 
+function mergeBodyComposition(
+	existing: HaeBodyComposition,
+	incoming: HaeBodyComposition,
+): HaeBodyComposition {
+	return {
+		heightCm: incoming.heightCm ?? existing.heightCm,
+		weightKg: incoming.weightKg ?? existing.weightKg,
+		bodyFatPercent: incoming.bodyFatPercent ?? existing.bodyFatPercent,
+		leanBodyMassKg: incoming.leanBodyMassKg ?? existing.leanBodyMassKg,
+		bmi: incoming.bmi ?? existing.bmi,
+		waistCircumferenceCm:
+			incoming.waistCircumferenceCm ?? existing.waistCircumferenceCm,
+	};
+}
+
 function mergeSnapshots(
 	existing: HaeDailySnapshot,
 	incoming: HaeDailySnapshot,
@@ -131,6 +163,11 @@ function mergeSnapshots(
 		heartRateReadings: mergeHeartRateReadings(
 			existing.heartRateReadings,
 			incoming.heartRateReadings,
+		),
+		bloodPressure: incoming.bloodPressure ?? existing.bloodPressure,
+		bodyComposition: mergeBodyComposition(
+			existing.bodyComposition,
+			incoming.bodyComposition,
 		),
 	};
 }
@@ -185,6 +222,35 @@ function extractQty(
 function parseHaeDateTime(dateStr: string): Date {
 	// HAE dates are like "2024-02-06 14:30:00 -0800" or "2024-02-06"
 	return new Date(dateStr);
+}
+
+function ensureBodyComposition(
+	snap: Partial<HaeDailySnapshot> & { heartRateReadings: HaeHeartRateReading[] },
+): HaeBodyComposition {
+	if (!snap.bodyComposition) {
+		snap.bodyComposition = {
+			heightCm: null,
+			weightKg: null,
+			bodyFatPercent: null,
+			leanBodyMassKg: null,
+			bmi: null,
+			waistCircumferenceCm: null,
+		};
+	}
+	return snap.bodyComposition;
+}
+
+function convertWeightToKg(qty: number, units: string): number {
+	if (units === "lb") return qty * 0.45359237;
+	if (units === "g") return qty / 1000;
+	return qty; // assume kg
+}
+
+function convertHeightToCm(qty: number, units: string): number {
+	if (units === "in") return qty * 2.54;
+	if (units === "m") return qty * 100;
+	if (units === "ft") return qty * 30.48;
+	return qty; // assume cm
 }
 
 function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
@@ -248,6 +314,75 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 					}
 					break;
 				}
+				case "weight_body_mass": {
+					const qty = (raw as HaeQuantityData).qty;
+					if (typeof qty === "number") {
+						const body = ensureBodyComposition(snap);
+						body.weightKg = convertWeightToKg(qty, metric.units);
+					}
+					break;
+				}
+				case "height": {
+					const qty = (raw as HaeQuantityData).qty;
+					if (typeof qty === "number") {
+						const body = ensureBodyComposition(snap);
+						body.heightCm = convertHeightToCm(qty, metric.units);
+					}
+					break;
+				}
+				case "body_fat_percentage": {
+					const qty = (raw as HaeQuantityData).qty;
+					if (typeof qty === "number") {
+						const body = ensureBodyComposition(snap);
+						// HAE may export as 0..1 fraction or 0..100 percent
+						body.bodyFatPercent = qty <= 1 ? qty * 100 : qty;
+					}
+					break;
+				}
+				case "lean_body_mass": {
+					const qty = (raw as HaeQuantityData).qty;
+					if (typeof qty === "number") {
+						const body = ensureBodyComposition(snap);
+						body.leanBodyMassKg = convertWeightToKg(qty, metric.units);
+					}
+					break;
+				}
+				case "body_mass_index": {
+					const qty = (raw as HaeQuantityData).qty;
+					if (typeof qty === "number") {
+						const body = ensureBodyComposition(snap);
+						body.bmi = qty;
+					}
+					break;
+				}
+				case "waist_circumference": {
+					const qty = (raw as HaeQuantityData).qty;
+					if (typeof qty === "number") {
+						const body = ensureBodyComposition(snap);
+						body.waistCircumferenceCm = convertHeightToCm(qty, metric.units);
+					}
+					break;
+				}
+				case "blood_pressure": {
+					const entry = raw as HaeHeartRateData;
+					if (
+						typeof (entry as HaeHeartRateData & {
+							systolic?: number;
+							diastolic?: number;
+						}).systolic === "number" &&
+						typeof (entry as HaeHeartRateData & {
+							systolic?: number;
+							diastolic?: number;
+						}).diastolic === "number"
+					) {
+						snap.bloodPressure = {
+							date: entry.date,
+							systolic: (entry as unknown as { systolic: number }).systolic,
+							diastolic: (entry as unknown as { diastolic: number }).diastolic,
+						};
+					}
+					break;
+				}
 				case "heart_rate": {
 					const entry = raw as HaeHeartRateData;
 					if (typeof entry.Avg === "number" && entry.Avg > 0) {
@@ -306,6 +441,14 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 			(a, b) =>
 				parseHaeDateTime(a.date).getTime() - parseHaeDateTime(b.date).getTime(),
 		);
+		const body = snap.bodyComposition ?? {
+			heightCm: null,
+			weightKg: null,
+			bodyFatPercent: null,
+			leanBodyMassKg: null,
+			bmi: null,
+			waistCircumferenceCm: null,
+		};
 		result.set(date, {
 			rhr: snap.rhr ?? null,
 			hrv: snap.hrv ?? null,
@@ -315,6 +458,8 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 			morningHeartRate: snap.morningHeartRate ?? null,
 			sleep: snap.sleep ?? null,
 			heartRateReadings: snap.heartRateReadings,
+			bloodPressure: snap.bloodPressure ?? null,
+			bodyComposition: body,
 		});
 	}
 	return result;

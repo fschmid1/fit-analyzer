@@ -10,7 +10,6 @@ import { env } from "../env.js";
 import { getCoachModelSettings } from "../lib/coachModelSettings.js";
 import { getOllamaModels } from "../lib/ollamaModelCache.js";
 import { createOllamaTrainerStream } from "../lib/ollamaTrainerStream.js";
-import { getHealthContext } from "../lib/owClient.js";
 import {
 	parseCoachingMarkdown,
 	serializeCoachingMarkdown,
@@ -22,6 +21,7 @@ import {
 	startTrainerStreamProducer,
 	verifyStreamOwner,
 } from "../lib/trainerStreamRegistry.js";
+import { buildTrainerAthleteContext } from "../lib/trainerSystemPrompt.js";
 
 const BASE_SYSTEM_PROMPT =
 	"You are an expert endurance sports coach specialising in cycling and triathlon. " +
@@ -30,11 +30,10 @@ const BASE_SYSTEM_PROMPT =
 	"and give practical training advice.";
 
 async function buildSystemPrompt(userId: string): Promise<string> {
-	const { text: healthText } = await getHealthContext(userId);
+	const athleteContext = await buildTrainerAthleteContext(userId);
 	const now = new Date();
 	const dateTimeText = `Current date and time: ${now.toISOString()}`;
-	if (!healthText) return `${BASE_SYSTEM_PROMPT}\n${dateTimeText}`;
-	return `${BASE_SYSTEM_PROMPT}\n${dateTimeText}\n${healthText}`;
+	return `${BASE_SYSTEM_PROMPT}\n${dateTimeText}${athleteContext}`;
 }
 
 const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 20;
