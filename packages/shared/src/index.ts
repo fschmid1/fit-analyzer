@@ -37,6 +37,7 @@ export type {
 	HeatmapResponse,
 	StravaClub,
 	StravaClubEvent,
+	HealthHistoryEntry,
 } from "./types.js";
 
 export {

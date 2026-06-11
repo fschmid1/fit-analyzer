@@ -1,10 +1,19 @@
 import { Hono } from "hono";
 import { db } from "../db.js";
-import type { ActivityStats, HealthData } from "@fit-analyzer/shared";
-import type { ActivitySummary, StoredRecord } from "@fit-analyzer/shared";
+import type {
+	ActivityStats,
+	HealthData,
+	HealthHistoryEntry,
+	StoredRecord,
+} from "@fit-analyzer/shared";
+import type { ActivitySummary } from "@fit-analyzer/shared";
 import { buildPowerBySecond, peakPowerFromSeconds } from "@fit-analyzer/shared";
 import { getRawHealthContext } from "../lib/owClient.js";
-import { getHaeHealthContext, getHaeLastSync } from "../lib/haeClient.js";
+import {
+	getHaeHealthContext,
+	getHaeLastSync,
+	getHaeHistory,
+} from "../lib/haeClient.js";
 
 const health = new Hono();
 
@@ -340,8 +349,10 @@ health.get("/", async (c) => {
 
 	// Determine last sync timestamp from the active source
 	let lastSyncAt: string | null = null;
+	let history: HealthHistoryEntry[] = [];
 	if (sourceUsed === "health_auto_export") {
 		lastSyncAt = getHaeLastSync(userId);
+		history = await getHaeHistory(userId, startDate, endDate);
 	}
 
 	return c.json({
@@ -349,6 +360,7 @@ health.get("/", async (c) => {
 		activityStats,
 		sourceUsed,
 		lastSyncAt,
+		history,
 		estimatedFtp,
 		estimatedVo2max,
 	});

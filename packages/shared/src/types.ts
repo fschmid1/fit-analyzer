@@ -342,3 +342,17 @@ export interface StravaClubEvent {
 	upcomingOccurrences: string[];
 	isPast: boolean;
 }
+
+export interface HealthHistoryEntry {
+	date: string;
+	rhr: number | null;
+	hrv: number | null;
+	respiratoryRate: number | null;
+	spo2: number | null;
+	temperature: number | null;
+	morningHeartRate: number | null;
+	sleepDurationMinutes: number | null;
+	sleepEfficiencyPercent: number | null;
+	deepMinutes: number | null;
+	remMinutes: number | null;
+}

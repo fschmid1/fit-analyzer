@@ -64,6 +64,10 @@ healthAutoExport.post("/", async (c) => {
 	}
 
 	try {
+		const metrics =
+			(payload as { metrics?: Array<{ name: string }> }).metrics ?? [];
+		const metricNames = metrics.map((m) => m.name);
+		console.log(`[hae] Received metric names: ${metricNames.join(", ")}`);
 		const result = ingestHaePayload(
 			userId,
 			payload as {

@@ -1,5 +1,9 @@
 import { db } from "../db.js";
-import type { HealthContext, HealthMetricStatus } from "@fit-analyzer/shared";
+import type {
+	HealthContext,
+	HealthMetricStatus,
+	HealthHistoryEntry,
+} from "@fit-analyzer/shared";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -200,6 +204,9 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 						const units = metric.units;
 						snap.temperature =
 							units === "degF" || units === "°F" ? (qty - 32) * (5 / 9) : qty;
+						console.log(
+							`[hae] Parsed temperature for ${date}: ${snap.temperature}°C (raw: ${qty}, units: ${units}, metric: ${metric.name})`,
+						);
 					}
 					break;
 				}
@@ -537,6 +544,10 @@ function computeHaeHealthContext(
 		.map((r) => r.temperature)
 		.filter((v): v is number => typeof v === "number" && v > 0)
 		.sort((a, b) => b - a);
+	console.log(
+		`[hae] Temperature values found: ${tempValues.length}`,
+		tempValues,
+	);
 	if (tempValues.length > 0) {
 		const current = tempValues[0];
 		temperature = {
@@ -561,6 +572,52 @@ function formatSleepDuration(minutes: number): string {
 	const h = Math.floor(minutes / 60);
 	const m = Math.round(minutes % 60);
 	return `${h}h ${String(m).padStart(2, "0")}m`;
+}
+
+// ─── History query (raw daily rows for charting) ───────────────────────────
+
+export async function getHaeHistory(
+	fitUserId: string,
+	startDate: string,
+	endDate: string,
+): Promise<HealthHistoryEntry[]> {
+	const rows = getHistoryStmt.all(fitUserId, startDate, endDate) as Array<{
+		date: string;
+		data: string;
+	}>;
+
+	if (rows.length === 0) return [];
+
+	return rows.map((row) => {
+		const snap = JSON.parse(row.data) as HaeDailySnapshot;
+		let sleepDurationMinutes: number | null = null;
+		let sleepEfficiencyPercent: number | null = null;
+		let deepMinutes: number | null = null;
+		let remMinutes: number | null = null;
+
+		if (snap.sleep) {
+			sleepDurationMinutes = snap.sleep.durationMinutes ?? null;
+			sleepEfficiencyPercent = snap.sleep.efficiencyPercent ?? null;
+			if (snap.sleep.stages) {
+				deepMinutes = snap.sleep.stages.deepMinutes ?? null;
+				remMinutes = snap.sleep.stages.remMinutes ?? null;
+			}
+		}
+
+		return {
+			date: row.date,
+			rhr: snap.rhr ?? null,
+			hrv: snap.hrv ?? null,
+			respiratoryRate: snap.respiratoryRate ?? null,
+			spo2: snap.spo2 ?? null,
+			temperature: snap.temperature ?? null,
+			morningHeartRate: snap.morningHeartRate ?? null,
+			sleepDurationMinutes,
+			sleepEfficiencyPercent,
+			deepMinutes,
+			remMinutes,
+		};
+	});
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
