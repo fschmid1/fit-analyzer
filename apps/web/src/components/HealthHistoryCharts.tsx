@@ -126,7 +126,10 @@ function CustomTooltipContent({
 				color: p.color,
 			};
 		})
-		.filter((p): p is { config: MetricConfig; value: number; color: string } => p !== null);
+		.filter(
+			(p): p is { config: MetricConfig; value: number; color: string } =>
+				p !== null,
+		);
 
 	if (valid.length === 0) return null;
 
