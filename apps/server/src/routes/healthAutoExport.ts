@@ -130,7 +130,7 @@ healthAutoExport.delete("/", (c) => {
 	}
 
 	db.prepare(
-		"UPDATE user_settings SET hae_api_token = NULL WHERE user_id = ?",
+		"UPDATE user_settings SET hae_api_token = NULL, hae_last_sync_at = NULL WHERE user_id = ?",
 	).run(userId);
 	db.prepare("DELETE FROM hae_health_history WHERE user_id = ?").run(userId);
 	clearHaeCache(userId);

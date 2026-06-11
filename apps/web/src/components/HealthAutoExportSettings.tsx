@@ -10,6 +10,7 @@ import {
 	Loader2,
 	RefreshCw,
 	Shield,
+	Smartphone,
 	Trash2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -259,12 +260,30 @@ export function HealthAutoExportSettings() {
 							)}
 						</div>
 
-						{/* Last sync */}
-						{settings.lastSyncAt && (
-							<p className="text-xs text-[#64748b]">
-								Last sync: {new Date(settings.lastSyncAt).toLocaleString()}
-							</p>
-						)}
+						{/* Last sync — prominent indicator */}
+						<div className="flex items-center gap-3 p-3 bg-[#0f0b1a] rounded-lg border border-[rgba(139,92,246,0.1)]">
+							<div className="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/10 shrink-0">
+								<Smartphone className="w-4 h-4 text-emerald-400" />
+							</div>
+							<div className="min-w-0 flex-1">
+								<p className="text-[10px] font-semibold uppercase tracking-wider text-[#94a3b8]">
+									Last Successful Sync
+								</p>
+								{settings.lastSyncAt ? (
+									<p className="text-sm font-medium text-[#f1f5f9]">
+										{new Date(settings.lastSyncAt).toLocaleString()}
+									</p>
+								) : (
+									<p className="text-sm text-[#94a3b8]">No data received yet</p>
+								)}
+							</div>
+							{settings.lastSyncAt && (
+								<span
+									title="Data received"
+									className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"
+								/>
+							)}
+						</div>
 
 						{/* Setup instructions */}
 						{settings.configured && (

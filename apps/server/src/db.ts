@@ -251,6 +251,11 @@ try {
 } catch {
 	/* column already exists */
 }
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN hae_last_sync_at TEXT");
+} catch {
+	/* column already exists */
+}
 
 // Health Auto Export historical data table
 db.exec(`

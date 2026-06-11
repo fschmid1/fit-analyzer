@@ -236,6 +236,10 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 
 // ─── Ingestion ────────────────────────────────────────────────────────────────
 
+const updateLastSyncStmt = db.prepare(
+	`UPDATE user_settings SET hae_last_sync_at = datetime('now') WHERE user_id = ?`,
+);
+
 export function ingestHaePayload(
 	userId: string,
 	payload: HaePayload,
@@ -249,6 +253,8 @@ export function ingestHaePayload(
 		for (const [date, snapshot] of byDate) {
 			upsertHistoryStmt.run(userId, date, JSON.stringify(snapshot));
 		}
+		// Track successful webhook delivery on the user row
+		updateLastSyncStmt.run(userId);
 	})();
 
 	return {
@@ -511,6 +517,13 @@ export async function getHaeHealthContext(
 }
 
 export function getHaeLastSync(userId: string): string | null {
+	// Fast path: check the dedicated user_settings column
+	const userRow = db
+		.prepare("SELECT hae_last_sync_at FROM user_settings WHERE user_id = ?")
+		.get(userId) as { hae_last_sync_at: string | null } | undefined;
+	if (userRow?.hae_last_sync_at) return userRow.hae_last_sync_at;
+
+	// Fallback: inspect the history table
 	const row = getLastSyncStmt.get(userId);
 	return row?.updated_at ?? null;
 }
