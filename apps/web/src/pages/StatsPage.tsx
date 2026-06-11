@@ -1,4 +1,4 @@
-import type { HeatmapResponse, RecentNight } from "@fit-analyzer/shared";
+import type { HeatmapResponse } from "@fit-analyzer/shared";
 import {
 	Activity,
 	AlertCircle,
@@ -12,7 +12,6 @@ import {
 	Heart,
 	Loader2,
 	Moon,
-	MoonStar,
 	RefreshCw,
 	Route,
 	Smartphone,
@@ -28,7 +27,6 @@ import { HealthMonitorCard } from "../components/HealthMonitorCard";
 import { HealthHistoryCharts } from "../components/HealthHistoryCharts";
 import { HeatmapMap } from "../components/HeatmapMap";
 import { MetricCard } from "../components/MetricCard";
-import { TimelineItem } from "../components/TimelineItem";
 import { fetchHeatmap, fetchStats, type StatsResponse } from "../lib/api";
 
 type Preset = "7d" | "30d" | "90d" | "year" | "custom";
@@ -66,23 +64,6 @@ function presetRange(preset: Preset): { startDate: string; endDate: string } {
 		case "custom":
 			return { startDate: "", endDate: "" };
 	}
-}
-
-function formatGermanDate(dateStr: string): string {
-	const [y, m, d] = dateStr.split("-");
-	return `${d}.${m}.${y.slice(2)}`;
-}
-
-function sleepSubtitle(night: RecentNight): string {
-	const parts: string[] = [];
-	if (night.stages) {
-		const restorative = night.stages.deepMinutes + night.stages.remMinutes;
-		parts.push(`${restorative}m restorative`);
-	}
-	if (night.efficiencyPercent != null) {
-		parts.push(`${night.efficiencyPercent.toFixed(0)}% efficiency`);
-	}
-	return parts.join(" · ") || night.quality || "";
 }
 
 export function StatsPage() {
@@ -343,35 +324,6 @@ export function StatsPage() {
 								<HealthHistoryCharts history={data.history} />
 							</section>
 						)}
-
-						{/* Timeline */}
-						{(() => {
-							const recentNights = data.health?.sleep?.recentNights;
-							if (!recentNights || recentNights.length === 0) return null;
-							return (
-								<section className="mb-8">
-									<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8] mb-4">
-										Timeline
-									</h3>
-									<div className="flex flex-col gap-2">
-										{recentNights.slice(0, 5).map((night) => (
-											<TimelineItem
-												key={night.date}
-												icon={MoonStar}
-												title="Primary Sleep"
-												subtitle={`${formatGermanDate(night.date)} · ${sleepSubtitle(night)}`}
-												badge={
-													night.efficiencyPercent != null
-														? `${night.efficiencyPercent.toFixed(0)}`
-														: undefined
-												}
-												badgeColor="#8b5cf6"
-											/>
-										))}
-									</div>
-								</section>
-							);
-						})()}
 
 						{/* Activity Stats */}
 						{data.activityStats.count > 0 && (
