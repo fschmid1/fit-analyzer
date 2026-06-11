@@ -62,12 +62,13 @@ export function computeAverages(records: ActivityRecord[]): SelectionStats {
 /**
  * Sliding window best average power over a given duration.
  * Returns null if there aren't enough data points.
+ * Zero-power seconds (coasting / sensor dropouts) are ignored.
  */
 export function computePeakPower(
 	records: ActivityRecord[],
 	windowSeconds: number,
 ): number | null {
-	const powerRecords = records.filter((r) => r.power !== null);
+	const powerRecords = records.filter((r) => r.power != null && r.power > 0);
 	if (powerRecords.length === 0) return null;
 
 	const powerBySecond = buildPowerBySecond(records);
@@ -80,7 +81,7 @@ export function computePeakPower(
 	// Initialize first window
 	for (let i = 0; i < windowSeconds && i < powerBySecond.length; i++) {
 		const power = powerBySecond[i];
-		if (power !== null) {
+		if (power != null && power > 0) {
 			windowSum += power;
 			windowCount++;
 		}
@@ -95,11 +96,11 @@ export function computePeakPower(
 		const entering = powerBySecond[i];
 		const leaving = powerBySecond[i - windowSeconds];
 
-		if (entering !== null) {
+		if (entering != null && entering > 0) {
 			windowSum += entering;
 			windowCount++;
 		}
-		if (leaving !== null) {
+		if (leaving != null && leaving > 0) {
 			windowSum -= leaving;
 			windowCount--;
 		}

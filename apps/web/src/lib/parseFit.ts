@@ -115,6 +115,7 @@ export function parseFit(arrayBuffer: ArrayBuffer): ParsedActivity {
 
 	const peak1min = computePeakPower(records, 60);
 	const peak5min = computePeakPower(records, 300);
+	const peak20min = computePeakPower(records, 1200);
 	const normalizedPower = computeNormalizedPower(records);
 	const normalizedCadence = computeNormalizedCadence(records);
 	const totalTimerTime = asFiniteNumber(session?.totalTimerTime);
@@ -146,6 +147,7 @@ export function parseFit(arrayBuffer: ArrayBuffer): ParsedActivity {
 		totalWork: totalWork != null ? Math.round(totalWork) : null,
 		peak1minPower: peak1min,
 		peak5minPower: peak5min,
+		peak20minPower: peak20min,
 	};
 
 	// Extract lap markers

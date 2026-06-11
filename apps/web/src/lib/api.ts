@@ -52,6 +52,8 @@ export interface StatsResponse {
 	activityStats: ActivityStats;
 	sourceUsed: "openwearables" | "health_auto_export" | null;
 	lastSyncAt: string | null;
+	estimatedFtp: number | null;
+	estimatedVo2max: number | null;
 }
 
 export async function fetchStats(

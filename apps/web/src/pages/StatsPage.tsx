@@ -471,6 +471,26 @@ export function StatsPage() {
 										unit={data.activityStats.totalWork != null ? "kJ" : ""}
 										color="#ec4899"
 									/>
+									<MetricCard
+										icon={TrendingUp}
+										label="Est. FTP"
+										value={
+											data.estimatedFtp != null ? data.estimatedFtp : "N/A"
+										}
+										unit={data.estimatedFtp != null ? "W" : ""}
+										color="#eab308"
+									/>
+									<MetricCard
+										icon={Wind}
+										label="Est. VO₂max"
+										value={
+											data.estimatedVo2max != null
+												? data.estimatedVo2max
+												: "N/A"
+										}
+										unit={data.estimatedVo2max != null ? "ml/kg/min" : ""}
+										color="#14b8a6"
+									/>
 								</div>
 							</section>
 						)}

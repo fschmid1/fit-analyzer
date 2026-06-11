@@ -26,6 +26,7 @@ export interface ActivitySummary {
 	totalWork: number | null;
 	peak1minPower: number | null;
 	peak5minPower: number | null;
+	peak20minPower: number | null;
 }
 
 export interface LapMarker {
@@ -257,6 +258,7 @@ export interface ActivityStats {
 	normalizedCadence: number | null;
 	peak1minPower: number | null;
 	peak5minPower: number | null;
+	peak20minPower: number | null;
 	totalWork: number | null;
 }
 
