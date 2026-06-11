@@ -97,6 +97,44 @@ function pruneCache() {
 
 // ─── DB Statements ────────────────────────────────────────────────────────────
 
+const getExistingDataStmt = db.prepare(
+	"SELECT data FROM hae_health_history WHERE user_id = ? AND date = ?",
+);
+
+function mergeHeartRateReadings(
+	existing: HaeHeartRateReading[],
+	incoming: HaeHeartRateReading[],
+): HaeHeartRateReading[] {
+	if (existing.length === 0) return incoming;
+	if (incoming.length === 0) return existing;
+	const byDate = new Map<string, HaeHeartRateReading>();
+	for (const r of existing) byDate.set(r.date, r);
+	for (const r of incoming) byDate.set(r.date, r);
+	return Array.from(byDate.values()).sort(
+		(a, b) =>
+			parseHaeDateTime(a.date).getTime() - parseHaeDateTime(b.date).getTime(),
+	);
+}
+
+function mergeSnapshots(
+	existing: HaeDailySnapshot,
+	incoming: HaeDailySnapshot,
+): HaeDailySnapshot {
+	return {
+		rhr: incoming.rhr ?? existing.rhr,
+		hrv: incoming.hrv ?? existing.hrv,
+		respiratoryRate: incoming.respiratoryRate ?? existing.respiratoryRate,
+		spo2: incoming.spo2 ?? existing.spo2,
+		temperature: incoming.temperature ?? existing.temperature,
+		morningHeartRate: incoming.morningHeartRate ?? existing.morningHeartRate,
+		sleep: incoming.sleep ?? existing.sleep,
+		heartRateReadings: mergeHeartRateReadings(
+			existing.heartRateReadings,
+			incoming.heartRateReadings,
+		),
+	};
+}
+
 const upsertHistoryStmt = db.prepare(
 	`INSERT INTO hae_health_history (user_id, date, data, updated_at)
    VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
@@ -111,7 +149,7 @@ const getHistoryStmt = db.prepare<
 >(
 	`SELECT user_id, date, data, updated_at FROM hae_health_history
    WHERE user_id = ? AND date >= ? AND date <= ?
-   ORDER BY date DESC`,
+   ORDER BY date ASC`,
 );
 
 const getLastSyncStmt = db.prepare<{ updated_at: string }, [string]>(
@@ -299,7 +337,21 @@ export function ingestHaePayload(
 
 	db.transaction(() => {
 		for (const [date, snapshot] of byDate) {
-			upsertHistoryStmt.run(userId, date, JSON.stringify(snapshot));
+			// Fetch existing data for this date so we can merge instead of
+			// overwrite (HAE sends partial updates per metric).
+			const existingRow = getExistingDataStmt.get(userId, date) as
+				| { data: string }
+				| undefined;
+			let final = snapshot;
+			if (existingRow) {
+				try {
+					const existing = JSON.parse(existingRow.data) as HaeDailySnapshot;
+					final = mergeSnapshots(existing, snapshot);
+				} catch {
+					/* ignore parse errors, fall back to incoming snapshot */
+				}
+			}
+			upsertHistoryStmt.run(userId, date, JSON.stringify(final));
 		}
 		// Track successful webhook delivery on the user row
 		updateLastSyncStmt.run(userId);
@@ -482,10 +534,9 @@ function computeHaeHealthContext(
 	// ── RHR ───────────────────────────────────────────────────────────────────
 	const rhrValues = rows
 		.map((r) => r.rhr)
-		.filter((v): v is number => typeof v === "number" && v > 0)
-		.sort((a, b) => b - a);
+		.filter((v): v is number => typeof v === "number" && v > 0);
 	if (rhrValues.length > 0) {
-		const latest = rhrValues[0];
+		const latest = rhrValues[0]; // rows are date-desc → most recent first
 		const avg = rhrValues.reduce((a, b) => a + b, 0) / rhrValues.length;
 		rhr = {
 			current: Math.round(latest),
@@ -497,10 +548,9 @@ function computeHaeHealthContext(
 	// ── HRV ────────────────────────────────────────────────────────────────────
 	const hrvValues = rows
 		.map((r) => r.hrv)
-		.filter((v): v is number => typeof v === "number" && v > 0)
-		.sort((a, b) => b - a);
+		.filter((v): v is number => typeof v === "number" && v > 0);
 	if (hrvValues.length > 0) {
-		const latest = hrvValues[0];
+		const latest = hrvValues[0]; // rows are date-desc → most recent first
 		const avg = hrvValues.reduce((a, b) => a + b, 0) / hrvValues.length;
 		hrv = {
 			current: Math.round(latest),
@@ -512,10 +562,9 @@ function computeHaeHealthContext(
 	// ── Respiratory Rate ───────────────────────────────────────────────────────
 	const rrValues = rows
 		.map((r) => r.respiratoryRate)
-		.filter((v): v is number => typeof v === "number" && v > 0)
-		.sort((a, b) => b - a);
+		.filter((v): v is number => typeof v === "number" && v > 0);
 	if (rrValues.length > 0) {
-		const latest = rrValues[0];
+		const latest = rrValues[0]; // rows are date-desc → most recent first
 		const avg = rrValues.reduce((a, b) => a + b, 0) / rrValues.length;
 		respiratoryRate = {
 			current: Math.round(latest * 10) / 10,
@@ -527,10 +576,9 @@ function computeHaeHealthContext(
 	// ── SpO2 ───────────────────────────────────────────────────────────────────
 	const spo2Values = rows
 		.map((r) => r.spo2)
-		.filter((v): v is number => typeof v === "number" && v > 0)
-		.sort((a, b) => b - a);
+		.filter((v): v is number => typeof v === "number" && v > 0);
 	if (spo2Values.length > 0) {
-		const latest = spo2Values[0];
+		const latest = spo2Values[0]; // rows are date-desc → most recent first
 		const avg = spo2Values.reduce((a, b) => a + b, 0) / spo2Values.length;
 		spo2 = {
 			current: Math.round(latest * 10) / 10,
@@ -542,14 +590,13 @@ function computeHaeHealthContext(
 	// ── Temperature ──────────────────────────────────────────────────────────
 	const tempValues = rows
 		.map((r) => r.temperature)
-		.filter((v): v is number => typeof v === "number" && v > 0)
-		.sort((a, b) => b - a);
+		.filter((v): v is number => typeof v === "number" && v > 0);
 	console.log(
 		`[hae] Temperature values found: ${tempValues.length}`,
 		tempValues,
 	);
 	if (tempValues.length > 0) {
-		const current = tempValues[0];
+		const current = tempValues[0]; // rows are date-desc → most recent first
 		temperature = {
 			current: Math.round(current * 10) / 10,
 			trend7d: null,
