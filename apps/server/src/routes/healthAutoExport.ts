@@ -36,7 +36,8 @@ healthAutoExport.post("/", async (c) => {
 	let payload: unknown;
 	try {
 		payload = await c.req.json();
-	} catch {
+	} catch (err) {
+		console.error("[hae] Failed to parse JSON body:", err);
 		return c.json({ error: "Invalid JSON body" }, 400);
 	}
 
@@ -45,6 +46,10 @@ healthAutoExport.post("/", async (c) => {
 		payload === null ||
 		!Array.isArray((payload as Record<string, unknown>).metrics)
 	) {
+		console.error(
+			"[hae] Rejected payload (missing metrics array). Raw payload:",
+			JSON.stringify(payload).slice(0, 2000),
+		);
 		return c.json({ error: "Expected JSON with a 'metrics' array" }, 400);
 	}
 
