@@ -5,6 +5,7 @@ import {
 	type CoachModelSettings,
 	type CompareSettings,
 	type HealthData,
+	type HealthHistoryEntry,
 	type HeatmapResponse,
 	type Interval,
 	type ModelEntry,
@@ -52,6 +53,7 @@ export interface StatsResponse {
 	activityStats: ActivityStats;
 	sourceUsed: "openwearables" | "health_auto_export" | null;
 	lastSyncAt: string | null;
+	history: HealthHistoryEntry[];
 }
 
 export async function fetchStats(

@@ -25,6 +25,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { AnimatedButton } from "../components/AnimatedButton";
 import { HealthMonitorCard } from "../components/HealthMonitorCard";
+import { HealthHistoryCharts } from "../components/HealthHistoryCharts";
 import { HeatmapMap } from "../components/HeatmapMap";
 import { MetricCard } from "../components/MetricCard";
 import { TimelineItem } from "../components/TimelineItem";
@@ -277,6 +278,16 @@ export function StatsPage() {
 										status="normal"
 									/>
 								</div>
+							</section>
+						)}
+
+						{/* Health History Charts */}
+						{data.history && data.history.length > 0 && (
+							<section className="mb-8">
+								<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8] mb-4">
+									History
+								</h3>
+								<HealthHistoryCharts history={data.history} />
 							</section>
 						)}
 
