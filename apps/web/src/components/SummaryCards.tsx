@@ -66,6 +66,13 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
 			color: "#06b6d4",
 		},
 		{
+			icon: Gauge,
+			label: "Normalized Cadence",
+			value: summary.normalizedCadence ?? "N/A",
+			unit: summary.normalizedCadence !== null ? "rpm" : "",
+			color: "#06b6d4",
+		},
+		{
 			icon: TrendingUp,
 			label: "Peak 1min Power",
 			value: summary.peak1minPower ?? "N/A",

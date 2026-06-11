@@ -393,6 +393,15 @@ export function StatsPage() {
 										color="#06b6d4"
 									/>
 									<MetricCard
+										icon={Gauge}
+										label="Normalized Cadence"
+										value={data.activityStats.normalizedCadence ?? "N/A"}
+										unit={
+											data.activityStats.normalizedCadence != null ? "rpm" : ""
+										}
+										color="#06b6d4"
+									/>
+									<MetricCard
 										icon={TrendingUp}
 										label="Peak 1min Power"
 										value={

@@ -66,7 +66,7 @@ function SwipeableIntervalRow({
 		},
 	);
 
-	const rowClassName = `w-full grid grid-cols-[2.5rem_1fr_1fr_4.5rem_4.5rem_4.5rem_4.5rem_1.25rem] gap-2 px-3 py-2 text-xs rounded-lg transition-colors cursor-pointer ${
+	const rowClassName = `w-full grid grid-cols-[2.5rem_1fr_1fr_4.5rem_4.5rem_4.5rem_4.5rem_4.5rem_1.25rem] gap-2 px-3 py-2 text-xs rounded-lg transition-colors cursor-pointer ${
 		activeKey === rowKey
 			? "bg-[#8b5cf6]/20 border border-[#8b5cf6]/40 text-[#f1f5f9]"
 			: "bg-[#1a1533]/30 border border-transparent hover:bg-[#8b5cf6]/10 hover:border-[rgba(139,92,246,0.15)] text-[#94a3b8] hover:text-[#f1f5f9]"
@@ -105,6 +105,9 @@ function SwipeableIntervalRow({
 					</span>
 					<span className="text-right font-semibold text-[#06b6d4]">
 						{interval.avgCadence ?? "\u2014"}
+					</span>
+					<span className="text-right font-semibold text-[#06b6d4]/70">
+						{interval.normalizedCadence ?? "\u2014"}
 					</span>
 					{trailing ? (
 						<span aria-hidden="true" />
@@ -168,6 +171,7 @@ export function IntervalList({
 							normalizedPower: null,
 							avgHeartRate: null,
 							avgCadence: null,
+							normalizedCadence: null,
 							duration: 0,
 						};
 			return {
@@ -178,6 +182,7 @@ export function IntervalList({
 				normalizedPower: stats.normalizedPower,
 				avgHeartRate: stats.avgHeartRate,
 				avgCadence: stats.avgCadence,
+				normalizedCadence: stats.normalizedCadence,
 				duration: stats.duration,
 			};
 		});
@@ -209,7 +214,7 @@ export function IntervalList({
 	if (!hasContent) return null;
 
 	const tableHeader = (
-		<div className="grid grid-cols-[2.5rem_1fr_1fr_4.5rem_4.5rem_4.5rem_4.5rem_1.25rem] gap-2 px-3 py-1.5 text-[10px] uppercase tracking-wider text-[#94a3b8] font-medium">
+		<div className="grid grid-cols-[2.5rem_1fr_1fr_4.5rem_4.5rem_4.5rem_4.5rem_4.5rem_1.25rem] gap-2 px-3 py-1.5 text-[10px] uppercase tracking-wider text-[#94a3b8] font-medium">
 			<span>#</span>
 			<span>Start</span>
 			<span>Duration</span>
@@ -224,6 +229,9 @@ export function IntervalList({
 			</span>
 			<span className="text-right">
 				<Gauge className="w-3 h-3 inline text-[#06b6d4]" /> rpm
+			</span>
+			<span className="text-right">
+				<Gauge className="w-3 h-3 inline text-[#06b6d4]/70" /> NC rpm
 			</span>
 			<span />
 		</div>

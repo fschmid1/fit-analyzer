@@ -1,5 +1,6 @@
 import {
 	normalizedPowerFromSeconds,
+	normalizedCadenceFromSeconds,
 	type ActivitySummary,
 	type LapMarker,
 	type StoredRecord,
@@ -232,10 +233,28 @@ function computePeakPower(
 }
 
 /**
- * Build a per-second power series from a Strava time/watts stream. Strava
+ * Build a per-second cadence series from a Strava time/cadence stream. Strava
  * streams don't always include every second, so we carry forward the last
- * known value. Missing leading samples default to 0W.
+ * known value. Missing leading samples default to 0 rpm.
  */
+function stravaStreamToCadenceBySecond(
+	timeArr: number[],
+	cadenceArr: number[],
+): (number | null)[] {
+	if (timeArr.length === 0) return [];
+	const maxTime = Math.floor(timeArr[timeArr.length - 1]);
+	const cadenceBySecond: (number | null)[] = new Array(maxTime + 1).fill(null);
+	let streamIdx = 0;
+	let lastValue: number | null = null;
+	for (let s = 0; s <= maxTime; s++) {
+		while (streamIdx < timeArr.length && timeArr[streamIdx] <= s + 0.5) {
+			lastValue = cadenceArr[streamIdx];
+			streamIdx++;
+		}
+		cadenceBySecond[s] = lastValue;
+	}
+	return cadenceBySecond;
+}
 function stravaStreamToPowerBySecond(
 	timeArr: number[],
 	wattsArr: number[],
@@ -293,6 +312,7 @@ function buildSummary(
 	records: StoredRecord[],
 	timeArr: number[],
 	wattsArr: number[],
+	cadenceArr: number[],
 ): ActivitySummary {
 	// Simple mean of non-zero values, mirroring Garmin session record behaviour:
 	// zeros (coasting / sensor dropout) are excluded from averages.
@@ -341,6 +361,9 @@ function buildSummary(
 		avgHeartRate: avg(hrVals),
 		maxHeartRate: max(hrVals),
 		avgCadence: avg(cadVals),
+		normalizedCadence: normalizedCadenceFromSeconds(
+			stravaStreamToCadenceBySecond(timeArr, cadenceArr),
+		),
 		totalWork,
 		peak1minPower: computePeakPower(timeArr, wattsArr, 60),
 		peak5minPower: computePeakPower(timeArr, wattsArr, 300),
@@ -415,10 +438,17 @@ async function importSingleActivity(
 
 	const timeArr = streams.time?.data ?? [];
 	const wattsArr = streams.watts?.data ?? [];
+	const cadenceArr = streams.cadence?.data ?? [];
 	const startDate = new Date(activity.start_date);
 
 	const records = buildRecords(startDate, streams);
-	const summary = buildSummary(activity, records, timeArr, wattsArr);
+	const summary = buildSummary(
+		activity,
+		records,
+		timeArr,
+		wattsArr,
+		cadenceArr,
+	);
 	const laps = buildLaps(rawLaps, timeArr);
 
 	if (alreadyExists) {

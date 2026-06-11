@@ -96,6 +96,16 @@ export function StatsBar({ records, selectionRange }: StatsBarProps) {
 					value={stats.avgCadence !== null ? `${stats.avgCadence} rpm` : "N/A"}
 					color="#06b6d4"
 				/>
+				<StatItem
+					icon={Gauge}
+					label="Normalized Cadence"
+					value={
+						stats.normalizedCadence !== null
+							? `${stats.normalizedCadence} rpm`
+							: "N/A"
+					}
+					color="#06b6d4"
+				/>
 			</div>
 		</div>
 	);

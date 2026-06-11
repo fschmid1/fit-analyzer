@@ -2,36 +2,86 @@ import type { ActivityRecord } from "./types.js";
 
 const NP_WINDOW_SECONDS = 30;
 
-/**
- * Build a second-by-second power array from records, rebasing elapsedSeconds
- * so the first record sits at index 0 and carrying the last known value
- * forward across seconds without a power sample. Assumes records are
- * non-empty and sorted by elapsedSeconds.
+/*
+ * Reusable helper: given a per-second numeric array and a window size,
+ * compute the rolling average raised to the 4th power, then the 4th root.
+ * Zeros and gaps are treated as zero.
  */
-export function buildPowerBySecond(
+function normalizedMetricFromSeconds(
+	valuesBySecond: (number | null)[],
+	windowSeconds: number,
+): number | null {
+	if (valuesBySecond.length < windowSeconds) return null;
+
+	let sum = 0;
+	for (let i = 0; i < windowSeconds; i++) {
+		sum += valuesBySecond[i] ?? 0;
+	}
+
+	const fourthPowers: number[] = [];
+	fourthPowers.push((sum / windowSeconds) ** 4);
+
+	for (let i = windowSeconds; i < valuesBySecond.length; i++) {
+		sum += (valuesBySecond[i] ?? 0) - (valuesBySecond[i - windowSeconds] ?? 0);
+		fourthPowers.push((sum / windowSeconds) ** 4);
+	}
+
+	const meanOfFourth =
+		fourthPowers.reduce((a, b) => a + b, 0) / fourthPowers.length;
+	const nm = meanOfFourth ** 0.25;
+	return nm > 0 ? Math.round(nm) : null;
+}
+
+/**
+ * Build a second-by-second array from records for a given numeric key,
+ * rebasing elapsedSeconds so the first record sits at index 0 and
+ * carrying the last known value forward across seconds without a sample.
+ * Assumes records are non-empty and sorted by elapsedSeconds.
+ */
+function buildMetricBySecond<K extends keyof ActivityRecord>(
 	records: ActivityRecord[],
+	key: K,
 ): (number | null)[] {
 	const startTime = records[0].elapsedSeconds;
 	const endTime = records[records.length - 1].elapsedSeconds;
 	const length = Math.floor(endTime - startTime) + 1;
-	const powerBySecond: (number | null)[] = new Array(length).fill(null);
+	const bySecond: (number | null)[] = new Array(length).fill(null);
 
 	let recordIdx = 0;
-	let lastPower: number | null = null;
+	let lastValue: number | null = null;
 	for (let s = 0; s < length; s++) {
 		const absoluteSec = startTime + s;
 		while (
 			recordIdx < records.length &&
 			records[recordIdx].elapsedSeconds <= absoluteSec + 0.5
 		) {
-			if (records[recordIdx].power !== null) {
-				lastPower = records[recordIdx].power;
+			const val = records[recordIdx][key];
+			if (typeof val === "number") {
+				lastValue = val;
 			}
 			recordIdx++;
 		}
-		powerBySecond[s] = lastPower;
+		bySecond[s] = lastValue;
 	}
-	return powerBySecond;
+	return bySecond;
+}
+
+/**
+ * Build a second-by-second power array from records.
+ */
+export function buildPowerBySecond(
+	records: ActivityRecord[],
+): (number | null)[] {
+	return buildMetricBySecond(records, "power");
+}
+
+/**
+ * Build a second-by-second cadence array from records.
+ */
+export function buildCadenceBySecond(
+	records: ActivityRecord[],
+): (number | null)[] {
+	return buildMetricBySecond(records, "cadence");
 }
 
 /**
@@ -57,24 +107,29 @@ export function computeNormalizedPower(
 export function normalizedPowerFromSeconds(
 	powerBySecond: (number | null)[],
 ): number | null {
-	if (powerBySecond.length < NP_WINDOW_SECONDS) return null;
+	return normalizedMetricFromSeconds(powerBySecond, NP_WINDOW_SECONDS);
+}
 
-	let sum = 0;
-	for (let i = 0; i < NP_WINDOW_SECONDS; i++) {
-		sum += powerBySecond[i] ?? 0;
-	}
+/**
+ * Compute Normalized Cadence from records using the same rolling formula
+ * as NP but applied to per-second cadence. Zeros and gaps are treated as
+ * zero cadence. Returns null if there isn't enough data.
+ */
+export function computeNormalizedCadence(
+	records: ActivityRecord[],
+): number | null {
+	if (records.length === 0) return null;
+	const cadenceBySecond = buildCadenceBySecond(records);
+	return normalizedCadenceFromSeconds(cadenceBySecond);
+}
 
-	const fourthPowers: number[] = [];
-	fourthPowers.push((sum / NP_WINDOW_SECONDS) ** 4);
-
-	for (let i = NP_WINDOW_SECONDS; i < powerBySecond.length; i++) {
-		sum +=
-			(powerBySecond[i] ?? 0) - (powerBySecond[i - NP_WINDOW_SECONDS] ?? 0);
-		fourthPowers.push((sum / NP_WINDOW_SECONDS) ** 4);
-	}
-
-	const meanOfFourth =
-		fourthPowers.reduce((a, b) => a + b, 0) / fourthPowers.length;
-	const np = meanOfFourth ** 0.25;
-	return np > 0 ? Math.round(np) : null;
+/**
+ * Compute Normalized Cadence from a per-second cadence series. Each entry
+ * is the cadence for that second (in rpm), or null for a gap which is
+ * treated as zero.
+ */
+export function normalizedCadenceFromSeconds(
+	cadenceBySecond: (number | null)[],
+): number | null {
+	return normalizedMetricFromSeconds(cadenceBySecond, NP_WINDOW_SECONDS);
 }

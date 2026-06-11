@@ -1,6 +1,7 @@
 import {
 	buildPowerBySecond,
 	computeNormalizedPower,
+	computeNormalizedCadence,
 	type ActivityRecord,
 	type Interval,
 	type LapMarker,
@@ -12,6 +13,7 @@ const EMPTY_SELECTION_STATS: SelectionStats = {
 	normalizedPower: null,
 	avgHeartRate: null,
 	avgCadence: null,
+	normalizedCadence: null,
 	duration: 0,
 };
 
@@ -52,6 +54,7 @@ export function computeAverages(records: ActivityRecord[]): SelectionStats {
 						validCadence.length,
 				)
 			: null,
+		normalizedCadence: computeNormalizedCadence(records),
 		duration,
 	};
 }
@@ -186,6 +189,7 @@ export function detectPowerIntervals(
 			normalizedPower: stats.normalizedPower,
 			avgHeartRate: stats.avgHeartRate,
 			avgCadence: stats.avgCadence,
+			normalizedCadence: stats.normalizedCadence,
 			duration,
 		});
 	}
@@ -228,6 +232,7 @@ export function computeIntervals(
 			normalizedPower: stats.normalizedPower,
 			avgHeartRate: stats.avgHeartRate,
 			avgCadence: stats.avgCadence,
+			normalizedCadence: stats.normalizedCadence,
 			duration: stats.duration,
 		};
 	});

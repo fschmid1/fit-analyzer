@@ -45,6 +45,9 @@ export type { AvailableModelId, ModelEntry, Provider } from "./coachModels.js";
 
 export {
 	buildPowerBySecond,
+	buildCadenceBySecond,
 	computeNormalizedPower,
 	normalizedPowerFromSeconds,
+	computeNormalizedCadence,
+	normalizedCadenceFromSeconds,
 } from "./power.js";

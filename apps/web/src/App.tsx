@@ -235,6 +235,7 @@ function App() {
 							normalizedPower: null,
 							avgHeartRate: null,
 							avgCadence: null,
+							normalizedCadence: null,
 							duration: 0,
 						};
 			return {
@@ -245,6 +246,7 @@ function App() {
 				normalizedPower: stats.normalizedPower,
 				avgHeartRate: stats.avgHeartRate,
 				avgCadence: stats.avgCadence,
+				normalizedCadence: stats.normalizedCadence,
 				duration: stats.duration,
 			};
 		});

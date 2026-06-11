@@ -93,6 +93,7 @@ function computeActivityStats(
 	const normalizedPowerVals: number[] = [];
 	const hrVals: number[] = [];
 	const cadenceVals: number[] = [];
+	const normalizedCadenceVals: number[] = [];
 	const peak1minVals: number[] = [];
 	const peak5minVals: number[] = [];
 	let totalWork = 0;
@@ -118,6 +119,8 @@ function computeActivityStats(
 			maxHeartRate = summary.maxHeartRate;
 		}
 		if (summary.avgCadence != null) cadenceVals.push(summary.avgCadence);
+		if (summary.normalizedCadence != null)
+			normalizedCadenceVals.push(summary.normalizedCadence);
 		if (summary.peak1minPower != null) peak1minVals.push(summary.peak1minPower);
 		if (summary.peak5minPower != null) peak5minVals.push(summary.peak5minPower);
 		if (summary.totalWork != null) totalWork += summary.totalWork;
@@ -140,6 +143,7 @@ function computeActivityStats(
 		avgHeartRate: avg(hrVals),
 		maxHeartRate: maxHeartRate > 0 ? maxHeartRate : null,
 		avgCadence: avg(cadenceVals),
+		normalizedCadence: avg(normalizedCadenceVals),
 		peak1minPower: peak1minVals.length > 0 ? Math.max(...peak1minVals) : null,
 		peak5minPower: peak5minVals.length > 0 ? Math.max(...peak5minVals) : null,
 		totalWork: totalWork > 0 ? Math.round(totalWork) : null,

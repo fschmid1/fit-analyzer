@@ -35,6 +35,7 @@ export function formatCopyBoxText(
 	lines.push(`- avg_heartRate: ${summary.avgHeartRate ?? "N/A"}`);
 	lines.push(`- max_heartRate: ${summary.maxHeartRate ?? "N/A"}`);
 	lines.push(`- avg_cadence: ${summary.avgCadence ?? "N/A"}`);
+	lines.push(`- normalized_cadence: ${summary.normalizedCadence ?? "N/A"}`);
 	lines.push(
 		`- total_work: ${summary.totalWork ? Math.round(summary.totalWork) : "N/A"}`,
 	);

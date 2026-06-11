@@ -22,6 +22,7 @@ export interface ActivitySummary {
 	avgHeartRate: number | null;
 	maxHeartRate: number | null;
 	avgCadence: number | null;
+	normalizedCadence: number | null;
 	totalWork: number | null;
 	peak1minPower: number | null;
 	peak5minPower: number | null;
@@ -49,6 +50,7 @@ export interface Interval {
 	normalizedPower: number | null;
 	avgHeartRate: number | null;
 	avgCadence: number | null;
+	normalizedCadence: number | null;
 	duration: number;
 }
 
@@ -57,6 +59,7 @@ export interface SelectionStats {
 	normalizedPower: number | null;
 	avgHeartRate: number | null;
 	avgCadence: number | null;
+	normalizedCadence: number | null;
 	duration: number;
 }
 
@@ -218,6 +221,7 @@ export interface ActivityStats {
 	avgHeartRate: number | null;
 	maxHeartRate: number | null;
 	avgCadence: number | null;
+	normalizedCadence: number | null;
 	peak1minPower: number | null;
 	peak5minPower: number | null;
 	totalWork: number | null;
