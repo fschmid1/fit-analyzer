@@ -630,13 +630,16 @@ export async function getHaeHealthContext(
 		return cached.data;
 	}
 
-	// Fetch last 7 days of history
-	const end = new Date().toISOString().split("T")[0];
+	// Fetch last 7 days of history (use tomorrow as the upper bound so data
+	// pushed from timezones ahead of the server isn't dropped).
+	const end = new Date();
+	end.setDate(end.getDate() + 1);
+	const endStr = end.toISOString().split("T")[0];
 	const start = new Date();
 	start.setDate(start.getDate() - 7);
 	const startStr = start.toISOString().split("T")[0];
 
-	const rows = getHistoryStmt.all(fitUserId, startStr, end) as Array<{
+	const rows = getHistoryStmt.all(fitUserId, startStr, endStr) as Array<{
 		user_id: string;
 		date: string;
 		data: string;
