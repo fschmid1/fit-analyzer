@@ -33,13 +33,23 @@ healthAutoExport.post("/", async (c) => {
 		return c.json({ error: "Invalid API key" }, 401);
 	}
 
-	let payload: unknown;
+	let rawPayload: unknown;
 	try {
-		payload = await c.req.json();
+		rawPayload = await c.req.json();
 	} catch (err) {
 		console.error("[hae] Failed to parse JSON body:", err);
 		return c.json({ error: "Invalid JSON body" }, 400);
 	}
+
+	// Health Auto Export sends either {"metrics":[...]} or {"data":{"metrics":[...]}}
+	const payload =
+		typeof rawPayload === "object" &&
+		rawPayload !== null &&
+		"data" in rawPayload &&
+		typeof (rawPayload as Record<string, unknown>).data === "object" &&
+		(rawPayload as Record<string, unknown>).data !== null
+			? (rawPayload as Record<string, unknown>).data
+			: rawPayload;
 
 	if (
 		typeof payload !== "object" ||
@@ -48,7 +58,7 @@ healthAutoExport.post("/", async (c) => {
 	) {
 		console.error(
 			"[hae] Rejected payload (missing metrics array). Raw payload:",
-			JSON.stringify(payload).slice(0, 2000),
+			JSON.stringify(rawPayload).slice(0, 2000),
 		);
 		return c.json({ error: "Expected JSON with a 'metrics' array" }, 400);
 	}
