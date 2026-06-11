@@ -1,4 +1,5 @@
 import { CoachModelSettings } from "../components/CoachModelSettings";
+import { HealthAutoExportSettings } from "../components/HealthAutoExportSettings";
 import { OpenwearablesSettings } from "../components/OpenwearablesSettings";
 import { StravaConnect } from "../components/StravaConnect";
 import { WaxedChainReminderSettings } from "../components/WaxedChainReminderSettings";
@@ -25,6 +26,7 @@ export function SettingsPage({ onActivitiesChanged }: SettingsPageProps) {
 						</h3>
 						<StravaConnect onSynced={onActivitiesChanged} />
 						<OpenwearablesSettings />
+						<HealthAutoExportSettings />
 					</section>
 
 					<section className="flex flex-col gap-4">

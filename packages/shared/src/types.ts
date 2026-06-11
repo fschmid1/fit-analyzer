@@ -159,6 +159,15 @@ export interface UpdateOpenwearablesSettingsBody {
 	owUserId: string;
 }
 
+export type HealthSource = "openwearables" | "health_auto_export" | "auto";
+
+export interface HealthAutoExportSettings {
+	apiKey: string | null;
+	configured: boolean;
+	healthSource: HealthSource;
+	lastSyncAt: string | null;
+}
+
 export interface CompareSettings {
 	compareThreadIds: string[];
 	compareEnabled: boolean;
@@ -205,6 +214,28 @@ export interface HealthData {
 		recentNights: RecentNight[];
 		avgDurationMinutes7d: number | null;
 		avgDurationFormatted7d: string | null;
+		avgEfficiencyPercent7d: number | null;
+		avgStages7d: SleepStages | null;
+	} | null;
+}
+
+// Internal shape used by both OW and HAE clients
+export interface HealthContext {
+	rhr: HealthMetric | null;
+	hrv: HealthMetric | null;
+	respiratoryRate: HealthMetric | null;
+	spo2: HealthMetric | null;
+	temperature: HealthMetric | null;
+	sleep: {
+		recentNights: Array<{
+			date: string;
+			durationMinutes: number;
+			quality: string | null;
+			efficiencyPercent: number | null;
+			stages: SleepStages | null;
+		}>;
+		avgDurationMinutes7d: number | null;
+		avgDurationFormatted7d?: string | null;
 		avgEfficiencyPercent7d: number | null;
 		avgStages7d: SleepStages | null;
 	} | null;

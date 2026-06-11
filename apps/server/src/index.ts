@@ -4,6 +4,7 @@ import { logger } from "hono/logger";
 import { env } from "./env.js";
 import { activities } from "./routes/activities.js";
 import { health } from "./routes/health.js";
+import { healthAutoExport } from "./routes/healthAutoExport.js";
 import { heatmap } from "./routes/heatmap.js";
 import { me } from "./routes/me.js";
 import { strava } from "./routes/strava.js";
@@ -17,6 +18,7 @@ app.use("*", logger());
 // API routes
 app.route("/api/activities", activities);
 app.route("/api/health", health);
+app.route("/api/health-auto-export", healthAutoExport);
 app.route("/api/heatmap", heatmap);
 app.route("/api/me", me);
 app.route("/api/strava", strava);

@@ -20,6 +20,7 @@ import {
 	sendTestWaxedChainReminder,
 	updateWaxedChainReminderSettings,
 } from "../lib/waxedChainReminders.js";
+import { hasHaeToken, getHaeLastSync } from "../lib/haeClient.js";
 import { db } from "../db.js";
 
 const me = new Hono();
@@ -56,12 +57,29 @@ me.get("/settings", async (c) => {
 		return c.json({ error: "Not authenticated" }, 401);
 	}
 
+	const haeConfigured = hasHaeToken(userId);
+	const haeLastSyncAt = getHaeLastSync(userId);
+
+	// Fetch health_source
+	const sourceRow = db
+		.prepare("SELECT health_source FROM user_settings WHERE user_id = ?")
+		.get(userId) as { health_source: string } | undefined;
+
 	return c.json({
 		waxedChainReminder: getWaxedChainReminderSettings(userId),
 		coachModel: await getCoachModelSettings(userId),
 		favoriteModels: getFavoriteModels(userId),
 		openwearables: { owUserId: getOwUserId(userId) },
 		compare: getCompareSettings(userId),
+		healthAutoExport: {
+			apiKey: haeConfigured ? "••••••••" : null,
+			configured: haeConfigured,
+			healthSource: (sourceRow?.health_source ?? "openwearables") as
+				| "openwearables"
+				| "health_auto_export"
+				| "auto",
+			lastSyncAt: haeLastSyncAt,
+		},
 	});
 });
 
@@ -81,6 +99,7 @@ me.patch("/settings", async (c) => {
 			owUserId?: string;
 			compareThreadIds?: string[];
 			compareEnabled?: boolean;
+			healthSource?: string;
 		}
 	>();
 
@@ -107,6 +126,16 @@ me.patch("/settings", async (c) => {
 		db.prepare(
 			"INSERT INTO user_settings (user_id, ow_user_id) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET ow_user_id = excluded.ow_user_id",
 		).run(userId, trimmed || null);
+	}
+
+	if (
+		body.healthSource === "openwearables" ||
+		body.healthSource === "health_auto_export" ||
+		body.healthSource === "auto"
+	) {
+		db.prepare(
+			"INSERT INTO user_settings (user_id, health_source) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET health_source = excluded.health_source",
+		).run(userId, body.healthSource);
 	}
 
 	if (
@@ -139,12 +168,27 @@ me.patch("/settings", async (c) => {
 		});
 	}
 
+	const haeConfigured = hasHaeToken(userId);
+	const haeLastSyncAt = getHaeLastSync(userId);
+	const sourceRow = db
+		.prepare("SELECT health_source FROM user_settings WHERE user_id = ?")
+		.get(userId) as { health_source: string } | undefined;
+
 	return c.json({
 		waxedChainReminder: getWaxedChainReminderSettings(userId),
 		coachModel: await getCoachModelSettings(userId),
 		favoriteModels: getFavoriteModels(userId),
 		openwearables: { owUserId: getOwUserId(userId) },
 		compare: getCompareSettings(userId),
+		healthAutoExport: {
+			apiKey: haeConfigured ? "••••••••" : null,
+			configured: haeConfigured,
+			healthSource: (sourceRow?.health_source ?? "openwearables") as
+				| "openwearables"
+				| "health_auto_export"
+				| "auto",
+			lastSyncAt: haeLastSyncAt,
+		},
 	});
 });
 

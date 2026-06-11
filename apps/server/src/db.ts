@@ -238,4 +238,32 @@ try {
 	/* column already exists */
 }
 
+// Migration: add Health Auto Export settings to user_settings
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN hae_api_token TEXT");
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec(
+		"ALTER TABLE user_settings ADD COLUMN health_source TEXT NOT NULL DEFAULT 'openwearables'",
+	);
+} catch {
+	/* column already exists */
+}
+
+// Health Auto Export historical data table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS hae_health_history (
+    user_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    data TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, date)
+  )
+`);
+db.exec(
+	"CREATE INDEX IF NOT EXISTS idx_hae_health_user_date ON hae_health_history(user_id, date)",
+);
+
 export { db };

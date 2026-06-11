@@ -9,6 +9,8 @@ import {
 	type Interval,
 	type ModelEntry,
 	type OpenwearablesSettings,
+	type HealthAutoExportSettings,
+	type HealthSource,
 	type ParsedActivity,
 	type StravaClubEvent,
 	type StoredRecord,
@@ -32,6 +34,7 @@ export interface UserSettingsResponse {
 	favoriteModels: string[];
 	openwearables: OpenwearablesSettings;
 	compare: CompareSettings;
+	healthAutoExport: HealthAutoExportSettings;
 }
 
 export async function fetchCurrentUser(): Promise<UserInfo | null> {
@@ -548,4 +551,58 @@ export async function exportTrainerThread(
 		`thread-${threadId}.md`;
 	const markdown = await res.text();
 	return { filename, markdown };
+}
+
+// ─── Health Auto Export ────────────────────────────────────────────────────
+
+export async function fetchHaeStatus(): Promise<{
+	configured: boolean;
+	lastSyncAt?: string | null;
+	healthSource?: HealthSource;
+}> {
+	const res = await fetch(`${API_BASE}/health-auto-export/status`);
+	if (!res.ok) throw new Error("Failed to fetch HAE status");
+	return res.json();
+}
+
+export async function generateHaeKey(): Promise<{ apiKey: string }> {
+	const res = await fetch(`${API_BASE}/health-auto-export/generate-key`, {
+		method: "POST",
+	});
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({ error: "Failed" }));
+		throw new Error(
+			(err as { error?: string }).error ?? "Failed to generate key",
+		);
+	}
+	return res.json();
+}
+
+export async function clearHaeSettings(): Promise<void> {
+	const res = await fetch(`${API_BASE}/health-auto-export`, {
+		method: "DELETE",
+	});
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({ error: "Failed" }));
+		throw new Error((err as { error?: string }).error ?? "Failed to clear");
+	}
+}
+
+export async function updateHealthSource(
+	healthSource: HealthSource,
+): Promise<HealthAutoExportSettings> {
+	const res = await fetch(`${API_BASE}/me/settings`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ healthSource }),
+	});
+	const data = await res
+		.json()
+		.catch(() => ({ error: "Failed to update health source" }));
+	if (!res.ok) {
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to update health source",
+		);
+	}
+	return (data as UserSettingsResponse).healthAutoExport;
 }

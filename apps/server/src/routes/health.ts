@@ -3,6 +3,7 @@ import { db } from "../db.js";
 import type { ActivityStats, HealthData } from "@fit-analyzer/shared";
 import type { ActivitySummary } from "@fit-analyzer/shared";
 import { getRawHealthContext } from "../lib/owClient.js";
+import { getHaeHealthContext } from "../lib/haeClient.js";
 
 const health = new Hono();
 
@@ -32,7 +33,7 @@ function formatSleepDuration(minutes: number): string {
 }
 
 function buildHealthData(
-	healthContext: NonNullable<Awaited<ReturnType<typeof getRawHealthContext>>>,
+	healthContext: import("@fit-analyzer/shared").HealthContext,
 ): HealthData {
 	const ctx = healthContext;
 
@@ -69,6 +70,81 @@ function buildHealthData(
 		temperature: ctx.temperature,
 		sleep,
 	};
+}
+
+const getHealthSourceStmt = db.prepare<{ health_source: string }, [string]>(
+	"SELECT health_source FROM user_settings WHERE user_id = ?",
+);
+
+async function resolveHealthData(
+	userId: string,
+	startDate: string,
+	endDate: string,
+): Promise<{
+	healthData: HealthData | null;
+	activityStats: ActivityStats;
+	sourceUsed: "openwearables" | "health_auto_export" | null;
+}> {
+	const row = getHealthSourceStmt.get(userId);
+	const healthSource = row?.health_source ?? "openwearables";
+
+	let healthData: HealthData | null = null;
+	let sourceUsed: "openwearables" | "health_auto_export" | null = null;
+
+	// Try primary source
+	try {
+		if (healthSource === "health_auto_export") {
+			const haeCtx = await getHaeHealthContext(userId);
+			if (haeCtx) {
+				healthData = buildHealthData(haeCtx);
+				sourceUsed = "health_auto_export";
+			}
+		}
+		if (!healthData) {
+			const owCtx = await getRawHealthContext(userId);
+			if (owCtx) {
+				healthData = buildHealthData(owCtx);
+				sourceUsed = "openwearables";
+			}
+		}
+	} catch (err) {
+		console.warn("[health] Failed to fetch health data:", err);
+	}
+
+	// For 'auto' mode, compare freshness and potentially switch
+	if (healthSource === "auto" && healthData) {
+		// auto already resolved above (tried HAE first, then OW)
+		// if only OW succeeded, sourceUsed is "openwearables"
+		// if only HAE succeeded, sourceUsed is "health_auto_export"
+		// if both could succeed, HAE was tried first
+	}
+
+	// Fallback: if auto and no data yet, try the other source
+	if (healthSource === "auto" && !healthData) {
+		try {
+			const owCtx = await getRawHealthContext(userId);
+			if (owCtx) {
+				healthData = buildHealthData(owCtx);
+				sourceUsed = "openwearables";
+			}
+		} catch (err) {
+			console.warn("[health] Auto fallback to OW failed:", err);
+		}
+		if (!healthData) {
+			try {
+				const haeCtx = await getHaeHealthContext(userId);
+				if (haeCtx) {
+					healthData = buildHealthData(haeCtx);
+					sourceUsed = "health_auto_export";
+				}
+			} catch (err) {
+				console.warn("[health] Auto fallback to HAE failed:", err);
+			}
+		}
+	}
+
+	const stats = computeActivityStats(userId, startDate, endDate);
+	return { healthData, activityStats: stats, sourceUsed };
 }
 
 const summaryStmt = db.prepare(
@@ -181,21 +257,15 @@ health.get("/", async (c) => {
 		);
 	}
 
-	let healthData: HealthData | null = null;
-	try {
-		const ctx = await getRawHealthContext(userId);
-		if (ctx) {
-			healthData = buildHealthData(ctx);
-		}
-	} catch (err) {
-		console.warn("[health] Failed to fetch health data:", err);
-	}
-
-	const stats = computeActivityStats(userId, startDate, endDate);
+	const { healthData, activityStats } = await resolveHealthData(
+		userId,
+		startDate,
+		endDate,
+	);
 
 	return c.json({
 		health: healthData,
-		activityStats: stats,
+		activityStats,
 	});
 });
 
