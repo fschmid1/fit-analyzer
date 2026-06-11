@@ -86,7 +86,15 @@ healthAutoExport.get("/status", (c) => {
 	const configured = hasHaeToken(userId);
 	const lastSyncAt = getHaeLastSync(userId);
 
-	return c.json({ configured, lastSyncAt });
+	const sourceRow = db
+		.prepare("SELECT health_source FROM user_settings WHERE user_id = ?")
+		.get(userId) as { health_source: string } | undefined;
+
+	return c.json({
+		configured,
+		lastSyncAt,
+		healthSource: sourceRow?.health_source ?? "openwearables",
+	});
 });
 
 // ─── POST /api/health-auto-export/generate-key ──────────────────────────────

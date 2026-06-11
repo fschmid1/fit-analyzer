@@ -50,6 +50,8 @@ export async function fetchCurrentUser(): Promise<UserInfo | null> {
 export interface StatsResponse {
 	health: HealthData | null;
 	activityStats: ActivityStats;
+	sourceUsed: "openwearables" | "health_auto_export" | null;
+	lastSyncAt: string | null;
 }
 
 export async function fetchStats(

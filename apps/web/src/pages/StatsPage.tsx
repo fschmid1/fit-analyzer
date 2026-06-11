@@ -13,9 +13,12 @@ import {
 	Loader2,
 	Moon,
 	MoonStar,
+	RefreshCw,
 	Route,
+	Smartphone,
 	Thermometer,
 	TrendingUp,
+	Watch,
 	Wind,
 	Zap,
 } from "lucide-react";
@@ -182,9 +185,35 @@ export function StatsPage() {
 						{/* Health Monitor */}
 						{data.health && (
 							<section className="mb-8">
-								<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8] mb-4">
-									Health Monitor
-								</h3>
+								<div className="flex items-center gap-3 mb-4">
+									<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8]">
+										Health Monitor
+									</h3>
+									{data.sourceUsed && (
+										<div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#0f0b1a] border border-[rgba(139,92,246,0.15)] text-[#94a3b8]">
+											{data.sourceUsed === "health_auto_export" ? (
+												<>
+													<Smartphone className="w-3 h-3 text-emerald-400" />
+													<span className="text-[10px] font-medium text-emerald-400">
+														HAE
+													</span>
+												</>
+											) : (
+												<>
+													<Watch className="w-3 h-3 text-[#8b5cf6]" />
+													<span className="text-[10px] font-medium text-[#8b5cf6]">
+														OW
+													</span>
+												</>
+											)}
+											{data.lastSyncAt && (
+												<span className="text-[10px] text-[#64748b]">
+													· {new Date(data.lastSyncAt).toLocaleString()}
+												</span>
+											)}
+										</div>
+									)}
+								</div>
 								<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
 									<HealthMonitorCard
 										icon={Wind}

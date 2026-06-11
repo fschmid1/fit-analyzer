@@ -3,7 +3,7 @@ import { db } from "../db.js";
 import type { ActivityStats, HealthData } from "@fit-analyzer/shared";
 import type { ActivitySummary } from "@fit-analyzer/shared";
 import { getRawHealthContext } from "../lib/owClient.js";
-import { getHaeHealthContext } from "../lib/haeClient.js";
+import { getHaeHealthContext, getHaeLastSync } from "../lib/haeClient.js";
 
 const health = new Hono();
 
@@ -257,15 +257,23 @@ health.get("/", async (c) => {
 		);
 	}
 
-	const { healthData, activityStats } = await resolveHealthData(
+	const { healthData, activityStats, sourceUsed } = await resolveHealthData(
 		userId,
 		startDate,
 		endDate,
 	);
 
+	// Determine last sync timestamp from the active source
+	let lastSyncAt: string | null = null;
+	if (sourceUsed === "health_auto_export") {
+		lastSyncAt = getHaeLastSync(userId);
+	}
+
 	return c.json({
 		health: healthData,
 		activityStats,
+		sourceUsed,
+		lastSyncAt,
 	});
 });
 
