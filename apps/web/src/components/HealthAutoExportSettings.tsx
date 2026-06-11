@@ -22,6 +22,12 @@ import {
 } from "../lib/api";
 import { AnimatedButton } from "./AnimatedButton";
 
+/** Parse an ISO or SQLite datetime string as UTC, then format to local locale. */
+function utcToLocaleString(dateStr: string): string {
+	const d = dateStr.endsWith("Z") ? new Date(dateStr) : new Date(`${dateStr}Z`);
+	return d.toLocaleString();
+}
+
 export function HealthAutoExportSettings() {
 	const [settings, setSettings] = useState<HaeSettingsData | null>(null);
 	const [loading, setLoading] = useState(true);
@@ -271,7 +277,7 @@ export function HealthAutoExportSettings() {
 								</p>
 								{settings.lastSyncAt ? (
 									<p className="text-sm font-medium text-[#f1f5f9]">
-										{new Date(settings.lastSyncAt).toLocaleString()}
+										{utcToLocaleString(settings.lastSyncAt)}
 									</p>
 								) : (
 									<p className="text-sm text-[#94a3b8]">No data received yet</p>

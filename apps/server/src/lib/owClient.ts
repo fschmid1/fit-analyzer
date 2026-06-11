@@ -43,6 +43,11 @@ export interface HealthContext {
 		trend7d: number | null;
 		status: HealthMetricStatus;
 	} | null;
+	morningHeartRate: {
+		current: number | null;
+		trend7d: number | null;
+		status: HealthMetricStatus;
+	} | null;
 	sleep: {
 		recentNights: RecentNight[];
 		avgDurationMinutes7d: number | null;
@@ -232,6 +237,7 @@ function computeHealthContext(
 	let respiratoryRate: HealthContext["respiratoryRate"] = null;
 	let spo2: HealthContext["spo2"] = null;
 	let temperature: HealthContext["temperature"] = null;
+	const morningHeartRate: HealthContext["morningHeartRate"] = null;
 	let sleep: HealthContext["sleep"] = null;
 
 	if (sleepSummaries && sleepSummaries.length > 0) {
@@ -429,7 +435,15 @@ function computeHealthContext(
 		};
 	}
 
-	return { rhr, hrv, respiratoryRate, spo2, temperature, sleep };
+	return {
+		rhr,
+		hrv,
+		respiratoryRate,
+		spo2,
+		temperature,
+		morningHeartRate,
+		sleep,
+	};
 }
 
 function formatHealthContext(ctx: HealthContext): string {

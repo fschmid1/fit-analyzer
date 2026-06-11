@@ -46,6 +46,12 @@ function startOfYear(): string {
 	return `${new Date().getFullYear()}-01-01`;
 }
 
+/** Parse an ISO or SQLite datetime string as UTC, then format to local locale. */
+function utcToLocaleString(dateStr: string): string {
+	const d = dateStr.endsWith("Z") ? new Date(dateStr) : new Date(`${dateStr}Z`);
+	return d.toLocaleString();
+}
+
 function presetRange(preset: Preset): { startDate: string; endDate: string } {
 	switch (preset) {
 		case "7d":
@@ -208,7 +214,7 @@ export function StatsPage() {
 											)}
 											{data.lastSyncAt && (
 												<span className="text-[10px] text-[#64748b]">
-													· {new Date(data.lastSyncAt).toLocaleString()}
+													· {utcToLocaleString(data.lastSyncAt)}
 												</span>
 											)}
 										</div>
@@ -229,9 +235,11 @@ export function StatsPage() {
 									<HealthMonitorCard
 										icon={Heart}
 										label="RHR"
-										value={data.health.rhr?.current ?? "—"}
-										unit={data.health.rhr?.current != null ? "bpm" : ""}
-										status={data.health.rhr?.status ?? "normal"}
+										value={data.health.morningHeartRate?.current ?? "—"}
+										unit={
+											data.health.morningHeartRate?.current != null ? "bpm" : ""
+										}
+										status={data.health.morningHeartRate?.status ?? "normal"}
 									/>
 									<HealthMonitorCard
 										icon={Activity}

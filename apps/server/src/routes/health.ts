@@ -68,6 +68,7 @@ function buildHealthData(
 		respiratoryRate: ctx.respiratoryRate,
 		spo2: ctx.spo2,
 		temperature: ctx.temperature,
+		morningHeartRate: ctx.morningHeartRate,
 		sleep,
 	};
 }
@@ -103,7 +104,9 @@ async function resolveHealthData(
 		if (!healthData) {
 			const owCtx = await getRawHealthContext(userId);
 			if (owCtx) {
-				healthData = buildHealthData(owCtx);
+				healthData = buildHealthData(
+					owCtx as import("@fit-analyzer/shared").HealthContext,
+				);
 				sourceUsed = "openwearables";
 			}
 		}
@@ -124,7 +127,9 @@ async function resolveHealthData(
 		try {
 			const owCtx = await getRawHealthContext(userId);
 			if (owCtx) {
-				healthData = buildHealthData(owCtx);
+				healthData = buildHealthData(
+					owCtx as import("@fit-analyzer/shared").HealthContext,
+				);
 				sourceUsed = "openwearables";
 			}
 		} catch (err) {

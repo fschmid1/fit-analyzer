@@ -210,6 +210,7 @@ export interface HealthData {
 	respiratoryRate: HealthMetric | null;
 	spo2: HealthMetric | null;
 	temperature: HealthMetric | null;
+	morningHeartRate: HealthMetric | null;
 	sleep: {
 		recentNights: RecentNight[];
 		avgDurationMinutes7d: number | null;
@@ -226,6 +227,7 @@ export interface HealthContext {
 	respiratoryRate: HealthMetric | null;
 	spo2: HealthMetric | null;
 	temperature: HealthMetric | null;
+	morningHeartRate: HealthMetric | null;
 	sleep: {
 		recentNights: Array<{
 			date: string;

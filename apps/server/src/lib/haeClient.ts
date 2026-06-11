@@ -51,6 +51,14 @@ interface HaeSleepData {
 		deepMinutes: number;
 		remMinutes: number;
 	} | null;
+	sleepEnd: string | null;
+}
+
+interface HaeHeartRateReading {
+	date: string;
+	avg: number;
+	min: number;
+	max: number;
 }
 
 interface HaeDailySnapshot {
@@ -59,7 +67,9 @@ interface HaeDailySnapshot {
 	respiratoryRate: number | null;
 	spo2: number | null;
 	temperature: number | null;
+	morningHeartRate: number | null;
 	sleep: HaeSleepData | null;
+	heartRateReadings: HaeHeartRateReading[];
 }
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
@@ -85,7 +95,7 @@ function pruneCache() {
 
 const upsertHistoryStmt = db.prepare(
 	`INSERT INTO hae_health_history (user_id, date, data, updated_at)
-   VALUES (?, ?, ?, datetime('now'))
+   VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
    ON CONFLICT(user_id, date) DO UPDATE SET
      data = excluded.data,
      updated_at = excluded.updated_at`,
@@ -130,13 +140,23 @@ function extractQty(
 	return null;
 }
 
-function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
-	const byDate = new Map<string, Partial<HaeDailySnapshot>>();
+function parseHaeDateTime(dateStr: string): Date {
+	// HAE dates are like "2024-02-06 14:30:00 -0800" or "2024-02-06"
+	return new Date(dateStr);
+}
 
-	function ensureDate(date: string): Partial<HaeDailySnapshot> {
+function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
+	const byDate = new Map<
+		string,
+		Partial<HaeDailySnapshot> & { heartRateReadings: HaeHeartRateReading[] }
+	>();
+
+	function ensureDate(
+		date: string,
+	): Partial<HaeDailySnapshot> & { heartRateReadings: HaeHeartRateReading[] } {
 		let snap = byDate.get(date);
 		if (!snap) {
-			snap = {};
+			snap = { heartRateReadings: [] };
 			byDate.set(date, snap);
 		}
 		return snap;
@@ -182,6 +202,18 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 					}
 					break;
 				}
+				case "heart_rate": {
+					const entry = raw as HaeHeartRateData;
+					if (typeof entry.Avg === "number" && entry.Avg > 0) {
+						snap.heartRateReadings.push({
+							date: entry.date,
+							avg: entry.Avg,
+							min: entry.Min ?? entry.Avg,
+							max: entry.Max ?? entry.Avg,
+						});
+					}
+					break;
+				}
 				case "sleep_analysis": {
 					const entry = raw as HaeSleepEntry;
 					if (entry.totalSleep != null || entry.asleep != null) {
@@ -211,6 +243,7 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 							durationMinutes,
 							efficiencyPercent,
 							stages,
+							sleepEnd: entry.sleepEnd ?? null,
 						};
 					}
 					break;
@@ -222,13 +255,20 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 	// Normalize: ensure every date has all fields
 	const result = new Map<string, HaeDailySnapshot>();
 	for (const [date, snap] of byDate) {
+		// Sort heart rate readings chronologically
+		snap.heartRateReadings.sort(
+			(a, b) =>
+				parseHaeDateTime(a.date).getTime() - parseHaeDateTime(b.date).getTime(),
+		);
 		result.set(date, {
 			rhr: snap.rhr ?? null,
 			hrv: snap.hrv ?? null,
 			respiratoryRate: snap.respiratoryRate ?? null,
 			spo2: snap.spo2 ?? null,
 			temperature: snap.temperature ?? null,
+			morningHeartRate: snap.morningHeartRate ?? null,
 			sleep: snap.sleep ?? null,
+			heartRateReadings: snap.heartRateReadings,
 		});
 	}
 	return result;
@@ -237,7 +277,7 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 // ─── Ingestion ────────────────────────────────────────────────────────────────
 
 const updateLastSyncStmt = db.prepare(
-	`UPDATE user_settings SET hae_last_sync_at = datetime('now') WHERE user_id = ?`,
+	`UPDATE user_settings SET hae_last_sync_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE user_id = ?`,
 );
 
 export function ingestHaePayload(
@@ -327,6 +367,7 @@ function computeHaeHealthContext(
 	let respiratoryRate: HealthContext["respiratoryRate"] = null;
 	let spo2: HealthContext["spo2"] = null;
 	let temperature: HealthContext["temperature"] = null;
+	let morningHeartRate: HealthContext["morningHeartRate"] = null;
 	let sleep: HealthContext["sleep"] = null;
 
 	// ── Sleep ─────────────────────────────────────────────────────────────────
@@ -341,6 +382,7 @@ function computeHaeHealthContext(
 					: null,
 			efficiencyPercent: r.sleep?.efficiencyPercent ?? null,
 			stages: r.sleep?.stages ?? null,
+			sleepEnd: r.sleep?.sleepEnd ?? null,
 		}));
 
 	if (nights.length > 0) {
@@ -396,6 +438,36 @@ function computeHaeHealthContext(
 				: null,
 			avgEfficiencyPercent7d,
 			avgStages7d,
+		};
+	}
+
+	// ── Morning Heart Rate (first HR reading after sleep ends) ────────────────
+	const morningHrValues: { date: string; value: number }[] = [];
+	for (const row of rows) {
+		if (!row.heartRateReadings?.length) continue;
+		const sleepEndStr = row.sleep?.sleepEnd;
+		if (!sleepEndStr) continue;
+		const sleepEnd = parseHaeDateTime(sleepEndStr).getTime();
+		if (Number.isNaN(sleepEnd)) continue;
+		// Find the first HR reading after sleep end (within 30 min window)
+		const reading = row.heartRateReadings.find((hr) => {
+			const t = parseHaeDateTime(hr.date).getTime();
+			return t >= sleepEnd && t <= sleepEnd + 30 * 60 * 1000;
+		});
+		if (reading) {
+			morningHrValues.push({ date: row.date, value: reading.avg });
+		}
+	}
+	morningHrValues.sort((a, b) => b.date.localeCompare(a.date));
+	if (morningHrValues.length > 0) {
+		const latest = morningHrValues[0].value;
+		const avg =
+			morningHrValues.reduce((a, b) => a + b.value, 0) / morningHrValues.length;
+		morningHeartRate = {
+			current: Math.round(latest),
+			trend7d: Math.round(avg),
+			status:
+				latest > avg + 5 ? "elevated" : latest < avg * 0.9 ? "lower" : "normal",
 		};
 	}
 
@@ -473,7 +545,15 @@ function computeHaeHealthContext(
 		};
 	}
 
-	return { rhr, hrv, respiratoryRate, spo2, temperature, sleep };
+	return {
+		rhr,
+		hrv,
+		respiratoryRate,
+		spo2,
+		temperature,
+		morningHeartRate,
+		sleep,
+	};
 }
 
 function formatSleepDuration(minutes: number): string {
