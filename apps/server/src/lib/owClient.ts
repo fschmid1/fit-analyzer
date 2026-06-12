@@ -54,6 +54,10 @@ export interface HealthContext {
 		avgEfficiencyPercent7d: number | null;
 		avgStages7d: SleepStages | null;
 	} | null;
+	bodyComposition: {
+		weightKg: number | null;
+		asOf: string | null;
+	} | null;
 }
 
 interface CacheEntry {
@@ -465,6 +469,7 @@ function computeHealthContext(
 		temperature,
 		morningHeartRate,
 		sleep,
+		bodyComposition: null,
 	};
 }
 

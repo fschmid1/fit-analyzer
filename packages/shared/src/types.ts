@@ -219,6 +219,10 @@ export interface HealthData {
 		avgEfficiencyPercent7d: number | null;
 		avgStages7d: SleepStages | null;
 	} | null;
+	bodyComposition: {
+		weightKg: number | null;
+		asOf: string | null;
+	} | null;
 }
 
 // Internal shape used by both OW and HAE clients
@@ -241,6 +245,10 @@ export interface HealthContext {
 		avgDurationFormatted7d?: string | null;
 		avgEfficiencyPercent7d: number | null;
 		avgStages7d: SleepStages | null;
+	} | null;
+	bodyComposition: {
+		weightKg: number | null;
+		asOf: string | null;
 	} | null;
 }
 

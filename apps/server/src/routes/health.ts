@@ -72,6 +72,7 @@ function buildHealthData(
 		temperature: ctx.temperature,
 		morningHeartRate: ctx.morningHeartRate,
 		sleep,
+		bodyComposition: ctx.bodyComposition ?? null,
 	};
 }
 

@@ -11,7 +11,10 @@ import type { ActivityStats } from "@fit-analyzer/shared";
  * Minimal shape the VO₂max estimate needs. Both `HealthData` and
  * `HealthContext` (returned by OW/HAE clients) satisfy this.
  */
-type RestingHrSource = { rhr: { current: number | null } | null } | null;
+type Vo2maxSource = {
+	rhr: { current: number | null } | null;
+	bodyComposition: { weightKg: number | null; asOf: string | null } | null;
+} | null;
 
 function formatHours(seconds: number): string {
 	const h = Math.floor(seconds / 3600);
@@ -106,9 +109,20 @@ const allActivitiesStmt = db.prepare(
 	"SELECT summary, records FROM activities WHERE user_id = ?",
 );
 
+/**
+ * Hawley–Noakes cycling VO₂max estimate from sustainable power output.
+ *   VO₂max (ml/kg/min) = 10.8 × (W / kg) + 7
+ * Reference: Hawley JA, Noakes TD. "Peak power output predicts maximal
+ * oxygen uptake and performance time in trained cyclists."
+ * Eur J Appl Physiol. 1992;65(1):79-83.
+ */
+function vo2maxFromPowerAndMass(powerW: number, bodyMassKg: number): number {
+	return 10.8 * (powerW / bodyMassKg) + 7;
+}
+
 export function computeAllTimeEstimates(
 	userId: string,
-	healthData: RestingHrSource,
+	healthData: Vo2maxSource,
 ): { estimatedFtp: number | null; estimatedVo2max: number | null } {
 	const rows = allActivitiesStmt.all(userId) as {
 		summary: string;
@@ -155,10 +169,16 @@ export function computeAllTimeEstimates(
 	const estimatedFtp =
 		bestPeak20min > 0 ? Math.round(bestPeak20min * 0.95) : null;
 
+	const weightKg = healthData?.bodyComposition?.weightKg ?? null;
 	let estimatedVo2max: number | null = null;
-	const restingHR = healthData?.rhr?.current ?? null;
-	if (maxHeartRate > 0 && restingHR != null && restingHR > 0) {
-		estimatedVo2max = Math.round(15.3 * (maxHeartRate / restingHR) * 10) / 10;
+	if (weightKg != null && weightKg > 0 && bestPeak20min > 0) {
+		const vo2mlKgMin = vo2maxFromPowerAndMass(bestPeak20min, weightKg);
+		estimatedVo2max = Math.round(vo2mlKgMin * 10) / 10;
+	} else {
+		const restingHR = healthData?.rhr?.current ?? null;
+		if (maxHeartRate > 0 && restingHR != null && restingHR > 0) {
+			estimatedVo2max = Math.round(15.3 * (maxHeartRate / restingHR) * 10) / 10;
+		}
 	}
 
 	return { estimatedFtp, estimatedVo2max };

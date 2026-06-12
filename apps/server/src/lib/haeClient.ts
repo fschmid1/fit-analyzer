@@ -773,7 +773,21 @@ function computeHaeHealthContext(
 		temperature,
 		morningHeartRate,
 		sleep,
+		bodyComposition: pickLatestBodyComposition(rows),
 	};
+}
+
+function pickLatestBodyComposition(
+	rows: Array<{ date: string } & HaeDailySnapshot>,
+): { weightKg: number | null; asOf: string | null } {
+	// rows are date-desc (newest first); find the most recent non-null weight.
+	for (const row of rows) {
+		const weightKg = row.bodyComposition?.weightKg ?? null;
+		if (weightKg != null && weightKg > 0) {
+			return { weightKg, asOf: row.date };
+		}
+	}
+	return { weightKg: null, asOf: null };
 }
 
 function formatSleepDuration(minutes: number): string {

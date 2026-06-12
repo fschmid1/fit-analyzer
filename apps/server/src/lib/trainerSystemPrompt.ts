@@ -224,7 +224,7 @@ async function resolveActiveHealthContext(
 			return null;
 		}
 	};
-	const tryOw = async (): Promise<HealthContext | null> => {
+	const tryOw = async () => {
 		try {
 			return await getRawHealthContext(userId);
 		} catch (err) {
