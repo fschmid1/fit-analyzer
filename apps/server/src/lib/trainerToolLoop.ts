@@ -316,6 +316,7 @@ export async function* createTrainerToolLoop(
 				role: "tool",
 				content,
 				toolCallId: obs.id,
+				name: obs.name,
 			});
 		}
 

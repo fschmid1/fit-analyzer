@@ -51,6 +51,17 @@ function toOllamaTool(tool: ToolDefinition) {
 	};
 }
 
+function parseToolCallArgs(args: unknown): unknown {
+	if (typeof args === "string") {
+		try {
+			return JSON.parse(args);
+		} catch {
+			return args;
+		}
+	}
+	return args;
+}
+
 function toOllamaMessages(systemPrompt: string, messages: ModelMessage[]) {
 	const mapped = messages
 		.map((message) => {
@@ -59,7 +70,20 @@ function toOllamaMessages(systemPrompt: string, messages: ModelMessage[]) {
 			return {
 				role: message.role,
 				content: content ?? "",
-				...(message.toolCalls ? { tool_calls: message.toolCalls } : {}),
+				...(message.toolCalls
+					? {
+							tool_calls: message.toolCalls.map((tc) => ({
+								...tc,
+								function: {
+									...tc.function,
+									arguments: parseToolCallArgs(tc.function.arguments),
+								},
+							})),
+						}
+					: {}),
+				...(message.role === "tool" && message.name
+					? { tool_name: message.name }
+					: {}),
 			};
 		})
 		.filter(

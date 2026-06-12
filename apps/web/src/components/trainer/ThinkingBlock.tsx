@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Brain, ChevronDown, ChevronRight } from "lucide-react";
 import { DotsLoader } from "./DotsLoader";
 
@@ -7,10 +7,6 @@ export function ThinkingBlock({
 	isStreaming,
 }: { content: string; isStreaming: boolean }) {
 	const [open, setOpen] = useState(false);
-	useEffect(() => {
-		if (isStreaming) setOpen(true);
-		else setOpen(false);
-	}, [isStreaming]);
 	return (
 		<div className="mb-3 rounded-lg border border-[rgba(139,92,246,0.15)] bg-[#0f0b1a]/60 overflow-hidden">
 			<button

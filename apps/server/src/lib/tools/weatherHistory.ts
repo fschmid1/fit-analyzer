@@ -36,13 +36,13 @@ function isValidLng(v: unknown): v is number {
 export const weatherHistoryDefinition: ToolDefinition = {
 	name: "weather_history",
 	description:
-		"Look up historical weather conditions (temperature, precipitation, wind) for a specific date and location. Useful for contextualizing ride performance.",
+		"Look up weather conditions (temperature, precipitation, wind) for a specific date and location. Works for both past dates (historical archive) and future dates up to 16 days ahead (forecast). Useful for contextualizing ride performance and planning upcoming rides.",
 	parameters: {
 		type: "object",
 		properties: {
 			date: {
 				type: "string",
-				description: "Date in YYYY-MM-DD format",
+				description: "Date in YYYY-MM-DD format (past or future up to 16 days)",
 			},
 			lat: {
 				type: "number",
@@ -56,6 +56,57 @@ export const weatherHistoryDefinition: ToolDefinition = {
 		required: ["date", "lat", "lng"],
 	},
 };
+
+function isPastDate(dateStr: string): boolean {
+	const today = new Date();
+	today.setHours(0, 0, 0, 0);
+	const target = new Date(`${dateStr}T00:00:00Z`);
+	return target < today;
+}
+
+async function fetchWeatherData(
+	lat: number,
+	lng: number,
+	date: string,
+): Promise<OpenMeteoResponse> {
+	const isPast = isPastDate(date);
+	const baseUrl = isPast
+		? "https://archive-api.open-meteo.com/v1/archive"
+		: "https://api.open-meteo.com/v1/forecast";
+
+	const url = new URL(baseUrl);
+	url.searchParams.set("latitude", String(lat));
+	url.searchParams.set("longitude", String(lng));
+	url.searchParams.set("start_date", date);
+	url.searchParams.set("end_date", date);
+	url.searchParams.set(
+		"daily",
+		[
+			"temperature_2m_max",
+			"temperature_2m_min",
+			"precipitation_sum",
+			"wind_speed_10m_max",
+			"wind_direction_10m_dominant",
+		].join(","),
+	);
+	url.searchParams.set("timezone", "auto");
+
+	const response = await fetch(url, {
+		headers: { Accept: "application/json" },
+		signal: AbortSignal.timeout(10_000),
+	});
+	if (!response.ok) {
+		throw new Error(
+			`Weather API failed: ${response.status} ${response.statusText}`,
+		);
+	}
+
+	const data = (await response.json()) as OpenMeteoResponse;
+	if (data.error) {
+		throw new Error(data.reason ?? "Weather API returned an error.");
+	}
+	return data;
+}
 
 export const weatherHistoryHandler: ToolHandler = async (args) => {
 	const end = debug.time("tool", "weather_history");
@@ -85,47 +136,7 @@ export const weatherHistoryHandler: ToolHandler = async (args) => {
 			};
 		}
 
-		const url = new URL("https://archive-api.open-meteo.com/v1/archive");
-		url.searchParams.set("latitude", String(lat));
-		url.searchParams.set("longitude", String(lng));
-		url.searchParams.set("start_date", date);
-		url.searchParams.set("end_date", date);
-		url.searchParams.set(
-			"daily",
-			[
-				"temperature_2m_max",
-				"temperature_2m_min",
-				"precipitation_sum",
-				"wind_speed_10m_max",
-				"wind_direction_10m_dominant",
-			].join(","),
-		);
-		url.searchParams.set("timezone", "auto");
-
-		const response = await fetch(url, {
-			headers: { Accept: "application/json" },
-			signal: AbortSignal.timeout(10_000),
-		});
-		if (!response.ok) {
-			return {
-				id: "",
-				name: "weather_history",
-				content: "",
-				display: null,
-				error: `Weather API failed: ${response.status} ${response.statusText}`,
-			};
-		}
-
-		const data = (await response.json()) as OpenMeteoResponse;
-		if (data.error) {
-			return {
-				id: "",
-				name: "weather_history",
-				content: "",
-				display: null,
-				error: data.reason ?? "Weather API returned an error.",
-			};
-		}
+		const data = await fetchWeatherData(lat, lng, date);
 		const daily = data.daily;
 		if (!daily?.time?.[0]) {
 			return {
@@ -144,10 +155,12 @@ export const weatherHistoryHandler: ToolHandler = async (args) => {
 		const windMax = daily.wind_speed_10m_max?.[idx] ?? null;
 		const windDir = daily.wind_direction_10m_dominant?.[idx] ?? null;
 
+		const isPast = isPastDate(date);
+		const label = isPast ? "Historical weather" : "Forecast";
 		const fmt = (v: number | null, suffix: string) =>
 			v == null ? "n/a" : `${v}${suffix}`;
 		const content = [
-			`Weather on ${date} at (${lat}, ${lng}):`,
+			`${label} on ${date} at (${lat}, ${lng}):`,
 			`- High temperature: ${fmt(tempMax, "°C")}`,
 			`- Low temperature: ${fmt(tempMin, "°C")}`,
 			`- Precipitation: ${fmt(precip, " mm")}`,
@@ -167,6 +180,7 @@ export const weatherHistoryHandler: ToolHandler = async (args) => {
 				precip,
 				windMax,
 				windDir,
+				isForecast: !isPast,
 			},
 		};
 	} finally {
