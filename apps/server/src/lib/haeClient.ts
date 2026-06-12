@@ -86,7 +86,6 @@ interface HaeDailySnapshot {
 	respiratoryRate: number | null;
 	spo2: number | null;
 	temperature: number | null;
-	morningHeartRate: number | null;
 	sleep: HaeSleepData | null;
 	heartRateReadings: HaeHeartRateReading[];
 	bloodPressure: HaeBloodPressureEntry | null;
@@ -158,7 +157,6 @@ function mergeSnapshots(
 		respiratoryRate: incoming.respiratoryRate ?? existing.respiratoryRate,
 		spo2: incoming.spo2 ?? existing.spo2,
 		temperature: incoming.temperature ?? existing.temperature,
-		morningHeartRate: incoming.morningHeartRate ?? existing.morningHeartRate,
 		sleep: incoming.sleep ?? existing.sleep,
 		heartRateReadings: mergeHeartRateReadings(
 			existing.heartRateReadings,
@@ -225,7 +223,9 @@ function parseHaeDateTime(dateStr: string): Date {
 }
 
 function ensureBodyComposition(
-	snap: Partial<HaeDailySnapshot> & { heartRateReadings: HaeHeartRateReading[] },
+	snap: Partial<HaeDailySnapshot> & {
+		heartRateReadings: HaeHeartRateReading[];
+	},
 ): HaeBodyComposition {
 	if (!snap.bodyComposition) {
 		snap.bodyComposition = {
@@ -366,14 +366,18 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 				case "blood_pressure": {
 					const entry = raw as HaeHeartRateData;
 					if (
-						typeof (entry as HaeHeartRateData & {
-							systolic?: number;
-							diastolic?: number;
-						}).systolic === "number" &&
-						typeof (entry as HaeHeartRateData & {
-							systolic?: number;
-							diastolic?: number;
-						}).diastolic === "number"
+						typeof (
+							entry as HaeHeartRateData & {
+								systolic?: number;
+								diastolic?: number;
+							}
+						).systolic === "number" &&
+						typeof (
+							entry as HaeHeartRateData & {
+								systolic?: number;
+								diastolic?: number;
+							}
+						).diastolic === "number"
 					) {
 						snap.bloodPressure = {
 							date: entry.date,
@@ -455,7 +459,6 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 			respiratoryRate: snap.respiratoryRate ?? null,
 			spo2: snap.spo2 ?? null,
 			temperature: snap.temperature ?? null,
-			morningHeartRate: snap.morningHeartRate ?? null,
 			sleep: snap.sleep ?? null,
 			heartRateReadings: snap.heartRateReadings,
 			bloodPressure: snap.bloodPressure ?? null,
@@ -521,6 +524,31 @@ export function hasHaeToken(userId: string): boolean {
 }
 
 // ─── Health Context Building ─────────────────────────────────────────────────
+
+/** Window after sleep end during which we look for the morning RHR reading. */
+const MORNING_HR_WINDOW_MS = 30 * 60 * 1000;
+
+function computeMorningHeartRateByDate(
+	rows: Array<{ date: string } & HaeDailySnapshot>,
+): Map<string, number> {
+	const result = new Map<string, number>();
+	for (const row of rows) {
+		if (!row.heartRateReadings?.length) continue;
+		const sleepEndStr = row.sleep?.sleepEnd;
+		if (!sleepEndStr) continue;
+		const sleepEnd = parseHaeDateTime(sleepEndStr).getTime();
+		if (Number.isNaN(sleepEnd)) continue;
+		let lowest: number | null = null;
+		for (const hr of row.heartRateReadings) {
+			const t = parseHaeDateTime(hr.date).getTime();
+			if (Number.isNaN(t)) continue;
+			if (t < sleepEnd || t > sleepEnd + MORNING_HR_WINDOW_MS) continue;
+			if (lowest == null || hr.avg < lowest) lowest = hr.avg;
+		}
+		if (lowest != null) result.set(row.date, lowest);
+	}
+	return result;
+}
 
 function determineStatus(
 	latest: number,
@@ -646,24 +674,12 @@ function computeHaeHealthContext(
 		};
 	}
 
-	// ── Morning Heart Rate (first HR reading after sleep ends) ────────────────
-	const morningHrValues: { date: string; value: number }[] = [];
-	for (const row of rows) {
-		if (!row.heartRateReadings?.length) continue;
-		const sleepEndStr = row.sleep?.sleepEnd;
-		if (!sleepEndStr) continue;
-		const sleepEnd = parseHaeDateTime(sleepEndStr).getTime();
-		if (Number.isNaN(sleepEnd)) continue;
-		// Find the first HR reading after sleep end (within 30 min window)
-		const reading = row.heartRateReadings.find((hr) => {
-			const t = parseHaeDateTime(hr.date).getTime();
-			return t >= sleepEnd && t <= sleepEnd + 30 * 60 * 1000;
-		});
-		if (reading) {
-			morningHrValues.push({ date: row.date, value: reading.avg });
-		}
-	}
-	morningHrValues.sort((a, b) => b.date.localeCompare(a.date));
+	// ── Morning Heart Rate (lowest HR reading within 30 min of waking) ───────
+	const morningHrByDate = computeMorningHeartRateByDate(rows);
+	const morningHrValues = Array.from(morningHrByDate, ([date, value]) => ({
+		date,
+		value,
+	})).sort((a, b) => b.date.localeCompare(a.date));
 	if (morningHrValues.length > 0) {
 		const latest = morningHrValues[0].value;
 		const avg =
@@ -780,8 +796,15 @@ export async function getHaeHistory(
 
 	if (rows.length === 0) return [];
 
-	return rows.map((row) => {
-		const snap = JSON.parse(row.data) as HaeDailySnapshot;
+	const parsed = rows.map((row) => ({
+		date: row.date,
+		snap: JSON.parse(row.data) as HaeDailySnapshot,
+	}));
+	const morningHrByDate = computeMorningHeartRateByDate(
+		parsed.map(({ date, snap }) => ({ date, ...snap })),
+	);
+
+	return parsed.map(({ date, snap }) => {
 		let sleepDurationMinutes: number | null = null;
 		let sleepEfficiencyPercent: number | null = null;
 		let deepMinutes: number | null = null;
@@ -796,14 +819,15 @@ export async function getHaeHistory(
 			}
 		}
 
+		const morningHr = morningHrByDate.get(date);
 		return {
-			date: row.date,
+			date,
 			rhr: snap.rhr ?? null,
 			hrv: snap.hrv ?? null,
 			respiratoryRate: snap.respiratoryRate ?? null,
 			spo2: snap.spo2 ?? null,
 			temperature: snap.temperature ?? null,
-			morningHeartRate: snap.morningHeartRate ?? null,
+			morningHeartRate: morningHr != null ? Math.round(morningHr) : null,
 			sleepDurationMinutes,
 			sleepEfficiencyPercent,
 			deepMinutes,
