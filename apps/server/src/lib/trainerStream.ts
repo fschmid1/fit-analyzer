@@ -132,13 +132,14 @@ export async function* createTrainerStream(options: {
 	model: string;
 	systemPrompt: string;
 	messages: ModelMessage[];
-	tools?: ToolDefinition[];
 	includeReasoning?: boolean;
 	metadata?: Record<string, unknown>;
 	threadId?: string;
+	tools?: ToolDefinition[];
+	messageId?: string;
 }): AsyncGenerator<StreamChunk> {
 	const runId = crypto.randomUUID();
-	const messageId = crypto.randomUUID();
+	const messageId = options.messageId ?? crypto.randomUUID();
 	const stepId = crypto.randomUUID();
 	let stepStarted = false;
 	let accumulatedText = "";
