@@ -1,4 +1,5 @@
 import type { ToolDefinition, ToolResult } from "@fit-analyzer/shared";
+import { debug } from "../debug.js";
 import type { ToolHandler } from "./registry.js";
 
 interface DuckDuckGoTopic {
@@ -54,72 +55,77 @@ export const webSearchDefinition: ToolDefinition = {
 };
 
 export const webSearchHandler: ToolHandler = async (args) => {
-	const query = typeof args.query === "string" ? args.query.trim() : "";
-	if (!query) {
+	const end = debug.time("tool", "web_search");
+	try {
+		const query = typeof args.query === "string" ? args.query.trim() : "";
+		if (!query) {
+			return {
+				id: "",
+				name: "web_search",
+				content: "",
+				display: null,
+				error: "Missing required argument: query",
+			};
+		}
+
+		const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+		debug.log("tool", "web_search fetch", { url });
+		const response = await fetch(url, {
+			headers: { Accept: "application/json" },
+			signal: AbortSignal.timeout(10_000),
+		});
+		if (!response.ok) {
+			return {
+				id: "",
+				name: "web_search",
+				content: "",
+				display: null,
+				error: `Search failed: ${response.status} ${response.statusText}`,
+			};
+		}
+
+		const data = (await response.json()) as DuckDuckGoResponse;
+		const abstract = data.AbstractText?.trim() || data.Abstract?.trim() || "";
+		const abstractUrl = data.AbstractURL?.trim() || "";
+		const heading = data.Heading?.trim() || "";
+		const answer = data.Answer?.trim() || "";
+		const related = flattenTopics(data.RelatedTopics).slice(0, 8);
+
+		const relatedDisplay = related.map((t) => ({
+			text: (t.Text ?? "").replace(/\s+-\s+\S+\s*$/, "").trim(),
+			url: t.FirstURL ?? "",
+		}));
+
+		const contentParts: string[] = [];
+		if (heading) contentParts.push(`Heading: ${heading}`);
+		if (abstract) contentParts.push(`Summary: ${abstract}`);
+		if (answer) contentParts.push(`Answer: ${answer}`);
+		if (relatedDisplay.length > 0) {
+			contentParts.push(
+				`Related topics:\n${relatedDisplay
+					.map((t, i) => `${i + 1}. ${t.text}${t.url ? ` (${t.url})` : ""}`)
+					.join("\n")}`,
+			);
+		}
+		if (contentParts.length === 0) {
+			contentParts.push(
+				`No results returned for query "${query}". DuckDuckGo Instant Answer only covers well-known topics.`,
+			);
+		}
+
 		return {
 			id: "",
 			name: "web_search",
-			content: "",
-			display: null,
-			error: "Missing required argument: query",
+			content: contentParts.join("\n\n"),
+			display: {
+				query,
+				heading,
+				abstract,
+				abstractUrl,
+				relatedTopics: relatedDisplay,
+			},
 		};
+	} finally {
+		end();
 	}
-
-	const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
-	const response = await fetch(url, {
-		headers: { Accept: "application/json" },
-		signal: AbortSignal.timeout(10_000),
-	});
-	if (!response.ok) {
-		return {
-			id: "",
-			name: "web_search",
-			content: "",
-			display: null,
-			error: `Search failed: ${response.status} ${response.statusText}`,
-		};
-	}
-
-	const data = (await response.json()) as DuckDuckGoResponse;
-	const abstract = data.AbstractText?.trim() || data.Abstract?.trim() || "";
-	const abstractUrl = data.AbstractURL?.trim() || "";
-	const heading = data.Heading?.trim() || "";
-	const answer = data.Answer?.trim() || "";
-	const related = flattenTopics(data.RelatedTopics).slice(0, 8);
-
-	const relatedDisplay = related.map((t) => ({
-		text: (t.Text ?? "").replace(/\s+-\s+\S+\s*$/, "").trim(),
-		url: t.FirstURL ?? "",
-	}));
-
-	const contentParts: string[] = [];
-	if (heading) contentParts.push(`Heading: ${heading}`);
-	if (abstract) contentParts.push(`Summary: ${abstract}`);
-	if (answer) contentParts.push(`Answer: ${answer}`);
-	if (relatedDisplay.length > 0) {
-		contentParts.push(
-			`Related topics:\n${relatedDisplay
-				.map((t, i) => `${i + 1}. ${t.text}${t.url ? ` (${t.url})` : ""}`)
-				.join("\n")}`,
-		);
-	}
-	if (contentParts.length === 0) {
-		contentParts.push(
-			`No results returned for query "${query}". DuckDuckGo Instant Answer only covers well-known topics.`,
-		);
-	}
-
-	const result: ToolResult = {
-		id: "",
-		name: "web_search",
-		content: contentParts.join("\n\n"),
-		display: {
-			query,
-			heading,
-			abstract,
-			abstractUrl,
-			relatedTopics: relatedDisplay,
-		},
-	};
-	return result;
 };

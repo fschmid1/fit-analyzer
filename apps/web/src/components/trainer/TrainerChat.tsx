@@ -178,11 +178,18 @@ export function TrainerChat({
 					setToolCalls((prev) => applyToolChunks(prev, chunk));
 				}
 
-				if (chunk.type === "RUN_FINISHED" || chunk.type === "RUN_ERROR") {
+				if (
+					chunk.type === "RUN_FINISHED" &&
+					chunk.finishReason !== "tool_calls"
+				) {
 					clearActiveTrainerStream(threadId);
 					clearTrainerDraft(threadId);
 					// `useTrainerHistoryPersist` will save the full merged history
 					// on the streaming → ready transition.
+				}
+				if (chunk.type === "RUN_ERROR") {
+					clearActiveTrainerStream(threadId);
+					clearTrainerDraft(threadId);
 				}
 			},
 			abortController.signal,

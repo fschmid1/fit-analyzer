@@ -1,5 +1,6 @@
 import type { StreamChunk } from "@tanstack/ai";
 import type { ToolStreamChunk } from "@fit-analyzer/shared";
+import { debug } from "./debug.js";
 
 type RegistryEntry = {
 	chunks: string[];
@@ -32,6 +33,11 @@ function getOrCreateEntry(streamId: string): RegistryEntry {
 function notify(entry: RegistryEntry) {
 	const waiters = Array.from(entry.waiters);
 	entry.waiters.clear();
+	debug.log("trainer-stream", "notify", {
+		waiterCount: waiters.length,
+		chunkCount: entry.chunks.length,
+		done: entry.done,
+	});
 	for (const waiter of waiters) waiter();
 }
 
@@ -47,17 +53,43 @@ export function startTrainerStreamProducer(
 	userId: string,
 ) {
 	const entry = getOrCreateEntry(streamId);
-	if (entry.chunks.length > 0 || entry.done) return;
+	if (entry.chunks.length > 0 || entry.done) {
+		debug.log(
+			"trainer-stream",
+			"startTrainerStreamProducer skipped (already active)",
+			{
+				streamId,
+				chunkCount: entry.chunks.length,
+				done: entry.done,
+			},
+		);
+		return;
+	}
 	entry.userId = userId;
+	debug.log("trainer-stream", "startTrainerStreamProducer begin", {
+		streamId,
+		userId,
+	});
 
 	void (async () => {
+		const start = Date.now();
 		try {
 			for await (const chunk of stream) {
 				entry.chunks.push(`data: ${JSON.stringify(chunk)}\n\n`);
 				notify(entry);
 			}
 			entry.chunks.push("data: [DONE]\n\n");
+			debug.log("trainer-stream", "producer stream complete", {
+				streamId,
+				elapsedMs: Date.now() - start,
+				chunkCount: entry.chunks.length,
+			});
 		} catch (error) {
+			debug.error("trainer-stream", "producer stream threw", {
+				streamId,
+				elapsedMs: Date.now() - start,
+				error: error instanceof Error ? error.message : String(error),
+			});
 			entry.chunks.push(
 				`data: ${JSON.stringify({
 					type: "RUN_ERROR",
@@ -93,6 +125,11 @@ export function createTrainerStreamConsumer(
 ): ReadableStream<string> {
 	const entry = getOrCreateEntry(streamId);
 	let waiter: (() => void) | null = null;
+	debug.log("trainer-stream", "createTrainerStreamConsumer", {
+		streamId,
+		chunkCount: entry.chunks.length,
+		done: entry.done,
+	});
 
 	return new ReadableStream<string>({
 		start(controller) {
@@ -115,6 +152,10 @@ export function createTrainerStreamConsumer(
 						entry.waiters.delete(waiter);
 					}
 					controller.close();
+					debug.log("trainer-stream", "consumer closed", {
+						streamId,
+						flushedChunks: index,
+					});
 				}
 			};
 
@@ -135,6 +176,7 @@ export function createTrainerStreamConsumer(
 			if (waiter) {
 				entry.waiters.delete(waiter);
 			}
+			debug.log("trainer-stream", "consumer cancelled", { streamId });
 		},
 	});
 }

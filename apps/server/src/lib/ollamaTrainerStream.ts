@@ -1,5 +1,6 @@
 import type { ModelMessage, StreamChunk } from "@tanstack/ai";
 import type { ToolDefinition } from "@fit-analyzer/shared";
+import { debug } from "./debug.js";
 
 type OllamaToolCall = {
 	id?: string;
@@ -150,6 +151,15 @@ export async function* createOllamaTrainerStream(options: {
 		| undefined;
 
 	const seenToolCallIds = new Set<string>();
+	let toolCallDeltaCount = 0;
+
+	debug.log("ollama-stream", "createOllamaTrainerStream start", {
+		model: options.model,
+		threadId: options.threadId,
+		messageCount: options.messages.length,
+		hasTools: Boolean(options.tools && options.tools.length > 0),
+		toolCount: options.tools?.length ?? 0,
+	});
 
 	yield {
 		type: "RUN_STARTED",
@@ -168,6 +178,11 @@ export async function* createOllamaTrainerStream(options: {
 		requestBody.tools = options.tools.map(toOllamaTool);
 	}
 
+	const fetchStart = Date.now();
+	debug.log("ollama-stream", "fetching /api/chat", {
+		url: `${options.baseUrl}/api/chat`,
+		model: options.model,
+	});
 	const response = await fetch(`${options.baseUrl}/api/chat`, {
 		method: "POST",
 		headers: {
@@ -179,10 +194,19 @@ export async function* createOllamaTrainerStream(options: {
 
 	if (!response.ok) {
 		const errorText = await response.text().catch(() => "");
+		debug.error("ollama-stream", "/api/chat non-OK", {
+			status: response.status,
+			statusText: response.statusText,
+			errorText,
+			elapsedMs: Date.now() - fetchStart,
+		});
 		throw new Error(
 			`Ollama stream failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
 		);
 	}
+	debug.log("ollama-stream", "/api/chat connected", {
+		elapsedMs: Date.now() - fetchStart,
+	});
 
 	for await (const chunk of parseOllamaNdjson(response)) {
 		if (chunk.done) {
@@ -258,6 +282,10 @@ export async function* createOllamaTrainerStream(options: {
 
 				if (!seenToolCallIds.has(id)) {
 					seenToolCallIds.add(id);
+					debug.log("ollama-stream", "tool call start", {
+						toolCallId: id,
+						toolName: name,
+					});
 					yield {
 						type: "TOOL_CALL_START",
 						toolCallId: id,
@@ -265,6 +293,7 @@ export async function* createOllamaTrainerStream(options: {
 						timestamp: Date.now(),
 					};
 					if (argsString) {
+						toolCallDeltaCount++;
 						yield {
 							type: "TOOL_CALL_ARGS",
 							toolCallId: id,
@@ -284,6 +313,15 @@ export async function* createOllamaTrainerStream(options: {
 		}
 	}
 
+	debug.log("ollama-stream", "stream consumed", {
+		finishReason,
+		accumulatedTextBytes: accumulatedText.length,
+		accumulatedReasoningBytes: accumulatedReasoning.length,
+		toolCallCount: seenToolCallIds.size,
+		toolCallDeltaCount,
+		usage,
+	});
+
 	const requiresToolContinuation = finishReason === "tool_calls";
 
 	if (textStarted && !requiresToolContinuation) {
@@ -295,14 +333,12 @@ export async function* createOllamaTrainerStream(options: {
 		};
 	}
 
-	if (!requiresToolContinuation) {
-		yield {
-			type: "RUN_FINISHED",
-			runId,
-			finishReason,
-			usage,
-			model: options.model,
-			timestamp: Date.now(),
-		};
-	}
+	yield {
+		type: "RUN_FINISHED",
+		runId,
+		finishReason,
+		usage,
+		model: options.model,
+		timestamp: Date.now(),
+	};
 }

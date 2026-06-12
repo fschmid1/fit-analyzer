@@ -205,7 +205,14 @@ export const CompareColumn = forwardRef<
 						setToolCalls((prev) => applyToolChunks(prev, chunk));
 					}
 
-					if (chunk.type === "RUN_FINISHED" || chunk.type === "RUN_ERROR") {
+					if (
+						chunk.type === "RUN_FINISHED" &&
+						chunk.finishReason !== "tool_calls"
+					) {
+						clearActiveTrainerStream(thread.id);
+						clearTrainerDraft(thread.id);
+					}
+					if (chunk.type === "RUN_ERROR") {
 						clearActiveTrainerStream(thread.id);
 						clearTrainerDraft(thread.id);
 					}
