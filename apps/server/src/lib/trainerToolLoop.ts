@@ -134,13 +134,33 @@ export async function* createTrainerToolLoop(
 		let chunkCount = 0;
 		let lastChunkType = "(none)";
 
+		// Track the first assistant message ID across rounds so that
+		// continuation rounds append to the same UIMessage instead of
+		// creating a duplicate assistant bubble.
+		let firstMessageId: string | null = null;
+
 		for await (const chunk of stream) {
 			chunkCount++;
 			lastChunkType = chunk.type;
+
 			if (!isFirstRound && chunk.type === "RUN_STARTED") {
 				// Suppress repeated RUN_STARTED on continuation rounds so the
 				// client only sees a single logical run envelope.
 				continue;
+			}
+
+			if (
+				(chunk.type === "TEXT_MESSAGE_START" ||
+					chunk.type === "TEXT_MESSAGE_CONTENT" ||
+					chunk.type === "TEXT_MESSAGE_END") &&
+				"messageId" in chunk
+			) {
+				if (firstMessageId === null) {
+					firstMessageId = chunk.messageId;
+				} else if (chunk.messageId !== firstMessageId) {
+					// Rewrite so the tanstack processor treats it as the same message.
+					(chunk as { messageId: string }).messageId = firstMessageId;
+				}
 			}
 
 			if (chunk.type === "TOOL_CALL_START") {
