@@ -1,10 +1,12 @@
 import { memo } from "react";
 import type { UIMessage } from "@tanstack/ai-react";
+import type { UIToolCall } from "@fit-analyzer/shared";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { DotsLoader } from "./DotsLoader";
 import { MessageActions } from "./MessageActions";
+import { ToolCallCard } from "./ToolCallCard";
 import {
 	getTextContent,
 	getThinkingContent,
@@ -19,6 +21,7 @@ interface ChatMessageRowProps {
 	isCurrentlyStreaming: boolean;
 	onDelete: (messageId: string) => void;
 	onRetry: (msgIndex: number) => void;
+	toolCalls?: UIToolCall[];
 }
 
 function ChatMessageRowInner({
@@ -27,6 +30,7 @@ function ChatMessageRowInner({
 	isCurrentlyStreaming,
 	onDelete,
 	onRetry,
+	toolCalls,
 }: ChatMessageRowProps) {
 	const isUser = msg.role === "user";
 	const text = getTextContent(msg);
@@ -58,6 +62,13 @@ function ChatMessageRowInner({
 
 	return (
 		<div className="flex flex-col items-start gap-1">
+			{toolCalls && toolCalls.length > 0 && (
+				<div className="ml-2 flex w-full max-w-[calc(100%-2rem)] flex-col gap-1.5 sm:max-w-[72%]">
+					{toolCalls.map((tc) => (
+						<ToolCallCard key={tc.id} toolCall={tc} />
+					))}
+				</div>
+			)}
 			<div className="min-w-0 max-w-[calc(100%-1rem)] overflow-hidden rounded-lg px-3 py-2.5 text-sm leading-relaxed break-words bg-[#1a1533]/80 border border-[rgba(139,92,246,0.1)] text-[#c4b5fd] [overflow-wrap:anywhere] sm:max-w-[80%] sm:px-4 sm:py-3 sm:text-base">
 				{thinkingContent && (
 					<ThinkingBlock

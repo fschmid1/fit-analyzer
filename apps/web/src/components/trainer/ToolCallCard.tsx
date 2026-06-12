@@ -1,0 +1,183 @@
+import { memo, useState } from "react";
+import type { LucideIcon } from "lucide-react";
+import {
+	Calendar,
+	ChevronDown,
+	ChevronRight,
+	CircleAlert,
+	CloudSun,
+	Globe,
+	Loader2,
+	Search,
+	TrendingUp,
+	Zap,
+} from "lucide-react";
+import type { UIToolCall } from "@fit-analyzer/shared";
+
+interface ToolMeta {
+	label: string;
+	icon: LucideIcon;
+	accent: string;
+}
+
+const TOOL_META: Record<string, ToolMeta> = {
+	web_search: {
+		label: "Web Search",
+		icon: Globe,
+		accent: "rgba(96, 165, 250, 0.7)", // blue
+	},
+	activity_lookup: {
+		label: "Activity Lookup",
+		icon: Search,
+		accent: "rgba(139, 92, 246, 0.7)", // violet
+	},
+	training_load: {
+		label: "Training Load",
+		icon: TrendingUp,
+		accent: "rgba(52, 211, 153, 0.7)", // emerald
+	},
+	weather_history: {
+		label: "Weather History",
+		icon: CloudSun,
+		accent: "rgba(251, 191, 36, 0.7)", // amber
+	},
+	power_curve: {
+		label: "Power Curve",
+		icon: Zap,
+		accent: "rgba(244, 114, 182, 0.7)", // pink
+	},
+	event_countdown: {
+		label: "Event Countdown",
+		icon: Calendar,
+		accent: "rgba(45, 212, 191, 0.7)", // teal
+	},
+};
+
+function metaFor(name: string): ToolMeta {
+	return (
+		TOOL_META[name] ?? {
+			label: name,
+			icon: Search,
+			accent: "rgba(139, 92, 246, 0.7)",
+		}
+	);
+}
+
+function summarizeArgs(args: Record<string, unknown>): string {
+	const keys = Object.keys(args);
+	if (keys.length === 0) return "";
+	const first = keys[0];
+	const value = args[first];
+	if (typeof value === "string") {
+		return value.length > 80 ? `${value.slice(0, 77)}…` : value;
+	}
+	if (typeof value === "number" || typeof value === "boolean") {
+		return `${first}: ${String(value)}`;
+	}
+	return `${keys.length} argument${keys.length === 1 ? "" : "s"}`;
+}
+
+function renderDisplay(display: unknown): string {
+	if (display == null) return "";
+	if (typeof display === "string") return display;
+	if (Array.isArray(display)) {
+		return display
+			.map((item) => {
+				if (item && typeof item === "object") {
+					const obj = item as Record<string, unknown>;
+					const text = (obj.text ?? obj.name ?? "") as string;
+					const url = (obj.url ?? obj.uri ?? "") as string;
+					return url ? `${text} (${url})` : text;
+				}
+				return String(item);
+			})
+			.filter(Boolean)
+			.join("\n");
+	}
+	if (typeof display === "object") {
+		try {
+			return JSON.stringify(display, null, 2);
+		} catch {
+			return "";
+		}
+	}
+	return String(display);
+}
+
+interface ToolCallCardProps {
+	toolCall: UIToolCall;
+	defaultExpanded?: boolean;
+}
+
+function ToolCallCardInner({ toolCall, defaultExpanded }: ToolCallCardProps) {
+	const meta = metaFor(toolCall.name);
+	const Icon = meta.icon;
+	const isExecuting = toolCall.status === "executing";
+	const isError = toolCall.status === "error";
+	const [expanded, setExpanded] = useState(!!defaultExpanded);
+
+	const summary = summarizeArgs(toolCall.arguments);
+	const displayText = toolCall.result
+		? renderDisplay(toolCall.result.display)
+		: "";
+
+	return (
+		<div
+			className="overflow-hidden rounded-lg border border-[rgba(139,92,246,0.1)] bg-[#1a1533]/80 text-xs"
+			style={{ borderLeft: `3px solid ${meta.accent}` }}
+		>
+			<button
+				type="button"
+				onClick={() => !isExecuting && setExpanded((v) => !v)}
+				className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[#241e3d]/60 disabled:cursor-default"
+				disabled={isExecuting}
+			>
+				{isExecuting ? (
+					<Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-[#c4b5fd]" />
+				) : (
+					<Icon
+						className="h-3.5 w-3.5 shrink-0"
+						style={{ color: meta.accent }}
+					/>
+				)}
+				<span className="truncate font-medium text-[#c4b5fd]">
+					{meta.label}
+				</span>
+				{isError && (
+					<CircleAlert
+						className="ml-1 h-3.5 w-3.5 shrink-0 text-rose-400"
+						aria-label="Tool error"
+					/>
+				)}
+				{summary && (
+					<span className="ml-1 truncate text-[#7c6fa0]">— {summary}</span>
+				)}
+				<span className="ml-auto flex shrink-0 items-center text-[#4a4468]">
+					{isExecuting ? (
+						<span className="text-[10px] uppercase tracking-wide">Running</span>
+					) : expanded ? (
+						<ChevronDown className="h-3.5 w-3.5" />
+					) : (
+						<ChevronRight className="h-3.5 w-3.5" />
+					)}
+				</span>
+			</button>
+
+			{expanded && !isExecuting && (
+				<div className="border-t border-[rgba(139,92,246,0.08)] bg-[#120f23]/70 px-3 py-2 text-[11px] text-[#c4b5fd]">
+					{isError ? (
+						<p className="text-rose-400">
+							{toolCall.result?.error ?? "Tool call failed."}
+						</p>
+					) : toolCall.result ? (
+						<pre className="whitespace-pre-wrap break-words font-sans leading-relaxed [overflow-wrap:anywhere]">
+							{toolCall.result.content || displayText}
+						</pre>
+					) : null}
+				</div>
+			)}
+		</div>
+	);
+}
+
+export const ToolCallCard = memo(ToolCallCardInner);

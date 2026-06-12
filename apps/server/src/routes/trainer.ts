@@ -9,12 +9,12 @@ import { db } from "../db.js";
 import { env } from "../env.js";
 import { getCoachModelSettings } from "../lib/coachModelSettings.js";
 import { getOllamaModels } from "../lib/ollamaModelCache.js";
-import { createOllamaTrainerStream } from "../lib/ollamaTrainerStream.js";
 import {
 	parseCoachingMarkdown,
 	serializeCoachingMarkdown,
 } from "../lib/parseCoachingMarkdown.js";
-import { createTrainerStream } from "../lib/trainerStream.js";
+import { getToolDefinitions } from "../lib/tools/registry.js";
+import { createTrainerToolLoop } from "../lib/trainerToolLoop.js";
 import {
 	createTrainerStreamConsumer,
 	hasActiveTrainerStream,
@@ -250,40 +250,28 @@ trainer.post("/chat", async (c) => {
 
 	if (!hasActiveTrainerStream(streamId)) {
 		const systemPrompt = await buildSystemPrompt(userId);
+		const tools = getToolDefinitions();
+		const metadata = providerConfig.includeReasoning
+			? getKimiRequestMetadata(body, userId)
+			: undefined;
 
-		if (providerConfig.provider === "ollama-cloud") {
-			startTrainerStreamProducer(
-				streamId,
-				createOllamaTrainerStream({
-					baseUrl: providerConfig.baseUrl,
-					apiKey: providerConfig.apiKey,
-					model,
-					systemPrompt,
-					messages: modelMessages,
-					threadId: getStringBodyValue(body.threadId),
-				}),
+		startTrainerStreamProducer(
+			streamId,
+			createTrainerToolLoop({
+				baseUrl: providerConfig.baseUrl,
+				apiKey: providerConfig.apiKey,
+				model,
+				systemPrompt,
+				messages: modelMessages,
+				provider: providerConfig.provider,
+				includeReasoning: providerConfig.includeReasoning,
+				metadata,
+				threadId: getStringBodyValue(body.threadId),
 				userId,
-			);
-		} else {
-			const metadata = providerConfig.includeReasoning
-				? getKimiRequestMetadata(body, userId)
-				: undefined;
-
-			startTrainerStreamProducer(
-				streamId,
-				createTrainerStream({
-					baseUrl: providerConfig.baseUrl,
-					apiKey: providerConfig.apiKey,
-					model,
-					systemPrompt,
-					messages: modelMessages,
-					includeReasoning: providerConfig.includeReasoning,
-					metadata,
-					threadId: getStringBodyValue(body.threadId),
-				}),
-				userId,
-			);
-		}
+				tools,
+			}),
+			userId,
+		);
 	}
 
 	return new Response(createTrainerStreamConsumer(streamId), {

@@ -1,4 +1,11 @@
 import type { ModelMessage, StreamChunk } from "@tanstack/ai";
+import type { ToolDefinition } from "@fit-analyzer/shared";
+
+type OllamaToolCall = {
+	id?: string;
+	type?: "function";
+	function?: { name?: string; arguments?: unknown };
+};
 
 type OllamaStreamChunk = {
 	model?: string;
@@ -7,8 +14,10 @@ type OllamaStreamChunk = {
 		role?: string;
 		content?: string;
 		thinking?: string;
+		tool_calls?: OllamaToolCall[];
 	};
 	done?: boolean;
+	done_reason?: string;
 	prompt_eval_count?: number;
 	eval_count?: number;
 };
@@ -30,14 +39,26 @@ function messageContentToString(
 	return text || null;
 }
 
+function toOllamaTool(tool: ToolDefinition) {
+	return {
+		type: "function" as const,
+		function: {
+			name: tool.name,
+			description: tool.description,
+			parameters: tool.parameters,
+		},
+	};
+}
+
 function toOllamaMessages(systemPrompt: string, messages: ModelMessage[]) {
 	const mapped = messages
 		.map((message) => {
 			const content = messageContentToString(message.content);
-			if (content == null) return null;
+			if (content == null && !message.toolCalls) return null;
 			return {
 				role: message.role,
-				content,
+				content: content ?? "",
+				...(message.toolCalls ? { tool_calls: message.toolCalls } : {}),
 			};
 		})
 		.filter(
@@ -79,12 +100,36 @@ async function* parseOllamaNdjson(
 	}
 }
 
+function normalizeToolArgs(args: unknown): string {
+	if (typeof args === "string") return args;
+	if (args == null) return "";
+	try {
+		return JSON.stringify(args);
+	} catch {
+		return "";
+	}
+}
+
+function safeParseArgs(raw: string): Record<string, unknown> | null {
+	if (!raw.trim()) return {};
+	try {
+		const parsed = JSON.parse(raw);
+		if (parsed && typeof parsed === "object") {
+			return parsed as Record<string, unknown>;
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
+
 export async function* createOllamaTrainerStream(options: {
 	baseUrl: string;
 	apiKey: string;
 	model: string;
 	systemPrompt: string;
 	messages: ModelMessage[];
+	tools?: ToolDefinition[];
 	threadId?: string;
 }): AsyncGenerator<StreamChunk> {
 	const runId = crypto.randomUUID();
@@ -94,12 +139,8 @@ export async function* createOllamaTrainerStream(options: {
 	let textStarted = false;
 	let accumulatedText = "";
 	let accumulatedReasoning = "";
-	const finishReason:
-		| "stop"
-		| "length"
-		| "content_filter"
-		| "tool_calls"
-		| null = "stop";
+	let finishReason: "stop" | "length" | "content_filter" | "tool_calls" | null =
+		"stop";
 	let usage:
 		| {
 				promptTokens: number;
@@ -107,6 +148,8 @@ export async function* createOllamaTrainerStream(options: {
 				totalTokens: number;
 		  }
 		| undefined;
+
+	const seenToolCallIds = new Set<string>();
 
 	yield {
 		type: "RUN_STARTED",
@@ -116,17 +159,22 @@ export async function* createOllamaTrainerStream(options: {
 		timestamp: Date.now(),
 	};
 
+	const requestBody: Record<string, unknown> = {
+		model: options.model,
+		messages: toOllamaMessages(options.systemPrompt, options.messages),
+		stream: true,
+	};
+	if (options.tools && options.tools.length > 0) {
+		requestBody.tools = options.tools.map(toOllamaTool);
+	}
+
 	const response = await fetch(`${options.baseUrl}/api/chat`, {
 		method: "POST",
 		headers: {
 			Authorization: `Bearer ${options.apiKey}`,
 			"Content-Type": "application/json",
 		},
-		body: JSON.stringify({
-			model: options.model,
-			messages: toOllamaMessages(options.systemPrompt, options.messages),
-			stream: true,
-		}),
+		body: JSON.stringify(requestBody),
 	});
 
 	if (!response.ok) {
@@ -143,6 +191,13 @@ export async function* createOllamaTrainerStream(options: {
 				completionTokens: chunk.eval_count ?? 0,
 				totalTokens: (chunk.prompt_eval_count ?? 0) + (chunk.eval_count ?? 0),
 			};
+			if (chunk.done_reason === "length") {
+				finishReason = "length";
+			} else if (seenToolCallIds.size > 0) {
+				finishReason = "tool_calls";
+			} else {
+				finishReason = "stop";
+			}
 			break;
 		}
 
@@ -194,9 +249,44 @@ export async function* createOllamaTrainerStream(options: {
 				timestamp: Date.now(),
 			};
 		}
+
+		if (message?.tool_calls) {
+			for (const tc of message.tool_calls) {
+				const id = tc.id ?? `tool_${crypto.randomUUID()}`;
+				const name = tc.function?.name ?? "";
+				const argsString = normalizeToolArgs(tc.function?.arguments);
+
+				if (!seenToolCallIds.has(id)) {
+					seenToolCallIds.add(id);
+					yield {
+						type: "TOOL_CALL_START",
+						toolCallId: id,
+						toolName: name,
+						timestamp: Date.now(),
+					};
+					if (argsString) {
+						yield {
+							type: "TOOL_CALL_ARGS",
+							toolCallId: id,
+							delta: argsString,
+							timestamp: Date.now(),
+						};
+					}
+					yield {
+						type: "TOOL_CALL_END",
+						toolCallId: id,
+						toolName: name,
+						input: safeParseArgs(argsString),
+						timestamp: Date.now(),
+					};
+				}
+			}
+		}
 	}
 
-	if (textStarted) {
+	const requiresToolContinuation = finishReason === "tool_calls";
+
+	if (textStarted && !requiresToolContinuation) {
 		yield {
 			type: "TEXT_MESSAGE_END",
 			messageId,
@@ -205,12 +295,14 @@ export async function* createOllamaTrainerStream(options: {
 		};
 	}
 
-	yield {
-		type: "RUN_FINISHED",
-		runId,
-		finishReason,
-		usage,
-		model: options.model,
-		timestamp: Date.now(),
-	};
+	if (!requiresToolContinuation) {
+		yield {
+			type: "RUN_FINISHED",
+			runId,
+			finishReason,
+			usage,
+			model: options.model,
+			timestamp: Date.now(),
+		};
+	}
 }

@@ -38,6 +38,14 @@ export type {
 	StravaClub,
 	StravaClubEvent,
 	HealthHistoryEntry,
+	ToolParameter,
+	ToolDefinition,
+	ToolCall,
+	ToolResult,
+	UIToolCall,
+	UIToolCallStatus,
+	ToolStreamChunk,
+	TrainerStreamChunk,
 } from "./types.js";
 
 export {

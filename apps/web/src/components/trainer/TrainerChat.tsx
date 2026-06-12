@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useChat } from "@tanstack/ai-react";
 import type { UIMessage } from "@tanstack/ai-react";
+import type { StreamChunk } from "@tanstack/ai";
+import type { ToolStreamChunk, UIToolCall } from "@fit-analyzer/shared";
 import {
 	ArrowDown,
 	ArrowUp,
@@ -31,16 +33,21 @@ import {
 } from "../../lib/trainerStreamState";
 import { ModelPicker } from "./ModelPicker";
 import {
+	applyResumedChunk,
+	applyToolChunks,
 	getTextContent,
+	isToolChunk,
+	stripTrailingAssistant,
+	streamResumedChat,
 	toTrainerMessage,
 	toUIMessage,
-	stripTrailingAssistant,
-	applyResumedChunk,
-	streamResumedChat,
+	toolCallsForMessage,
+	trailingToolCalls,
 } from "./trainerHelpers";
 import { useTrainerHistoryPersist } from "./useTrainerHistoryPersist";
 import { DotsLoader } from "./DotsLoader";
 import { ChatMessageRow } from "./ChatMessageRow";
+import { ToolCallCard } from "./ToolCallCard";
 
 const PAGE_SIZE = 20;
 const TOP_SENTINEL_THRESHOLD_PX = 200;
@@ -90,6 +97,14 @@ export function TrainerChat({
 	if (connectionRef.current === null) {
 		connectionRef.current = createTrainerStreamConnection(threadId);
 	}
+	const [toolCalls, setToolCalls] = useState<UIToolCall[]>([]);
+	const toolCallsRef = useRef<UIToolCall[]>([]);
+	toolCallsRef.current = toolCalls;
+	const handleChunk = useCallback((chunk: StreamChunk | ToolStreamChunk) => {
+		if (isToolChunk(chunk)) {
+			setToolCalls((prev) => applyToolChunks(prev, chunk));
+		}
+	}, []);
 	const {
 		messages,
 		sendMessage,
@@ -103,6 +118,7 @@ export function TrainerChat({
 		connection: connectionRef.current,
 		initialMessages,
 		body: { threadId },
+		onChunk: handleChunk as unknown as (chunk: StreamChunk) => void,
 	});
 
 	const inputRef = useRef(initialInput);
@@ -151,12 +167,16 @@ export function TrainerChat({
 		const abortController = new AbortController();
 		let baseMessages = stripTrailingAssistant(initialMessages);
 		setMessages(baseMessages);
+		setToolCalls([]);
 
 		streamResumedChat(
 			activeStream.streamId,
 			(chunk) => {
 				baseMessages = applyResumedChunk(baseMessages, chunk);
 				setMessages(baseMessages);
+				if (isToolChunk(chunk)) {
+					setToolCalls((prev) => applyToolChunks(prev, chunk));
+				}
 
 				if (chunk.type === "RUN_FINISHED" || chunk.type === "RUN_ERROR") {
 					clearActiveTrainerStream(threadId);
@@ -379,6 +399,7 @@ export function TrainerChat({
 		setHasInput(false);
 		// Optimistic total so the next save recognises the new tail.
 		setTotalServerMessages((n) => n + 2);
+		setToolCalls([]);
 		await sendMessage(text);
 	}, [isLoading, sendMessage]);
 
@@ -398,6 +419,9 @@ export function TrainerChat({
 			const nextMessages = messages.filter((m) => m.id !== messageId);
 			setMessages(nextMessages);
 			setTotalServerMessages((n) => Math.max(0, n - 1));
+			// Tool calls are ephemeral and grouped with the latest assistant
+			// message; clearing them on delete keeps the UI consistent.
+			setToolCalls([]);
 			(async () => {
 				const full = await ensureFullHistory(nextMessages);
 				const toSave = full
@@ -522,6 +546,11 @@ export function TrainerChat({
 					{messages.map((msg, msgIndex) => {
 						const isLastMsg = msg.id === lastMessageId;
 						const isCurrentlyStreaming = isLastMsg && status === "streaming";
+						const callsForMsg = toolCallsForMessage(
+							messages,
+							toolCalls,
+							msg.id,
+						);
 
 						const handleRetry = async () => {
 							const msgText = getTextContent(msg);
@@ -529,6 +558,7 @@ export function TrainerChat({
 								if (isLoading) stop();
 								const truncated = messages.slice(0, msgIndex);
 								setMessages(truncated);
+								setToolCalls([]);
 								const full = await ensureFullHistory(truncated);
 								const toSave = full
 									.filter((m) => m.role === "user" || m.role === "assistant")
@@ -543,6 +573,7 @@ export function TrainerChat({
 								messages.findLastIndex((m) => m.role === "assistant") ===
 								msgIndex;
 							if (isLastAssistant) {
+								setToolCalls([]);
 								await reload();
 								return;
 							}
@@ -555,6 +586,7 @@ export function TrainerChat({
 							if (isLoading) stop();
 							const truncated = messages.slice(0, lastUserIndex);
 							setMessages(truncated);
+							setToolCalls([]);
 							const full = await ensureFullHistory(truncated);
 							const toSave = full
 								.filter((m) => m.role === "user" || m.role === "assistant")
@@ -574,9 +606,18 @@ export function TrainerChat({
 								isCurrentlyStreaming={isCurrentlyStreaming}
 								onDelete={() => setConfirmDeleteMessageId(msg.id)}
 								onRetry={handleRetry}
+								toolCalls={callsForMsg}
 							/>
 						);
 					})}
+
+					{trailingToolCalls(messages, toolCalls).length > 0 && (
+						<div className="ml-2 flex max-w-[calc(100%-1rem)] flex-col gap-1.5 sm:max-w-[72%]">
+							{trailingToolCalls(messages, toolCalls).map((tc) => (
+								<ToolCallCard key={tc.id} toolCall={tc} defaultExpanded />
+							))}
+						</div>
+					)}
 
 					{status === "submitted" && (
 						<div className="flex justify-start">
