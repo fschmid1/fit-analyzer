@@ -13,13 +13,14 @@ import {
 	weatherHistoryDefinition,
 	weatherHistoryHandler,
 } from "./weatherHistory.js";
+import { webFetchDefinition, webFetchHandler } from "./webFetch.js";
 
 let initialized = false;
 
 export function initTools(): void {
 	if (initialized) return;
 	initialized = true;
-	// registerTool(webSearchDefinition, webSearchHandler);
+	registerTool(webFetchDefinition, webFetchHandler);
 	registerTool(activityLookupDefinition, activityLookupHandler);
 	registerTool(trainingLoadDefinition, trainingLoadHandler);
 	registerTool(weatherHistoryDefinition, weatherHistoryHandler);
