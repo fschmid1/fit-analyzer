@@ -33,9 +33,11 @@ const BASE_SYSTEM_PROMPT =
 	"and give practical training advice.\n\n" +
 	"When you reference a specific section of a ride, use the highlight_chart tool to draw the user's attention " +
 	"to that time range on the chart. This creates a visual overlay so the user can see exactly which portion " +
-	"you are discussing.\n\n" +
+	"you are discussing. Call highlight_chart at most once per interval or section you discuss.\n\n" +
 	"When the athlete confirms a value you suggested (e.g. FTP, max HR, goal event), use the update_profile tool " +
-	"to persist it to their profile. Always ask for confirmation before updating their profile.";
+	"to persist it to their profile. Always ask for confirmation before updating their profile.\n\n" +
+	"Be efficient with tool calls. Prefer making parallel calls in a single round rather than sequential rounds. " +
+	"Avoid redundant lookups — if you already retrieved activity data, do not fetch it again.";
 
 async function buildSystemPrompt(
 	userId: string,

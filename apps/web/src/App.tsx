@@ -314,6 +314,7 @@ function App() {
 	const analysisContent = activity ? (
 		<AnalysisView
 			activity={activity}
+			activityId={activityId ?? ""}
 			selectionRange={selectionRange}
 			chartZoom={chartZoom}
 			chartIntervalRanges={chartIntervalRanges}

@@ -425,6 +425,7 @@ export type ToolStreamChunk = {
 };
 
 export interface ChartHighlight {
+	activityId?: string;
 	startSeconds: number;
 	endSeconds: number;
 	label?: string;

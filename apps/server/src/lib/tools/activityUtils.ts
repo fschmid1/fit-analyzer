@@ -110,11 +110,13 @@ export function resolveActivityId(
 ): string | null {
 	const explicitId =
 		typeof args.activityId === "string" ? args.activityId.trim() : "";
-	if (explicitId) return explicitId;
+	if (explicitId && explicitId !== "general") return explicitId;
 
 	if (!context.threadId) return null;
 	const row = threadActivityStmt.get(context.threadId, context.userId) as
 		| { activity_id: string }
 		| undefined;
-	return row?.activity_id ?? null;
+	const threadActivityId = row?.activity_id;
+	if (!threadActivityId || threadActivityId === "general") return null;
+	return threadActivityId;
 }

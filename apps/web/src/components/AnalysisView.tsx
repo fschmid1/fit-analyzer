@@ -18,6 +18,7 @@ import {
 
 interface AnalysisViewProps {
 	activity: ParsedActivity;
+	activityId: string;
 	selectionRange: [number, number] | null;
 	chartZoom: [number, number] | null;
 	chartIntervalRanges: [number, number][];
@@ -35,6 +36,7 @@ interface AnalysisViewProps {
 
 export function AnalysisView({
 	activity,
+	activityId,
 	selectionRange,
 	chartZoom,
 	chartIntervalRanges,
@@ -49,12 +51,16 @@ export function AnalysisView({
 	onRemoveCustomInterval,
 	onSendToTrainer,
 }: AnalysisViewProps) {
-	const [chartHighlights, setChartHighlights] =
+	const [allHighlights, setAllHighlights] =
 		useState<ChartHighlight[]>(getChartHighlights);
 
 	useEffect(() => {
-		return subscribeChartHighlights(setChartHighlights);
+		return subscribeChartHighlights(setAllHighlights);
 	}, []);
+
+	const chartHighlights = allHighlights.filter(
+		(hl) => !hl.activityId || hl.activityId === activityId,
+	);
 
 	return (
 		<div className="flex-1 flex flex-col overflow-y-auto pt-6 animate-[fadeIn_0.4s_ease-out]">

@@ -123,12 +123,14 @@ export function TrainerChat({
 				!chunk.error
 			) {
 				const d = chunk.display as {
+					activityId?: string;
 					startSeconds: number;
 					endSeconds: number;
 					label?: string;
 					color?: string;
 				};
 				addChartHighlight({
+					activityId: d.activityId,
 					startSeconds: d.startSeconds,
 					endSeconds: d.endSeconds,
 					label: d.label,

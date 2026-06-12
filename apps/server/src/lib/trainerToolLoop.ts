@@ -6,7 +6,7 @@ import type { ToolHandlerContext } from "./tools/registry.js";
 import { createOllamaTrainerStream } from "./ollamaTrainerStream.js";
 import { createTrainerStream } from "./trainerStream.js";
 
-const DEFAULT_MAX_TOOL_ROUNDS = 5;
+const DEFAULT_MAX_TOOL_ROUNDS = 10;
 
 export interface TrainerToolLoopOptions {
 	baseUrl: string;
