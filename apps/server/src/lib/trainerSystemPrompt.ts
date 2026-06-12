@@ -353,5 +353,5 @@ export function formatCurrentActivity(
 		);
 	}
 
-	return `\n## Current Activity\nThe athlete is currently viewing this activity. Use the current_activity tool for full details.\n${lines.join("\n")}\n`;
+	return `\n## Current Activity\nThe athlete is currently viewing this activity. Use the activity_lookup tool for full details.\n${lines.join("\n")}\n`;
 }

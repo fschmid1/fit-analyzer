@@ -57,11 +57,7 @@ const TOOL_META: Record<string, ToolMeta> = {
 		icon: Calendar,
 		accent: "rgba(45, 212, 191, 0.7)", // teal
 	},
-	current_activity: {
-		label: "Current Activity",
-		icon: Search,
-		accent: "rgba(167, 139, 250, 0.7)", // violet-light
-	},
+
 	zone_analysis: {
 		label: "Zone Analysis",
 		icon: BarChart3,

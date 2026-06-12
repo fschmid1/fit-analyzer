@@ -12,10 +12,6 @@ import {
 	compareActivitiesHandler,
 } from "./compareActivities.js";
 import {
-	currentActivityDefinition,
-	currentActivityHandler,
-} from "./currentActivity.js";
-import {
 	eventCountdownDefinition,
 	eventCountdownHandler,
 } from "./eventCountdown.js";
@@ -56,7 +52,6 @@ export function initTools(): void {
 	registerTool(weatherHistoryDefinition, weatherHistoryHandler);
 	registerTool(powerCurveDefinition, powerCurveHandler);
 	registerTool(eventCountdownDefinition, eventCountdownHandler);
-	registerTool(currentActivityDefinition, currentActivityHandler);
 	registerTool(zoneAnalysisDefinition, zoneAnalysisHandler);
 	registerTool(analyzeIntervalsDefinition, analyzeIntervalsHandler);
 	registerTool(compareActivitiesDefinition, compareActivitiesHandler);
