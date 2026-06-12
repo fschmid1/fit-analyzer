@@ -2,7 +2,10 @@ import {
 	activityLookupDefinition,
 	activityLookupHandler,
 } from "./activityLookup.js";
-
+import {
+	analyzeIntervalsDefinition,
+	analyzeIntervalsHandler,
+} from "./analyzeIntervals.js";
 import { cardiacDriftDefinition, cardiacDriftHandler } from "./cardiacDrift.js";
 import {
 	compareActivitiesDefinition,
@@ -55,7 +58,7 @@ export function initTools(): void {
 	registerTool(eventCountdownDefinition, eventCountdownHandler);
 	registerTool(currentActivityDefinition, currentActivityHandler);
 	registerTool(zoneAnalysisDefinition, zoneAnalysisHandler);
-
+	registerTool(analyzeIntervalsDefinition, analyzeIntervalsHandler);
 	registerTool(compareActivitiesDefinition, compareActivitiesHandler);
 	registerTool(segmentFinderDefinition, segmentFinderHandler);
 	registerTool(trendAnalysisDefinition, trendAnalysisHandler);

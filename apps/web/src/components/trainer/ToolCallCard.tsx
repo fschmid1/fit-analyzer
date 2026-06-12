@@ -67,7 +67,11 @@ const TOOL_META: Record<string, ToolMeta> = {
 		icon: BarChart3,
 		accent: "rgba(34, 197, 94, 0.7)", // green
 	},
-
+	analyze_intervals: {
+		label: "Analyze Intervals",
+		icon: Activity,
+		accent: "rgba(251, 146, 60, 0.7)", // orange
+	},
 	compare_activities: {
 		label: "Compare Activities",
 		icon: Search,
