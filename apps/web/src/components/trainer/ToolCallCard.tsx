@@ -1,6 +1,8 @@
 import { memo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
+	Activity,
+	BarChart3,
 	Calendar,
 	ChevronDown,
 	ChevronRight,
@@ -8,6 +10,7 @@ import {
 	CloudSun,
 	Globe,
 	Loader2,
+	Mountain,
 	Search,
 	TrendingUp,
 	Zap,
@@ -50,6 +53,31 @@ const TOOL_META: Record<string, ToolMeta> = {
 		label: "Event Countdown",
 		icon: Calendar,
 		accent: "rgba(45, 212, 191, 0.7)", // teal
+	},
+	current_activity: {
+		label: "Current Activity",
+		icon: Search,
+		accent: "rgba(167, 139, 250, 0.7)", // violet-light
+	},
+	zone_analysis: {
+		label: "Zone Analysis",
+		icon: BarChart3,
+		accent: "rgba(34, 197, 94, 0.7)", // green
+	},
+	analyze_intervals: {
+		label: "Analyze Intervals",
+		icon: Activity,
+		accent: "rgba(251, 146, 60, 0.7)", // orange
+	},
+	compare_activities: {
+		label: "Compare Activities",
+		icon: Search,
+		accent: "rgba(96, 165, 250, 0.7)", // blue
+	},
+	segment_finder: {
+		label: "Segment Finder",
+		icon: Mountain,
+		accent: "rgba(163, 230, 53, 0.7)", // lime
 	},
 };
 

@@ -1,9 +1,14 @@
 import type { ToolDefinition, ToolResult } from "@fit-analyzer/shared";
 import { debug } from "../debug.js";
 
+export type ToolHandlerContext = {
+	userId: string;
+	threadId?: string;
+};
+
 export type ToolHandler = (
 	args: Record<string, unknown>,
-	userId: string,
+	context: ToolHandlerContext,
 ) => Promise<ToolResult>;
 
 export interface ToolEntry {
@@ -32,13 +37,21 @@ export function getTool(name: string): ToolEntry | undefined {
 export async function executeTool(
 	name: string,
 	args: Record<string, unknown>,
-	userId: string,
+	context: ToolHandlerContext,
 ): Promise<ToolResult> {
-	debug.log("tool-registry", "executeTool start", { name, userId, args });
+	debug.log("tool-registry", "executeTool start", {
+		name,
+		userId: context.userId,
+		threadId: context.threadId,
+		args,
+	});
 	const start = Date.now();
 	const tool = tools.get(name);
 	if (!tool) {
-		debug.warn("tool-registry", "executeTool unknown tool", { name, userId });
+		debug.warn("tool-registry", "executeTool unknown tool", {
+			name,
+			userId: context.userId,
+		});
 		return {
 			id: "",
 			name,
@@ -48,10 +61,10 @@ export async function executeTool(
 		};
 	}
 	try {
-		const result = await tool.handler(args, userId);
+		const result = await tool.handler(args, context);
 		debug.log("tool-registry", "executeTool end", {
 			name,
-			userId,
+			userId: context.userId,
 			elapsedMs: Date.now() - start,
 			hasError: Boolean(result.error),
 			contentBytes: result.content.length,
@@ -60,7 +73,7 @@ export async function executeTool(
 	} catch (error) {
 		debug.error("tool-registry", "executeTool threw", {
 			name,
-			userId,
+			userId: context.userId,
 			elapsedMs: Date.now() - start,
 			error: error instanceof Error ? error.message : String(error),
 		});

@@ -1,16 +1,8 @@
 import { db } from "../../db.js";
 import { debug } from "../debug.js";
-import {
-	buildPowerBySecond,
-	peakPowerFromSeconds,
-	type ActivitySummary,
-	type Interval,
-	type LapMarker,
-	type StoredRecord,
-	type ToolDefinition,
-	type ToolResult,
-} from "@fit-analyzer/shared";
+import type { ToolDefinition, ToolResult } from "@fit-analyzer/shared";
 import type { ToolHandler } from "./registry.js";
+import { type ActivityRow, rowToActivity } from "./activityUtils.js";
 
 const getByIdStmt = db.prepare(
 	`SELECT id, date, summary, records, laps, intervals, interval_minutes, custom_ranges, strava_activity_id as stravaActivityId
@@ -32,73 +24,6 @@ const listByDateStmt = db.prepare(
      ORDER BY created_at DESC`,
 );
 
-interface ActivityRow {
-	id: string;
-	date: string;
-	summary: string;
-	records: string;
-	laps: string;
-	intervals: string;
-	interval_minutes: string;
-	custom_ranges: string;
-	stravaActivityId: string | null;
-}
-
-interface PeakPowers {
-	peak5s: number | null;
-	peak30s: number | null;
-	peak1min: number | null;
-	peak5min: number | null;
-	peak10min: number | null;
-	peak20min: number | null;
-	peak60min: number | null;
-}
-
-function computePeakPowers(
-	records: StoredRecord[],
-	summary: ActivitySummary,
-): PeakPowers {
-	const mapped = records.map((r) => ({
-		timestamp: new Date(r.timestamp),
-		elapsedSeconds: r.elapsedSeconds,
-		power: r.power,
-		heartRate: r.heartRate,
-		cadence: r.cadence,
-		speed: r.speed,
-		gradient: r.gradient,
-		lat: r.lat,
-		lng: r.lng,
-	}));
-	const powerBySecond = buildPowerBySecond(mapped);
-	return {
-		peak5s: peakPowerFromSeconds(powerBySecond, 5),
-		peak30s: peakPowerFromSeconds(powerBySecond, 30),
-		peak1min: summary.peak1minPower ?? peakPowerFromSeconds(powerBySecond, 60),
-		peak5min: summary.peak5minPower ?? peakPowerFromSeconds(powerBySecond, 300),
-		peak10min: peakPowerFromSeconds(powerBySecond, 600),
-		peak20min:
-			summary.peak20minPower ?? peakPowerFromSeconds(powerBySecond, 1200),
-		peak60min: peakPowerFromSeconds(powerBySecond, 3600),
-	};
-}
-
-function rowToDisplay(row: ActivityRow) {
-	const summary = JSON.parse(row.summary) as ActivitySummary;
-	const records = JSON.parse(row.records) as StoredRecord[];
-	const laps = JSON.parse(row.laps) as LapMarker[];
-	const intervals = JSON.parse(row.intervals || "[]") as Interval[];
-	const peakPowers = computePeakPowers(records, summary);
-	return {
-		summary,
-		records,
-		laps,
-		intervals,
-		peakPowers,
-		date: row.date,
-		id: row.id,
-	};
-}
-
 export const activityLookupDefinition: ToolDefinition = {
 	name: "activity_lookup",
 	description:
@@ -119,7 +44,8 @@ export const activityLookupDefinition: ToolDefinition = {
 	},
 };
 
-export const activityLookupHandler: ToolHandler = async (args, userId) => {
+export const activityLookupHandler: ToolHandler = async (args, context) => {
+	const userId = context.userId;
 	const end = debug.time("tool", "activity_lookup");
 	try {
 		const date = typeof args.date === "string" ? args.date.trim() : "";
@@ -170,7 +96,7 @@ export const activityLookupHandler: ToolHandler = async (args, userId) => {
 			}
 		}
 
-		const data = rowToDisplay(row);
+		const data = rowToActivity(row);
 		const s = data.summary;
 		const lines: string[] = [];
 		lines.push(`Activity ${data.id} (${data.date}):`);

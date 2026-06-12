@@ -117,7 +117,8 @@ export const trainingLoadDefinition: ToolDefinition = {
 	},
 };
 
-export const trainingLoadHandler: ToolHandler = async (args, userId) => {
+export const trainingLoadHandler: ToolHandler = async (args, context) => {
+	const userId = context.userId;
 	const done = debug.time("tool", "training_load");
 	try {
 		const daysRaw =

@@ -73,7 +73,8 @@ export const powerCurveDefinition: ToolDefinition = {
 	},
 };
 
-export const powerCurveHandler: ToolHandler = async (args, userId) => {
+export const powerCurveHandler: ToolHandler = async (args, context) => {
+	const userId = context.userId;
 	const end = debug.time("tool", "power_curve");
 	try {
 		const activityId =

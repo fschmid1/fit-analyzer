@@ -2,6 +2,7 @@ import type { ModelMessage, StreamChunk, ToolCall } from "@tanstack/ai";
 import type { ToolDefinition, ToolStreamChunk } from "@fit-analyzer/shared";
 import { debug } from "./debug.js";
 import { executeTool, getToolDefinitions } from "./tools/registry.js";
+import type { ToolHandlerContext } from "./tools/registry.js";
 import { createOllamaTrainerStream } from "./ollamaTrainerStream.js";
 import { createTrainerStream } from "./trainerStream.js";
 
@@ -305,10 +306,14 @@ export async function* createTrainerToolLoop(
 				args: obs.arguments,
 			});
 			const toolStart = Date.now();
+			const toolContext: ToolHandlerContext = {
+				userId: options.userId,
+				threadId: options.threadId,
+			};
 			const toolResult = await executeTool(
 				obs.name,
 				obs.arguments,
-				options.userId,
+				toolContext,
 			);
 			debug.log("trainer-loop", "execute tool end", {
 				round,

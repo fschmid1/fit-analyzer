@@ -22,6 +22,7 @@ import {
 	verifyStreamOwner,
 } from "../lib/trainerStreamRegistry.js";
 import { buildTrainerAthleteContext } from "../lib/trainerSystemPrompt.js";
+import { formatCurrentActivity } from "../lib/trainerSystemPrompt.js";
 import { debug } from "../lib/debug.js";
 
 const BASE_SYSTEM_PROMPT =
@@ -30,11 +31,17 @@ const BASE_SYSTEM_PROMPT =
 	"When the user shares their activity summary and interval data, analyse power, heart rate and cadence trends " +
 	"and give practical training advice.";
 
-async function buildSystemPrompt(userId: string): Promise<string> {
+async function buildSystemPrompt(
+	userId: string,
+	activityId?: string,
+): Promise<string> {
 	const athleteContext = await buildTrainerAthleteContext(userId);
 	const now = new Date();
 	const dateTimeText = `Current date and time: ${now.toISOString()}`;
-	return `${BASE_SYSTEM_PROMPT}\n${dateTimeText}${athleteContext}`;
+	const activityContext = activityId
+		? await formatCurrentActivity(activityId, userId)
+		: "";
+	return `${BASE_SYSTEM_PROMPT}\n${dateTimeText}${athleteContext}${activityContext}`;
 }
 
 const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 20;
@@ -244,7 +251,7 @@ trainer.post("/chat", async (c) => {
 	const threadId = getStringBodyValue(body.threadId);
 	const thread = threadId
 		? (getThreadByIdStmt.get(threadId, userId) as
-				| { coachModel: string | null }
+				| { coachModel: string | null; activityId: string }
 				| undefined)
 		: undefined;
 	const model = await resolveThreadModel(thread, userId);
@@ -271,7 +278,10 @@ trainer.post("/chat", async (c) => {
 	}
 
 	if (!hasActiveTrainerStream(streamId)) {
-		const systemPrompt = await buildSystemPrompt(userId);
+		const activityId = thread
+			? ((thread as { activityId?: string }).activityId ?? undefined)
+			: undefined;
+		const systemPrompt = await buildSystemPrompt(userId, activityId);
 		const tools = getToolDefinitions();
 		const metadata = providerConfig.includeReasoning
 			? getKimiRequestMetadata(body, userId)
