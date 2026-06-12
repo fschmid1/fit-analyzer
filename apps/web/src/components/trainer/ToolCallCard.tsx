@@ -122,49 +122,39 @@ function ToolCallCardInner({ toolCall, defaultExpanded }: ToolCallCardProps) {
 		: "";
 
 	return (
-		<div
-			className="overflow-hidden rounded-lg border border-[rgba(139,92,246,0.1)] bg-[#1a1533]/80 text-xs"
-			style={{ borderLeft: `3px solid ${meta.accent}` }}
-		>
+		<div className="text-xs text-[#c4b5fd]">
 			<button
 				type="button"
 				onClick={() => !isExecuting && setExpanded((v) => !v)}
-				className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[#241e3d]/60 disabled:cursor-default"
+				className="inline-flex cursor-pointer items-center gap-1.5 text-left transition-colors hover:text-[#e2d9f3] disabled:cursor-default"
 				disabled={isExecuting}
 			>
 				{isExecuting ? (
-					<Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-[#c4b5fd]" />
+					<Loader2 className="h-3 w-3 shrink-0 animate-spin text-[#c4b5fd]" />
 				) : (
-					<Icon
-						className="h-3.5 w-3.5 shrink-0"
-						style={{ color: meta.accent }}
-					/>
+					<Icon className="h-3 w-3 shrink-0" style={{ color: meta.accent }} />
 				)}
-				<span className="truncate font-medium text-[#c4b5fd]">
-					{meta.label}
-				</span>
+				<span className="font-medium">{meta.label}</span>
 				{isError && (
 					<CircleAlert
-						className="ml-1 h-3.5 w-3.5 shrink-0 text-rose-400"
+						className="h-3 w-3 shrink-0 text-rose-400"
 						aria-label="Tool error"
 					/>
 				)}
-				{summary && (
-					<span className="ml-1 truncate text-[#7c6fa0]">— {summary}</span>
-				)}
-				<span className="ml-auto flex shrink-0 items-center text-[#4a4468]">
+				{summary && <span className="text-[#7c6fa0]">— {summary}</span>}
+				<span className="ml-0.5 flex shrink-0 items-center text-[#4a4468]">
 					{isExecuting ? (
 						<span className="text-[10px] uppercase tracking-wide">Running</span>
 					) : expanded ? (
-						<ChevronDown className="h-3.5 w-3.5" />
+						<ChevronDown className="h-3 w-3" />
 					) : (
-						<ChevronRight className="h-3.5 w-3.5" />
+						<ChevronRight className="h-3 w-3" />
 					)}
 				</span>
 			</button>
 
 			{expanded && !isExecuting && (
-				<div className="border-t border-[rgba(139,92,246,0.08)] bg-[#120f23]/70 px-3 py-2 text-[11px] text-[#c4b5fd]">
+				<div className="mt-1 text-[11px] text-[#c4b5fd]">
 					{isError ? (
 						<p className="text-rose-400">
 							{toolCall.result?.error ?? "Tool call failed."}

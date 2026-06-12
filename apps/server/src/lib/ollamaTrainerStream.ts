@@ -161,7 +161,6 @@ export async function* createOllamaTrainerStream(options: {
 	const messageId = crypto.randomUUID();
 	const stepId = crypto.randomUUID();
 	let stepStarted = false;
-	let textStarted = false;
 	let accumulatedText = "";
 	let accumulatedReasoning = "";
 	let finishReason: "stop" | "length" | "content_filter" | "tool_calls" | null =
@@ -189,6 +188,17 @@ export async function* createOllamaTrainerStream(options: {
 		type: "RUN_STARTED",
 		runId,
 		threadId: options.threadId,
+		model: options.model,
+		timestamp: Date.now(),
+	};
+
+	// Emit TEXT_MESSAGE_START immediately so the tanstack processor creates
+	// the assistant message with our ID before any STEP_FINISHED or other
+	// events arrive (otherwise thinking gets its own separate message).
+	yield {
+		type: "TEXT_MESSAGE_START",
+		messageId,
+		role: "assistant",
 		model: options.model,
 		timestamp: Date.now(),
 	};
@@ -276,17 +286,6 @@ export async function* createOllamaTrainerStream(options: {
 
 		const textDelta = message?.content ?? "";
 		if (textDelta) {
-			if (!textStarted) {
-				textStarted = true;
-				yield {
-					type: "TEXT_MESSAGE_START",
-					messageId,
-					role: "assistant",
-					model: options.model,
-					timestamp: Date.now(),
-				};
-			}
-
 			accumulatedText += textDelta;
 			yield {
 				type: "TEXT_MESSAGE_CONTENT",
@@ -348,7 +347,7 @@ export async function* createOllamaTrainerStream(options: {
 
 	const requiresToolContinuation = finishReason === "tool_calls";
 
-	if (textStarted && !requiresToolContinuation) {
+	if (!requiresToolContinuation) {
 		yield {
 			type: "TEXT_MESSAGE_END",
 			messageId,
