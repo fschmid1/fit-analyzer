@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type { UIMessage } from "@tanstack/ai-react";
-import type { TrainerThread } from "@fit-analyzer/shared";
+import type { TrainerThread, UIToolCall } from "@fit-analyzer/shared";
 import { AVAILABLE_MODELS, type ModelEntry } from "@fit-analyzer/shared";
 import {
 	compactTrainerHistory,
@@ -23,7 +23,7 @@ import { ThreadSidebar } from "./trainer/ThreadSidebar";
 import { TrainerChat } from "./trainer/TrainerChat";
 import { CoachOnboarding } from "./trainer/CoachOnboarding";
 import { TrainerCompareView, MAX_COMPARE_THREADS } from "./TrainerCompareView";
-import { toUIMessage } from "./trainer/trainerHelpers";
+import { toUIMessage, reconstructToolCalls } from "./trainer/trainerHelpers";
 
 interface TrainerViewProps {
 	initialMessage: string;
@@ -41,6 +41,7 @@ export function TrainerView({
 	const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(
 		null,
 	);
+	const [initialToolCalls, setInitialToolCalls] = useState<UIToolCall[]>([]);
 	const [chatKey, setChatKey] = useState(0);
 	const [threadsLoading, setThreadsLoading] = useState(true);
 	const [threadsOpen, setThreadsOpen] = useState(false);
@@ -65,6 +66,7 @@ export function TrainerView({
 				nextCursor: string | null;
 				hasMore: boolean;
 				total: number;
+				toolCalls?: UIToolCall[];
 				stale?: boolean;
 			}
 		>
@@ -160,13 +162,16 @@ export function TrainerView({
 				if (abortController.signal.aborted) return;
 				const draft = loadTrainerDraft(activeThreadId);
 				const messages = draft ?? h.messages.map(toUIMessage);
+				const toolCalls = reconstructToolCalls(h.messages);
 				threadCache.current[activeThreadId] = {
 					messages,
 					nextCursor: h.nextCursor,
 					hasMore: h.hasMore,
 					total: h.total,
+					toolCalls,
 				};
 				setInitialMessages(messages);
+				setInitialToolCalls(toolCalls);
 			})
 			.catch(() => {
 				if (abortController.signal.aborted) return;
@@ -181,8 +186,10 @@ export function TrainerView({
 			const cached = threadCache.current[id];
 			if (cached?.messages) {
 				setInitialMessages(cached.messages);
+				setInitialToolCalls(cached.toolCalls ?? []);
 			} else {
 				setInitialMessages(null);
+				setInitialToolCalls([]);
 			}
 			setActiveThreadId(id);
 			setShowOnboarding(false);
@@ -417,6 +424,7 @@ export function TrainerView({
 				threadId={activeThreadId}
 				activityId={activityId}
 				initialMessages={initialMessages}
+				initialToolCalls={initialToolCalls}
 				initialNextCursor={
 					threadCache.current[activeThreadId]?.nextCursor ?? null
 				}

@@ -1,6 +1,7 @@
 import type {
 	SaveTrainerHistoryBody,
 	TrainerMessage,
+	UIToolCall,
 } from "@fit-analyzer/shared";
 import { AVAILABLE_MODELS, getModelProvider } from "@fit-analyzer/shared";
 import { convertMessagesToModelMessages } from "@tanstack/ai";
@@ -101,6 +102,47 @@ function getUserId(c: {
 	return userId;
 }
 
+function parseToolCalls(raw: unknown): UIToolCall[] | undefined {
+	if (raw == null || raw === "") return undefined;
+	if (typeof raw !== "string") return undefined;
+	try {
+		const parsed = JSON.parse(raw);
+		if (!Array.isArray(parsed)) return undefined;
+		return parsed as UIToolCall[];
+	} catch {
+		return undefined;
+	}
+}
+
+function serializeToolCalls(
+	toolCalls: UIToolCall[] | undefined,
+): string | null {
+	if (!toolCalls || toolCalls.length === 0) return null;
+	return JSON.stringify(toolCalls);
+}
+
+interface MessageRow {
+	id: string;
+	role: string;
+	content: string;
+	createdAt: string;
+	toolCalls: unknown;
+}
+
+function rowToTrainerMessage(row: MessageRow): TrainerMessage {
+	const msg: TrainerMessage = {
+		id: row.id,
+		role: row.role as "user" | "assistant",
+		content: row.content,
+		createdAt: row.createdAt,
+	};
+	const toolCalls = parseToolCalls(row.toolCalls);
+	if (toolCalls && toolCalls.length > 0) {
+		msg.toolCalls = toolCalls;
+	}
+	return msg;
+}
+
 type TrainerChatRequestBody = {
 	messages?: Parameters<typeof convertMessagesToModelMessages>[0];
 	threadId?: unknown;
@@ -147,14 +189,14 @@ const getThreadByIdStmt = db.prepare(
 );
 
 const getMessagesStmt = db.prepare(
-	`SELECT id, role, content, created_at as createdAt
+	`SELECT id, role, content, created_at as createdAt, tool_calls as toolCalls
      FROM trainer_messages
      WHERE chat_id = ?
      ORDER BY created_at ASC, id ASC`,
 );
 
 const getMessagesPageStmt = db.prepare(
-	`SELECT id, role, content, created_at as createdAt
+	`SELECT id, role, content, created_at as createdAt, tool_calls as toolCalls
      FROM trainer_messages
      WHERE chat_id = ?
        AND (created_at < ? OR (created_at = ? AND id < ?))
@@ -163,7 +205,7 @@ const getMessagesPageStmt = db.prepare(
 );
 
 const getMessagesLatestStmt = db.prepare(
-	`SELECT id, role, content, created_at as createdAt
+	`SELECT id, role, content, created_at as createdAt, tool_calls as toolCalls
      FROM trainer_messages
      WHERE chat_id = ?
      ORDER BY created_at DESC, id DESC
@@ -202,8 +244,8 @@ const touchThreadStmt = db.prepare(
 );
 
 const insertMessageStmt = db.prepare(
-	`INSERT INTO trainer_messages (id, chat_id, role, content, created_at)
-     VALUES (?, ?, ?, ?, ?)`,
+	`INSERT INTO trainer_messages (id, chat_id, role, content, created_at, tool_calls)
+     VALUES (?, ?, ?, ?, ?, ?)`,
 );
 
 async function resolveThreadModel(
@@ -466,7 +508,7 @@ trainer.get("/history/:threadId", (c) => {
 			: DEFAULT_PAGE_SIZE;
 	const cursor = c.req.query("cursor");
 
-	let page: { id: string; role: string; content: string; createdAt: string }[];
+	let page: MessageRow[];
 	if (cursor) {
 		const sep = cursor.indexOf("|");
 		const cursorCreatedAt = sep === -1 ? cursor : cursor.slice(0, sep);
@@ -478,15 +520,15 @@ trainer.get("/history/:threadId", (c) => {
 			cursorCreatedAt,
 			cursorId,
 			limit + 1,
-		) as typeof page;
+		) as MessageRow[];
 	} else {
-		page = getMessagesLatestStmt.all(thread.id, limit + 1) as typeof page;
+		page = getMessagesLatestStmt.all(thread.id, limit + 1) as MessageRow[];
 	}
 
 	const hasMore = page.length > limit;
 	const trimmed = hasMore ? page.slice(0, limit) : page;
 	// We pulled most-recent-first; flip back to ascending so the chat renders oldest → newest.
-	const messages = trimmed.reverse() as TrainerMessage[];
+	const messages = trimmed.reverse().map(rowToTrainerMessage);
 
 	let nextCursor: string | null = null;
 	if (hasMore) {
@@ -519,7 +561,14 @@ trainer.put("/history/:threadId", async (c) => {
 		deleteMessagesStmt.run(threadId);
 		touchThreadStmt.run(threadId);
 		for (const m of messages) {
-			insertMessageStmt.run(m.id, threadId, m.role, m.content, m.createdAt);
+			insertMessageStmt.run(
+				m.id,
+				threadId,
+				m.role,
+				m.content,
+				m.createdAt,
+				serializeToolCalls(m.toolCalls),
+			);
 		}
 	})();
 
@@ -542,7 +591,9 @@ trainer.post("/compact/:threadId", async (c) => {
 		| undefined;
 	if (!sourceThread) return c.json({ error: "Thread not found" }, 404);
 
-	const allMessages = getMessagesStmt.all(threadId) as TrainerMessage[];
+	const allMessages = (getMessagesStmt.all(threadId) as MessageRow[]).map(
+		rowToTrainerMessage,
+	);
 
 	const keepEndIds = new Set<string>();
 	let userCount = 0;
@@ -703,7 +754,14 @@ ${summary}`,
 			sourceThread.coachModel,
 		);
 		for (const m of newMessages) {
-			insertMessageStmt.run(m.id, forkId, m.role, m.content, m.createdAt);
+			insertMessageStmt.run(
+				m.id,
+				forkId,
+				m.role,
+				m.content,
+				m.createdAt,
+				serializeToolCalls(m.toolCalls),
+			);
 		}
 	})();
 
@@ -739,7 +797,9 @@ trainer.post("/fork/:threadId", async (c) => {
 		| undefined;
 	if (!sourceThread) return c.json({ error: "Thread not found" }, 404);
 
-	const allMessages = getMessagesStmt.all(threadId) as TrainerMessage[];
+	const allMessages = (getMessagesStmt.all(threadId) as MessageRow[]).map(
+		rowToTrainerMessage,
+	);
 
 	const forkId = crypto.randomUUID();
 	const forkName = `${sourceThread.name} \u00b7 Copy`;
@@ -759,7 +819,14 @@ trainer.post("/fork/:threadId", async (c) => {
 			sourceThread.coachModel,
 		);
 		for (const m of newMessages) {
-			insertMessageStmt.run(m.id, forkId, m.role, m.content, m.createdAt);
+			insertMessageStmt.run(
+				m.id,
+				forkId,
+				m.role,
+				m.content,
+				m.createdAt,
+				serializeToolCalls(m.toolCalls),
+			);
 		}
 	})();
 
@@ -831,6 +898,7 @@ trainer.post("/import", async (c) => {
 				m.role,
 				m.content,
 				m.createdAt,
+				serializeToolCalls(m.toolCalls),
 			);
 		}
 	})();
@@ -864,7 +932,9 @@ trainer.get("/export/:threadId", async (c) => {
 		| undefined;
 	if (!thread) return c.json({ error: "Thread not found" }, 404);
 
-	const messages = getMessagesStmt.all(threadId) as TrainerMessage[];
+	const messages = (getMessagesStmt.all(threadId) as MessageRow[]).map(
+		rowToTrainerMessage,
+	);
 	if (messages.length === 0) {
 		return c.json({ error: "Thread has no messages to export" }, 400);
 	}

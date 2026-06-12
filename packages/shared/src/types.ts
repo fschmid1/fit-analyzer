@@ -289,6 +289,8 @@ export interface TrainerMessage {
 	role: "user" | "assistant";
 	content: string;
 	createdAt: string; // ISO-8601
+	/** Tool calls attached to this message (only present for assistant messages with tool usage) */
+	toolCalls?: UIToolCall[];
 }
 
 /** A thread (conversation) within a trainer chat for an activity */

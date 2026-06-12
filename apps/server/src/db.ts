@@ -157,6 +157,13 @@ try {
 	/* column already exists */
 }
 
+// Migration: add tool_calls column to trainer_messages
+try {
+	db.exec("ALTER TABLE trainer_messages ADD COLUMN tool_calls TEXT");
+} catch {
+	/* column already exists */
+}
+
 // Strava OAuth token storage
 db.exec(`
   CREATE TABLE IF NOT EXISTS strava_tokens (

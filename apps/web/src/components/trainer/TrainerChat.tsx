@@ -37,6 +37,7 @@ import {
 	applyToolChunks,
 	getTextContent,
 	isToolChunk,
+	reconstructToolCalls,
 	stripTrailingAssistant,
 	streamResumedChat,
 	toTrainerMessage,
@@ -56,6 +57,7 @@ interface TrainerChatProps {
 	threadId: string;
 	activityId: string;
 	initialMessages: UIMessage[];
+	initialToolCalls?: UIToolCall[];
 	initialInput: string;
 	initialNextCursor: string | null;
 	initialHasMore: boolean;
@@ -76,6 +78,7 @@ export function TrainerChat({
 	threadId,
 	activityId,
 	initialMessages,
+	initialToolCalls,
 	initialInput,
 	initialNextCursor,
 	initialHasMore,
@@ -97,7 +100,9 @@ export function TrainerChat({
 	if (connectionRef.current === null) {
 		connectionRef.current = createTrainerStreamConnection(threadId);
 	}
-	const [toolCalls, setToolCalls] = useState<UIToolCall[]>([]);
+	const [toolCalls, setToolCalls] = useState<UIToolCall[]>(
+		initialToolCalls ?? [],
+	);
 	const toolCallsRef = useRef<UIToolCall[]>([]);
 	toolCallsRef.current = toolCalls;
 	const handleChunk = useCallback((chunk: StreamChunk | ToolStreamChunk) => {
@@ -396,7 +401,13 @@ export function TrainerChat({
 		[hasMore, nextCursor, threadId],
 	);
 
-	useTrainerHistoryPersist(threadId, messages, status, ensureFullHistory);
+	useTrainerHistoryPersist(
+		threadId,
+		messages,
+		status,
+		ensureFullHistory,
+		toolCalls,
+	);
 
 	const handleSend = useCallback(async () => {
 		const text = inputRef.current.trim();

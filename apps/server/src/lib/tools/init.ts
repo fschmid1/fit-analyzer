@@ -6,6 +6,7 @@ import {
 	analyzeIntervalsDefinition,
 	analyzeIntervalsHandler,
 } from "./analyzeIntervals.js";
+import { cardiacDriftDefinition, cardiacDriftHandler } from "./cardiacDrift.js";
 import {
 	compareActivitiesDefinition,
 	compareActivitiesHandler,
@@ -21,15 +22,27 @@ import {
 import { powerCurveDefinition, powerCurveHandler } from "./powerCurve.js";
 import { registerTool } from "./registry.js";
 import {
+	rideRecommendationDefinition,
+	rideRecommendationHandler,
+} from "./rideRecommendation.js";
+import {
 	segmentFinderDefinition,
 	segmentFinderHandler,
 } from "./segmentFinder.js";
 import { trainingLoadDefinition, trainingLoadHandler } from "./trainingLoad.js";
 import {
+	trendAnalysisDefinition,
+	trendAnalysisHandler,
+} from "./trendAnalysis.js";
+import {
 	weatherHistoryDefinition,
 	weatherHistoryHandler,
 } from "./weatherHistory.js";
 import { webFetchDefinition, webFetchHandler } from "./webFetch.js";
+import {
+	workoutGeneratorDefinition,
+	workoutGeneratorHandler,
+} from "./workoutGenerator.js";
 import { zoneAnalysisDefinition, zoneAnalysisHandler } from "./zoneAnalysis.js";
 
 let initialized = false;
@@ -48,4 +61,8 @@ export function initTools(): void {
 	registerTool(analyzeIntervalsDefinition, analyzeIntervalsHandler);
 	registerTool(compareActivitiesDefinition, compareActivitiesHandler);
 	registerTool(segmentFinderDefinition, segmentFinderHandler);
+	registerTool(trendAnalysisDefinition, trendAnalysisHandler);
+	registerTool(workoutGeneratorDefinition, workoutGeneratorHandler);
+	registerTool(cardiacDriftDefinition, cardiacDriftHandler);
+	registerTool(rideRecommendationDefinition, rideRecommendationHandler);
 }

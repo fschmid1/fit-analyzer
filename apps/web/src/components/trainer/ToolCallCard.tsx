@@ -3,12 +3,14 @@ import type { LucideIcon } from "lucide-react";
 import {
 	Activity,
 	BarChart3,
+	Bike,
 	Calendar,
 	ChevronDown,
 	ChevronRight,
 	CircleAlert,
 	CloudSun,
 	Globe,
+	HeartPulse,
 	Loader2,
 	Mountain,
 	Search,
@@ -16,6 +18,7 @@ import {
 	Zap,
 } from "lucide-react";
 import type { UIToolCall } from "@fit-analyzer/shared";
+import { renderToolDisplay } from "./toolDisplays";
 
 interface ToolMeta {
 	label: string;
@@ -78,6 +81,26 @@ const TOOL_META: Record<string, ToolMeta> = {
 		label: "Segment Finder",
 		icon: Mountain,
 		accent: "rgba(163, 230, 53, 0.7)", // lime
+	},
+	trend_analysis: {
+		label: "Trend Analysis",
+		icon: TrendingUp,
+		accent: "rgba(96, 165, 250, 0.7)", // blue
+	},
+	workout_generator: {
+		label: "Workout Generator",
+		icon: Activity,
+		accent: "rgba(251, 146, 60, 0.7)", // orange
+	},
+	cardiac_drift: {
+		label: "Cardiac Drift",
+		icon: HeartPulse,
+		accent: "rgba(248, 113, 113, 0.7)", // red
+	},
+	ride_recommendation: {
+		label: "Ride Recommendation",
+		icon: Bike,
+		accent: "rgba(52, 211, 153, 0.7)", // emerald
 	},
 };
 
@@ -149,6 +172,11 @@ function ToolCallCardInner({ toolCall, defaultExpanded }: ToolCallCardProps) {
 		? renderDisplay(toolCall.result.display)
 		: "";
 
+	const richDisplay =
+		toolCall.result && !isError
+			? renderToolDisplay(toolCall.name, toolCall.result.display)
+			: null;
+
 	return (
 		<div className="text-xs text-[#c4b5fd]">
 			<button
@@ -188,9 +216,15 @@ function ToolCallCardInner({ toolCall, defaultExpanded }: ToolCallCardProps) {
 							{toolCall.result?.error ?? "Tool call failed."}
 						</p>
 					) : toolCall.result ? (
-						<pre className="whitespace-pre-wrap break-words font-sans leading-relaxed [overflow-wrap:anywhere]">
-							{toolCall.result.content || displayText}
-						</pre>
+						richDisplay ? (
+							<div className="rounded-md bg-[#1a1533]/60 border border-[rgba(139,92,246,0.15)] px-3 py-2">
+								{richDisplay}
+							</div>
+						) : (
+							<pre className="whitespace-pre-wrap break-words font-sans leading-relaxed [overflow-wrap:anywhere]">
+								{toolCall.result.content || displayText}
+							</pre>
+						)
 					) : null}
 				</div>
 			)}

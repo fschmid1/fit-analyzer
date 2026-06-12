@@ -137,6 +137,24 @@ export function toTrainerMessage(m: UIMessage): TrainerMessage {
 	};
 }
 
+export function reconstructToolCalls(messages: TrainerMessage[]): UIToolCall[] {
+	const toolCalls: UIToolCall[] = [];
+	for (const msg of messages) {
+		if (msg.role === "assistant" && msg.toolCalls && msg.toolCalls.length > 0) {
+			for (const tc of msg.toolCalls) {
+				toolCalls.push({
+					id: tc.id,
+					name: tc.name,
+					arguments: tc.arguments,
+					status: "done",
+					result: tc.result,
+				});
+			}
+		}
+	}
+	return toolCalls;
+}
+
 export function stripTrailingAssistant(messages: UIMessage[]): UIMessage[] {
 	if (messages.length === 0) return messages;
 	const lastMessage = messages[messages.length - 1];
