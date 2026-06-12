@@ -264,6 +264,45 @@ try {
 	/* column already exists */
 }
 
+// Migration: add athlete profile columns to user_settings
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN athlete_ftp INTEGER");
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN athlete_max_hr INTEGER");
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN athlete_goal_event_date TEXT");
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN athlete_goal_event_name TEXT");
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN athlete_goal_description TEXT");
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN athlete_weekly_hours REAL");
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec(
+		"ALTER TABLE user_settings ADD COLUMN athlete_focus_areas TEXT NOT NULL DEFAULT '[]'",
+	);
+} catch {
+	/* column already exists */
+}
+
 // Health Auto Export historical data table
 db.exec(`
   CREATE TABLE IF NOT EXISTS hae_health_history (

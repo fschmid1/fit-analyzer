@@ -1,3 +1,4 @@
+import { AthleteProfileSettings } from "../components/AthleteProfileSettings";
 import { CoachModelSettings } from "../components/CoachModelSettings";
 import { HealthAutoExportSettings } from "../components/HealthAutoExportSettings";
 import { OpenwearablesSettings } from "../components/OpenwearablesSettings";
@@ -40,6 +41,7 @@ export function SettingsPage({ onActivitiesChanged }: SettingsPageProps) {
 						<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8]">
 							Trainer
 						</h3>
+						<AthleteProfileSettings />
 						<CoachModelSettings />
 					</section>
 				</div>

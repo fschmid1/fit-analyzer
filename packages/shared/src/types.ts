@@ -424,4 +424,33 @@ export type ToolStreamChunk = {
 	timestamp: number;
 };
 
+export interface ChartHighlight {
+	startSeconds: number;
+	endSeconds: number;
+	label?: string;
+	color?: string;
+}
+
 export type TrainerStreamChunk = ToolStreamChunk;
+
+// --- Athlete profile types ---
+
+export interface AthleteProfile {
+	ftp: number | null;
+	maxHr: number | null;
+	goalEventDate: string | null;
+	goalEventName: string | null;
+	goalDescription: string | null;
+	weeklyHours: number | null;
+	focusAreas: string[];
+}
+
+export interface UpdateAthleteProfileBody {
+	ftp?: number | null;
+	maxHr?: number | null;
+	goalEventDate?: string | null;
+	goalEventName?: string | null;
+	goalDescription?: string | null;
+	weeklyHours?: number | null;
+	focusAreas?: string[];
+}

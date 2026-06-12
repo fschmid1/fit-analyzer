@@ -39,7 +39,11 @@ function persistable(
 			}
 			return msg;
 		})
-		.filter((m) => m.content);
+		.filter(
+			(m) =>
+				m.content ||
+				(m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0),
+		);
 }
 
 function findLastAssistantId(messages: UIMessage[]): string | undefined {

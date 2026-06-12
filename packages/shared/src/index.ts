@@ -46,6 +46,9 @@ export type {
 	UIToolCallStatus,
 	ToolStreamChunk,
 	TrainerStreamChunk,
+	ChartHighlight,
+	AthleteProfile,
+	UpdateAthleteProfileBody,
 } from "./types.js";
 
 export {

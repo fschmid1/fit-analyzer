@@ -36,10 +36,18 @@ import {
 } from "./weatherHistory.js";
 import { webFetchDefinition, webFetchHandler } from "./webFetch.js";
 import {
+	highlightChartDefinition,
+	highlightChartHandler,
+} from "./highlightChart.js";
+import {
 	workoutGeneratorDefinition,
 	workoutGeneratorHandler,
 } from "./workoutGenerator.js";
 import { zoneAnalysisDefinition, zoneAnalysisHandler } from "./zoneAnalysis.js";
+import {
+	updateProfileDefinition,
+	updateProfileHandler,
+} from "./updateProfile.js";
 
 let initialized = false;
 
@@ -60,4 +68,6 @@ export function initTools(): void {
 	registerTool(workoutGeneratorDefinition, workoutGeneratorHandler);
 	registerTool(cardiacDriftDefinition, cardiacDriftHandler);
 	registerTool(rideRecommendationDefinition, rideRecommendationHandler);
+	registerTool(highlightChartDefinition, highlightChartHandler);
+	registerTool(updateProfileDefinition, updateProfileHandler);
 }

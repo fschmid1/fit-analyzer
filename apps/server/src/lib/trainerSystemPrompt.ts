@@ -1,5 +1,6 @@
 import { db } from "../db.js";
 import type { ActivityStats, HealthContext } from "@fit-analyzer/shared";
+import { getAthleteProfile } from "./athleteProfile.js";
 import {
 	computeActivityStats,
 	computeAllTimeEstimates,
@@ -149,6 +150,30 @@ function formatBodyComposition(
 	return `\n## Athlete Body Composition\nUse these baseline metrics when discussing training load, weight management, or aerobic capacity. Sourced from ${source}.\n${parts.join("\n")}\n`;
 }
 
+function formatAthleteProfile(
+	profile: Awaited<ReturnType<typeof getAthleteProfile>>,
+): string {
+	const parts: string[] = [];
+
+	if (profile.ftp != null)
+		parts.push(`- FTP: ${profile.ftp} W (user-provided)`);
+	if (profile.maxHr != null) parts.push(`- Max HR: ${profile.maxHr} bpm`);
+	if (profile.goalEventName || profile.goalEventDate) {
+		const event = profile.goalEventName ?? "Goal event";
+		const date = profile.goalEventDate ?? "no date set";
+		parts.push(`- Goal Event: ${event} on ${date}`);
+	}
+	if (profile.goalDescription) parts.push(`- Goal: ${profile.goalDescription}`);
+	if (profile.weeklyHours != null)
+		parts.push(`- Available: ${profile.weeklyHours} hours/week`);
+	if (profile.focusAreas.length > 0)
+		parts.push(`- Focus: ${profile.focusAreas.join(", ")}`);
+
+	if (parts.length === 0) return "";
+
+	return `\n## Athlete Profile\nUser-provided settings that override estimated values. Always prefer these values over estimates when they exist.\n${parts.join("\n")}\n`;
+}
+
 function formatTrainingHistory(
 	stats: ActivityStats,
 	estimatedFtp: number | null,
@@ -280,7 +305,13 @@ export async function buildTrainerAthleteContext(
 		context,
 	);
 
+	const profile = getAthleteProfile(userId);
+
 	const sections: string[] = [];
+
+	const profileText = formatAthleteProfile(profile);
+	if (profileText) sections.push(profileText);
+
 	if (context) {
 		sections.push(formatHealthContext(context, sourceLabel));
 	}

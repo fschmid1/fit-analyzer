@@ -23,7 +23,7 @@ import {
 	Plus,
 } from "lucide-react";
 import { formatElapsedTime } from "../lib/formatters";
-import type { ActivityRecord } from "@fit-analyzer/shared";
+import type { ActivityRecord, ChartHighlight } from "@fit-analyzer/shared";
 import { CustomTooltip } from "./CustomTooltip";
 import {
 	findNearestElapsedIndex,
@@ -53,6 +53,8 @@ interface ActivityChartProps {
 	intervalRanges?: [number, number][];
 	/** Called when user adds the current selection as a custom interval */
 	onAddInterval?: (startSeconds: number, endSeconds: number) => void;
+	/** External highlights from the coach (e.g. highlight_chart tool results) */
+	chartHighlights?: ChartHighlight[];
 }
 
 interface ChartPointerEvent {
@@ -65,6 +67,7 @@ export const ActivityChart = memo(function ActivityChart({
 	externalZoom,
 	intervalRanges,
 	onAddInterval,
+	chartHighlights,
 }: ActivityChartProps) {
 	const {
 		data,
@@ -918,6 +921,21 @@ export const ActivityChart = memo(function ActivityChart({
 									stroke="#f59e0b"
 									strokeOpacity={0.4}
 									strokeDasharray="6 3"
+								/>
+							))}
+
+							{/* Coach chart highlights */}
+							{chartHighlights?.map((hl, i) => (
+								<ReferenceArea
+									key={`coach-hl-${hl.startSeconds}-${hl.endSeconds}-${i}`}
+									yAxisId={overlayAxisId ?? undefined}
+									x1={hl.startSeconds}
+									x2={hl.endSeconds}
+									fill={hl.color ?? "rgba(139, 92, 246, 0.35)"}
+									fillOpacity={0.2}
+									stroke={hl.color ?? "#8b5cf6"}
+									strokeOpacity={0.6}
+									strokeDasharray="4 3"
 								/>
 							))}
 

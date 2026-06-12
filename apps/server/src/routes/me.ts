@@ -1,5 +1,8 @@
 import { Hono } from "hono";
-import type { UpdateWaxedChainReminderSettingsBody } from "@fit-analyzer/shared";
+import type {
+	UpdateWaxedChainReminderSettingsBody,
+	UpdateAthleteProfileBody,
+} from "@fit-analyzer/shared";
 import {
 	getCoachModelSettings,
 	updateCoachModelSettings,
@@ -21,9 +24,25 @@ import {
 	updateWaxedChainReminderSettings,
 } from "../lib/waxedChainReminders.js";
 import { hasHaeToken, getHaeLastSync } from "../lib/haeClient.js";
+import {
+	getAthleteProfile,
+	updateAthleteProfile,
+} from "../lib/athleteProfile.js";
+import { computeAllTimeEstimates } from "../lib/athleteStats.js";
 import { db } from "../db.js";
 
 const me = new Hono();
+
+const maxHrStmt = db.prepare(
+	`SELECT MAX(CAST(json_extract(summary, '$.maxHeartRate') AS INTEGER)) as maxHr
+     FROM activities WHERE user_id = ? AND json_extract(summary, '$.maxHeartRate') IS NOT NULL`,
+);
+
+function getUserEstimates(userId: string) {
+	const { estimatedFtp } = computeAllTimeEstimates(userId, null);
+	const row = maxHrStmt.get(userId) as { maxHr: number | null } | undefined;
+	return { estimatedFtp, estimatedMaxHr: row?.maxHr ?? null };
+}
 
 function getUserId(c: {
 	req: { header: (name: string) => string | undefined };
@@ -65,6 +84,8 @@ me.get("/settings", async (c) => {
 		.prepare("SELECT health_source FROM user_settings WHERE user_id = ?")
 		.get(userId) as { health_source: string } | undefined;
 
+	const estimates = getUserEstimates(userId);
+
 	return c.json({
 		waxedChainReminder: getWaxedChainReminderSettings(userId),
 		coachModel: await getCoachModelSettings(userId),
@@ -80,6 +101,8 @@ me.get("/settings", async (c) => {
 				| "auto",
 			lastSyncAt: haeLastSyncAt,
 		},
+		athleteProfile: getAthleteProfile(userId),
+		...estimates,
 	});
 });
 
@@ -93,14 +116,15 @@ me.patch("/settings", async (c) => {
 	}
 
 	const body = await c.req.json<
-		Partial<UpdateWaxedChainReminderSettingsBody> & {
-			coachModel?: string;
-			favoriteModels?: string[];
-			owUserId?: string;
-			compareThreadIds?: string[];
-			compareEnabled?: boolean;
-			healthSource?: string;
-		}
+		Partial<UpdateWaxedChainReminderSettingsBody> &
+			Partial<UpdateAthleteProfileBody> & {
+				coachModel?: string;
+				favoriteModels?: string[];
+				owUserId?: string;
+				compareThreadIds?: string[];
+				compareEnabled?: boolean;
+				healthSource?: string;
+			}
 	>();
 
 	if (typeof body.coachModel === "string" && body.coachModel.trim()) {
@@ -119,6 +143,26 @@ me.patch("/settings", async (c) => {
 
 	if (typeof body.compareEnabled === "boolean") {
 		updateCompareEnabled(userId, body.compareEnabled);
+	}
+
+	const hasProfileUpdate =
+		body.ftp !== undefined ||
+		body.maxHr !== undefined ||
+		body.goalEventDate !== undefined ||
+		body.goalEventName !== undefined ||
+		body.goalDescription !== undefined ||
+		body.weeklyHours !== undefined ||
+		body.focusAreas !== undefined;
+	if (hasProfileUpdate) {
+		updateAthleteProfile(userId, {
+			ftp: body.ftp,
+			maxHr: body.maxHr,
+			goalEventDate: body.goalEventDate,
+			goalEventName: body.goalEventName,
+			goalDescription: body.goalDescription,
+			weeklyHours: body.weeklyHours,
+			focusAreas: body.focusAreas,
+		});
 	}
 
 	if (typeof body.owUserId === "string") {
@@ -174,6 +218,8 @@ me.patch("/settings", async (c) => {
 		.prepare("SELECT health_source FROM user_settings WHERE user_id = ?")
 		.get(userId) as { health_source: string } | undefined;
 
+	const patchEstimates = getUserEstimates(userId);
+
 	return c.json({
 		waxedChainReminder: getWaxedChainReminderSettings(userId),
 		coachModel: await getCoachModelSettings(userId),
@@ -189,6 +235,8 @@ me.patch("/settings", async (c) => {
 				| "auto",
 			lastSyncAt: haeLastSyncAt,
 		},
+		athleteProfile: getAthleteProfile(userId),
+		...patchEstimates,
 	});
 });
 

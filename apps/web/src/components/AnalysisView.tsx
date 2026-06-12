@@ -1,4 +1,8 @@
-import type { Interval, ParsedActivity } from "@fit-analyzer/shared";
+import type {
+	Interval,
+	ParsedActivity,
+	ChartHighlight,
+} from "@fit-analyzer/shared";
 import { ActivityChart } from "./ActivityChart";
 import { CopyBox } from "./CopyBox";
 import { IntervalList } from "./IntervalList";
@@ -6,6 +10,11 @@ import { RouteMap } from "./RouteMap";
 import { StatsBar } from "./StatsBar";
 import { AutoDetectIntervals } from "./AutoDetectIntervals";
 import { SummaryCards } from "./SummaryCards";
+import { useEffect, useState } from "react";
+import {
+	getChartHighlights,
+	subscribeChartHighlights,
+} from "../lib/chartHighlightStore";
 
 interface AnalysisViewProps {
 	activity: ParsedActivity;
@@ -40,6 +49,13 @@ export function AnalysisView({
 	onRemoveCustomInterval,
 	onSendToTrainer,
 }: AnalysisViewProps) {
+	const [chartHighlights, setChartHighlights] =
+		useState<ChartHighlight[]>(getChartHighlights);
+
+	useEffect(() => {
+		return subscribeChartHighlights(setChartHighlights);
+	}, []);
+
 	return (
 		<div className="flex-1 flex flex-col overflow-y-auto pt-6 animate-[fadeIn_0.4s_ease-out]">
 			<div className="px-6 mb-4">
@@ -61,6 +77,7 @@ export function AnalysisView({
 				externalZoom={chartZoom}
 				intervalRanges={chartIntervalRanges}
 				onAddInterval={onAddInterval}
+				chartHighlights={chartHighlights}
 			/>
 
 			<AutoDetectIntervals

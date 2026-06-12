@@ -3,7 +3,11 @@ import { createPortal } from "react-dom";
 import { useChat } from "@tanstack/ai-react";
 import type { UIMessage } from "@tanstack/ai-react";
 import type { StreamChunk } from "@tanstack/ai";
-import type { ToolStreamChunk, UIToolCall } from "@fit-analyzer/shared";
+import type {
+	ToolStreamChunk,
+	UIToolCall,
+	ChartHighlight,
+} from "@fit-analyzer/shared";
 import {
 	ArrowDown,
 	ArrowUp,
@@ -49,6 +53,7 @@ import { useTrainerHistoryPersist } from "./useTrainerHistoryPersist";
 import { DotsLoader } from "./DotsLoader";
 import { ChatMessageRow } from "./ChatMessageRow";
 import { ToolCallCard } from "./ToolCallCard";
+import { addChartHighlight } from "../../lib/chartHighlightStore";
 
 const PAGE_SIZE = 20;
 const TOP_SENTINEL_THRESHOLD_PX = 200;
@@ -103,11 +108,33 @@ export function TrainerChat({
 	const [toolCalls, setToolCalls] = useState<UIToolCall[]>(
 		initialToolCalls ?? [],
 	);
+	// Sync toolCalls when initialToolCalls changes (e.g. after history fetch)
+	useEffect(() => {
+		setToolCalls(initialToolCalls ?? []);
+	}, [initialToolCalls]);
 	const toolCallsRef = useRef<UIToolCall[]>([]);
 	toolCallsRef.current = toolCalls;
 	const handleChunk = useCallback((chunk: StreamChunk | ToolStreamChunk) => {
 		if (isToolChunk(chunk)) {
 			setToolCalls((prev) => applyToolChunks(prev, chunk));
+			if (
+				chunk.toolName === "highlight_chart" &&
+				chunk.display &&
+				!chunk.error
+			) {
+				const d = chunk.display as {
+					startSeconds: number;
+					endSeconds: number;
+					label?: string;
+					color?: string;
+				};
+				addChartHighlight({
+					startSeconds: d.startSeconds,
+					endSeconds: d.endSeconds,
+					label: d.label,
+					color: d.color,
+				});
+			}
 		}
 	}, []);
 	const {

@@ -16,6 +16,8 @@ import {
 	Search,
 	TrendingUp,
 	Zap,
+	PenLine,
+	Target,
 } from "lucide-react";
 import type { UIToolCall } from "@fit-analyzer/shared";
 import { renderToolDisplay } from "./toolDisplays";
@@ -96,6 +98,16 @@ const TOOL_META: Record<string, ToolMeta> = {
 	ride_recommendation: {
 		label: "Ride Recommendation",
 		icon: Bike,
+		accent: "rgba(52, 211, 153, 0.7)", // emerald
+	},
+	highlight_chart: {
+		label: "Highlight Chart",
+		icon: PenLine,
+		accent: "rgba(139, 92, 246, 0.7)", // violet
+	},
+	update_profile: {
+		label: "Update Profile",
+		icon: Target,
 		accent: "rgba(52, 211, 153, 0.7)", // emerald
 	},
 };

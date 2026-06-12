@@ -9,6 +9,8 @@ import { renderTrendAnalysis } from "./renderTrendAnalysis";
 import { renderWorkoutGenerator } from "./renderWorkoutGenerator";
 import { renderCardiacDrift } from "./renderCardiacDrift";
 import { renderRideRecommendation } from "./renderRideRecommendation";
+import { renderHighlightChart } from "./renderHighlightChart";
+import { renderUpdateProfile } from "./renderUpdateProfile";
 
 const TOOL_RENDERERS: Record<string, (display: unknown) => ReactNode | null> = {
 	training_load: renderTrainingLoad,
@@ -21,6 +23,8 @@ const TOOL_RENDERERS: Record<string, (display: unknown) => ReactNode | null> = {
 	workout_generator: renderWorkoutGenerator,
 	cardiac_drift: renderCardiacDrift,
 	ride_recommendation: renderRideRecommendation,
+	highlight_chart: renderHighlightChart,
+	update_profile: renderUpdateProfile,
 };
 
 export function renderToolDisplay(
