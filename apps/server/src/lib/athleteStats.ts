@@ -110,9 +110,10 @@ const allActivitiesStmt = db.prepare(
 );
 
 /**
- * Hawley–Noakes cycling VO₂max estimate from peak power output.
- *   VO₂max (ml/kg/min) = 10.8 × (W / kg) + 7
- * Uses best 1-min peak power as a proxy for PPO (ramp test final stage).
+ * Hawley–Noakes cycling VO₂max estimate from peak power output (PPO).
+ *   VO₂max (ml/kg/min) = 10.8 × (PPO / kg) + 7
+ * PPO is estimated as best 20-min peak power × 1.20, since PPO from a
+ * ramp test is typically 15–20% above 20-min sustainable power.
  * Reference: Hawley JA, Noakes TD. "Peak power output predicts maximal
  * oxygen uptake and performance time in trained cyclists."
  * Eur J Appl Physiol. 1992;65(1):79-83.
@@ -131,7 +132,6 @@ export function computeAllTimeEstimates(
 	}[];
 
 	let bestPeak20min = 0;
-	let bestPeak1min = 0;
 	let maxHeartRate = 0;
 
 	for (const row of rows) {
@@ -163,10 +163,6 @@ export function computeAllTimeEstimates(
 			}
 		}
 
-		if (summary.peak1minPower != null && summary.peak1minPower > bestPeak1min) {
-			bestPeak1min = summary.peak1minPower;
-		}
-
 		if (summary.maxHeartRate != null && summary.maxHeartRate > maxHeartRate) {
 			maxHeartRate = summary.maxHeartRate;
 		}
@@ -177,8 +173,9 @@ export function computeAllTimeEstimates(
 
 	const weightKg = healthData?.bodyComposition?.weightKg ?? null;
 	let estimatedVo2max: number | null = null;
-	if (weightKg != null && weightKg > 0 && bestPeak1min > 0) {
-		const vo2mlKgMin = vo2maxFromPowerAndMass(bestPeak1min, weightKg);
+	if (weightKg != null && weightKg > 0 && bestPeak20min > 0) {
+		const estimatedPpo = bestPeak20min * 1.2;
+		const vo2mlKgMin = vo2maxFromPowerAndMass(estimatedPpo, weightKg);
 		estimatedVo2max = Math.round(vo2mlKgMin * 10) / 10;
 	} else {
 		const restingHR = healthData?.rhr?.current ?? null;
