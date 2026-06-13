@@ -236,7 +236,10 @@ export function TrainerChat({
 			console.error("Failed to resume trainer stream:", resumeError);
 		});
 
-		return () => abortController.abort();
+		return () => {
+			abortController.abort();
+			clearActiveTrainerStream(threadId);
+		};
 	}, [initialMessages, setMessages, threadId]);
 
 	const autoSentRef = useRef(false);
@@ -757,7 +760,10 @@ export function TrainerChat({
 							{isLoading ? (
 								<button
 									type="button"
-									onClick={stop}
+									onClick={() => {
+										stop();
+										clearActiveTrainerStream(threadId);
+									}}
 									title="Stop generation"
 									className="flex items-center justify-center w-8 h-8 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-400 transition-all duration-200 cursor-pointer shrink-0"
 								>

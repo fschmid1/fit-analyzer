@@ -157,6 +157,7 @@ export async function* createOllamaTrainerStream(options: {
 	threadId?: string;
 	messageId?: string;
 	runId?: string;
+	abortSignal?: AbortSignal;
 }): AsyncGenerator<StreamChunk> {
 	const runId = options.runId ?? crypto.randomUUID();
 	const messageId = options.messageId ?? crypto.randomUUID();
@@ -212,6 +213,7 @@ export async function* createOllamaTrainerStream(options: {
 			"Content-Type": "application/json",
 		},
 		body: JSON.stringify(requestBody),
+		signal: options.abortSignal,
 	});
 
 	if (!response.ok) {

@@ -137,6 +137,7 @@ export async function* createTrainerStream(options: {
 	tools?: ToolDefinition[];
 	messageId?: string;
 	runId?: string;
+	abortSignal?: AbortSignal;
 }): AsyncGenerator<StreamChunk> {
 	const runId = options.runId ?? crypto.randomUUID();
 	const messageId = options.messageId ?? crypto.randomUUID();
@@ -202,6 +203,7 @@ export async function* createTrainerStream(options: {
 			"Content-Type": "application/json",
 		},
 		body: JSON.stringify(body),
+		signal: options.abortSignal,
 	});
 
 	if (!response.ok) {

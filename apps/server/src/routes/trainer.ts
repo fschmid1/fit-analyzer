@@ -21,6 +21,7 @@ import {
 	hasActiveTrainerStream,
 	startTrainerStreamProducer,
 	verifyStreamOwner,
+	cancelTrainerStream,
 } from "../lib/trainerStreamRegistry.js";
 import { buildTrainerAthleteContext } from "../lib/trainerSystemPrompt.js";
 import { formatCurrentActivity } from "../lib/trainerSystemPrompt.js";
@@ -336,8 +337,10 @@ trainer.post("/chat", async (c) => {
 				threadId: getStringBodyValue(body.threadId),
 				userId,
 				tools,
+				abortSignal: c.req.raw.signal,
 			}),
 			userId,
+			c.req.raw.signal,
 		);
 	}
 
@@ -378,6 +381,29 @@ trainer.get("/chat/:streamId", async (c) => {
 	}
 
 	return c.json({ error: "Stream not found or already completed" }, 404);
+});
+
+// ─── Cancel active stream ──────────────────────────────────────────────────────
+
+trainer.delete("/chat/:streamId", (c) => {
+	const { streamId } = c.req.param();
+
+	let userId: string;
+	try {
+		userId = getUserId(c);
+	} catch {
+		return c.json(
+			{ error: "Unauthorized — missing x-authentik-username header" },
+			401,
+		);
+	}
+
+	if (!verifyStreamOwner(streamId, userId)) {
+		return c.json({ error: "Stream not found or already completed" }, 404);
+	}
+
+	const cancelled = cancelTrainerStream(streamId);
+	return c.json({ cancelled });
 });
 
 // ─── Models ───────────────────────────────────────────────────────────────────

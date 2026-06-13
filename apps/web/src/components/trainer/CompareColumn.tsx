@@ -224,7 +224,10 @@ export const CompareColumn = forwardRef<
 				console.error("Failed to resume trainer stream:", resumeError);
 			});
 
-			return () => abortController.abort();
+			return () => {
+				abortController.abort();
+				clearActiveTrainerStream(thread.id);
+			};
 		}
 
 		// No active stream: just sync initial history without stripping assistant

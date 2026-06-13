@@ -7,6 +7,7 @@ type RegistryEntry = {
 	waiters: Set<() => void>;
 	startedAt: number;
 	userId: string | null;
+	abortController: AbortController | null;
 };
 
 type ProducerChunk = StreamChunk | ToolStreamChunk;
@@ -24,6 +25,7 @@ function getOrCreateEntry(streamId: string): RegistryEntry {
 		waiters: new Set(),
 		startedAt: Date.now(),
 		userId: null,
+		abortController: null,
 	};
 	registry.set(streamId, entry);
 	return entry;
@@ -45,6 +47,7 @@ export function startTrainerStreamProducer(
 	streamId: string,
 	stream: AsyncIterable<ProducerChunk>,
 	userId: string,
+	abortSignal?: AbortSignal,
 ) {
 	const entry = getOrCreateEntry(streamId);
 	if (entry.chunks.length > 0 || entry.done) {
@@ -52,14 +55,25 @@ export function startTrainerStreamProducer(
 	}
 	entry.userId = userId;
 
+	const abortController = new AbortController();
+	entry.abortController = abortController;
+
+	const combinedSignal = abortSignal
+		? AbortSignal.any([abortController.signal, abortSignal])
+		: abortController.signal;
+
 	void (async () => {
 		try {
 			for await (const chunk of stream) {
+				if (combinedSignal.aborted) break;
 				entry.chunks.push(`data: ${JSON.stringify(chunk)}\n\n`);
 				notify(entry);
 			}
-			entry.chunks.push("data: [DONE]\n\n");
+			if (!combinedSignal.aborted) {
+				entry.chunks.push("data: [DONE]\n\n");
+			}
 		} catch (error) {
+			if (combinedSignal.aborted) return;
 			entry.chunks.push(
 				`data: ${JSON.stringify({
 					type: "RUN_ERROR",
@@ -73,6 +87,7 @@ export function startTrainerStreamProducer(
 			entry.chunks.push("data: [DONE]\n\n");
 		} finally {
 			entry.done = true;
+			entry.abortController = null;
 			notify(entry);
 			setTimeout(() => cleanupIfExpired(streamId, entry), ONE_HOUR_MS);
 		}
@@ -82,6 +97,13 @@ export function startTrainerStreamProducer(
 export function hasActiveTrainerStream(streamId: string): boolean {
 	const entry = registry.get(streamId);
 	return Boolean(entry && (!entry.done || entry.chunks.length > 0));
+}
+
+export function cancelTrainerStream(streamId: string): boolean {
+	const entry = registry.get(streamId);
+	if (!entry || entry.done) return false;
+	entry.abortController?.abort();
+	return true;
 }
 
 export function verifyStreamOwner(streamId: string, userId: string): boolean {
@@ -137,6 +159,7 @@ export function createTrainerStreamConsumer(
 			if (waiter) {
 				entry.waiters.delete(waiter);
 			}
+			entry.abortController?.abort();
 		},
 	});
 }

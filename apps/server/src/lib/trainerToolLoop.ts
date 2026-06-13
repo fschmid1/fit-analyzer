@@ -20,6 +20,7 @@ export interface TrainerToolLoopOptions {
 	userId: string;
 	tools?: ToolDefinition[];
 	maxToolRounds?: number;
+	abortSignal?: AbortSignal;
 }
 
 type YieldedChunk = StreamChunk | ToolStreamChunk;
@@ -87,6 +88,7 @@ export async function* createTrainerToolLoop(
 	const sharedRunId = crypto.randomUUID();
 
 	for (let round = 0; round <= maxRounds; round++) {
+		if (options.abortSignal?.aborted) return;
 		const isFirstRound = round === 0;
 		const observations: ToolCallObservation[] = [];
 
@@ -102,6 +104,7 @@ export async function* createTrainerToolLoop(
 						tools: tools.length > 0 ? tools : undefined,
 						messageId: sharedMessageId,
 						runId: sharedRunId,
+						abortSignal: options.abortSignal,
 					})
 				: createTrainerStream({
 						baseUrl: options.baseUrl,
@@ -115,6 +118,7 @@ export async function* createTrainerToolLoop(
 						tools: tools.length > 0 ? tools : undefined,
 						messageId: sharedMessageId,
 						runId: sharedRunId,
+						abortSignal: options.abortSignal,
 					});
 
 		let finishReason:
@@ -215,6 +219,7 @@ export async function* createTrainerToolLoop(
 
 		// Execute each tool sequentially and append tool-result messages.
 		for (const obs of observations) {
+			if (options.abortSignal?.aborted) return;
 			const toolContext: ToolHandlerContext = {
 				userId: options.userId,
 				threadId: options.threadId,

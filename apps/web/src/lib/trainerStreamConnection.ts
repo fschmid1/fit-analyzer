@@ -23,6 +23,7 @@ function createQueue() {
 			else buffer.push(chunk);
 		},
 		close() {
+			buffer.length = 0;
 			const pending = waiters;
 			waiters = [];
 			for (const waiter of pending) waiter(null);
@@ -108,6 +109,7 @@ export function createTrainerStreamConnection(
 	const runStream = async (
 		request: Promise<Response>,
 		activeThreadId: string,
+		streamId?: string,
 	) => {
 		let shouldClearActiveStream = false;
 		try {
@@ -120,7 +122,13 @@ export function createTrainerStreamConnection(
 			if (error instanceof Error) {
 				const isAbort = error.name === "AbortError";
 				const isMissingStream = error.message.includes("404");
-				shouldClearActiveStream = isMissingStream;
+				shouldClearActiveStream = isMissingStream || isAbort;
+				if (isAbort && streamId) {
+					fetch(`/api/trainer/chat/${streamId}`, {
+						method: "DELETE",
+						credentials: "same-origin",
+					}).catch(() => {});
+				}
 				if (!isAbort) throw error;
 				return;
 			}
@@ -145,6 +153,7 @@ export function createTrainerStreamConnection(
 						signal: abortSignal,
 					}),
 					threadId,
+					activeStream.streamId,
 				);
 			}
 			return queue.subscribe(abortSignal) as AsyncIterable<StreamChunk>;
@@ -169,6 +178,7 @@ export function createTrainerStreamConnection(
 					signal: abortSignal,
 				}),
 				activeThreadId,
+				streamId,
 			);
 		},
 		resumeActiveStream(abortSignal?: AbortSignal) {
@@ -182,6 +192,7 @@ export function createTrainerStreamConnection(
 					signal: abortSignal,
 				}),
 				threadId,
+				activeStream.streamId,
 			);
 			return true;
 		},
