@@ -231,7 +231,7 @@ export const CompareColumn = forwardRef<
 		setMessages(initialMessages);
 	}, [initialMessages, setMessages, thread.id]);
 
-	useTrainerHistoryPersist(thread.id, messages, status, ensureFullHistory);
+	useTrainerHistoryPersist(thread.id, messages, status, toolCalls, ensureFullHistory);
 
 	const onStatusChangeRef = useRef(onStatusChange);
 	useEffect(() => {

@@ -41,6 +41,7 @@ import {
 	applyToolChunks,
 	getTextContent,
 	isToolChunk,
+	patchMessagesWithToolCalls,
 	stripTrailingAssistant,
 	streamResumedChat,
 	toTrainerMessage,
@@ -419,7 +420,13 @@ export function TrainerChat({
 		[hasMore, nextCursor, threadId],
 	);
 
-	useTrainerHistoryPersist(threadId, messages, status, ensureFullHistory);
+	useTrainerHistoryPersist(
+		threadId,
+		messages,
+		status,
+		toolCalls,
+		ensureFullHistory,
+	);
 
 	const handleSend = useCallback(async () => {
 		const text = inputRef.current.trim();
@@ -449,7 +456,9 @@ export function TrainerChat({
 			setMessages(nextMessages);
 			setTotalServerMessages((n) => Math.max(0, n - 1));
 			(async () => {
-				const full = await ensureFullHistory(nextMessages);
+				const full = await ensureFullHistory(
+					patchMessagesWithToolCalls(nextMessages, toolCalls),
+				);
 				const toSave = full
 					.filter((m) => m.role === "user" || m.role === "assistant")
 					.map(toTrainerMessage)
@@ -458,7 +467,7 @@ export function TrainerChat({
 			})();
 			clearTrainerDraft(threadId);
 		},
-		[messages, setMessages, threadId, ensureFullHistory],
+		[messages, setMessages, threadId, ensureFullHistory, toolCalls],
 	);
 
 	const isGeneralChat = activityId === "general";
@@ -579,7 +588,9 @@ export function TrainerChat({
 								if (isLoading) stop();
 								const truncated = messages.slice(0, msgIndex);
 								setMessages(truncated);
-								const full = await ensureFullHistory(truncated);
+								const full = await ensureFullHistory(
+									patchMessagesWithToolCalls(truncated, toolCalls),
+								);
 								const toSave = full
 									.filter((m) => m.role === "user" || m.role === "assistant")
 									.map(toTrainerMessage)
@@ -605,7 +616,9 @@ export function TrainerChat({
 							if (isLoading) stop();
 							const truncated = messages.slice(0, lastUserIndex);
 							setMessages(truncated);
-							const full = await ensureFullHistory(truncated);
+							const full = await ensureFullHistory(
+								patchMessagesWithToolCalls(truncated, toolCalls),
+							);
 							const toSave = full
 								.filter((m) => m.role === "user" || m.role === "assistant")
 								.map(toTrainerMessage)
@@ -622,6 +635,7 @@ export function TrainerChat({
 								msgIndex={msgIndex}
 								isLastMsg={isLastMsg}
 								isCurrentlyStreaming={isCurrentlyStreaming}
+								externalToolCalls={toolCalls}
 								onDelete={() => setConfirmDeleteMessageId(msg.id)}
 								onRetry={handleRetry}
 							/>

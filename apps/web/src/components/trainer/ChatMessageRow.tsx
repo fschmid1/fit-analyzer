@@ -12,6 +12,7 @@ import {
 	getToolCallsFromParts,
 	formatTime,
 } from "./trainerHelpers";
+import type { UIToolCall } from "@fit-analyzer/shared";
 import { mdComponents } from "./markdownComponents";
 
 interface ChatMessageRowProps {
@@ -19,6 +20,7 @@ interface ChatMessageRowProps {
 	msgIndex: number;
 	isLastMsg: boolean;
 	isCurrentlyStreaming: boolean;
+	externalToolCalls?: UIToolCall[];
 	onDelete: (messageId: string) => void;
 	onRetry: (msgIndex: number) => void;
 }
@@ -27,6 +29,7 @@ function ChatMessageRowInner({
 	msg,
 	msgIndex,
 	isCurrentlyStreaming,
+	externalToolCalls,
 	onDelete,
 	onRetry,
 }: ChatMessageRowProps) {
@@ -34,7 +37,13 @@ function ChatMessageRowInner({
 	const text = getTextContent(msg);
 	const thinkingContent = getThinkingContent(msg);
 	const isThinkingPhase = isCurrentlyStreaming && !!thinkingContent && !text;
-	const toolCalls = getToolCallsFromParts(msg);
+	const toolCallsFromParts = getToolCallsFromParts(msg);
+	const externalById = new Map(
+		(externalToolCalls ?? []).map((tc) => [tc.id, tc]),
+	);
+	const toolCalls = toolCallsFromParts.map(
+		(tc) => externalById.get(tc.id) ?? tc,
+	);
 
 	if (isUser) {
 		if (!text) return null;

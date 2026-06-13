@@ -169,9 +169,11 @@ export function toUIMessage(m: TrainerMessage): UIMessage {
 								type: "tool-result" as const,
 								toolCallId: tc.id,
 								toolName: tc.name,
-								result: tc.result?.error
-									? { error: tc.result.error }
-									: (tc.result?.display ?? tc.result?.content),
+								result: {
+									content: tc.result?.content ?? "",
+									display: tc.result?.display ?? null,
+									error: tc.result?.error,
+								},
 								isError: !!tc.result?.error,
 							}
 						: undefined,
@@ -216,6 +218,43 @@ export function reconstructToolCalls(messages: TrainerMessage[]): UIToolCall[] {
 		}
 	}
 	return toolCalls;
+}
+
+/**
+ * Merge live tool-call results into message parts so that persisted messages
+ * retain their outputs after reload.
+ */
+export function patchMessagesWithToolCalls(
+	messages: UIMessage[],
+	toolCalls: UIToolCall[],
+): UIMessage[] {
+	const byId = new Map(toolCalls.map((tc) => [tc.id, tc]));
+	return messages.map((msg) => {
+		if (msg.role !== "assistant") return msg;
+		let changed = false;
+		const nextParts = msg.parts.map((part) => {
+			if (part.type !== "tool-call") return part;
+			const live = byId.get(part.id);
+			if (!live || live.status === "executing") return part;
+			changed = true;
+			return {
+				...part,
+				state: "input-complete" as const,
+				output: {
+					type: "tool-result" as const,
+					toolCallId: live.id,
+					toolName: live.name,
+					result: {
+						content: live.result?.content ?? "",
+						display: live.result?.display ?? null,
+						error: live.result?.error,
+					},
+					isError: !!live.result?.error,
+				},
+			};
+		});
+		return changed ? { ...msg, parts: nextParts } : msg;
+	});
 }
 
 export function stripTrailingAssistant(messages: UIMessage[]): UIMessage[] {
