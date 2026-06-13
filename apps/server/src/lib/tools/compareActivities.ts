@@ -1,4 +1,3 @@
-import { debug } from "../debug.js";
 import type { ToolDefinition } from "@fit-analyzer/shared";
 import type { ToolHandler } from "./registry.js";
 import { getActivityById } from "./activityUtils.js";
@@ -102,115 +101,109 @@ export const compareActivitiesDefinition: ToolDefinition = {
 };
 
 export const compareActivitiesHandler: ToolHandler = async (args, context) => {
-	const end = debug.time("tool", "compare_activities");
-	try {
-		const id1 = resolveActivityId(args, context.userId, "activityId1", "date1");
-		const id2 = resolveActivityId(args, context.userId, "activityId2", "date2");
+	const id1 = resolveActivityId(args, context.userId, "activityId1", "date1");
+	const id2 = resolveActivityId(args, context.userId, "activityId2", "date2");
 
-		if (!id1 || !id2) {
-			return {
-				id: "",
-				name: "compare_activities",
-				content: "",
-				display: null,
-				error:
-					"Provide two activity IDs or dates to compare. Use activityId1/activityId2 or date1/date2.",
-			};
-		}
-
-		if (id1 === id2) {
-			return {
-				id: "",
-				name: "compare_activities",
-				content: "",
-				display: null,
-				error:
-					"Both activities are the same. Provide two different activities.",
-			};
-		}
-
-		const a1 = getActivityById(id1, context.userId);
-		const a2 = getActivityById(id2, context.userId);
-
-		if (!a1) {
-			return {
-				id: "",
-				name: "compare_activities",
-				content: "",
-				display: null,
-				error: `Activity ${id1} not found.`,
-			};
-		}
-		if (!a2) {
-			return {
-				id: "",
-				name: "compare_activities",
-				content: "",
-				display: null,
-				error: `Activity ${id2} not found.`,
-			};
-		}
-
-		const s1 = a1.summary;
-		const s2 = a2.summary;
-		const p1 = a1.peakPowers;
-		const p2 = a2.peakPowers;
-
-		const diffs: MetricDiff[] = [];
-
-		const add = (d: MetricDiff | null) => {
-			if (d) diffs.push(d);
-		};
-
-		add(
-			computeDiff("Duration", s1.totalTimerTime, s2.totalTimerTime, "s", "sec"),
-		);
-		add(
-			computeDiff("Distance", s1.totalDistanceKm, s2.totalDistanceKm, "", "km"),
-		);
-		add(computeDiff("Avg Power", s1.avgPower, s2.avgPower, "", "W"));
-		add(computeDiff("NP", s1.normalizedPower, s2.normalizedPower, "", "W"));
-		add(computeDiff("Max Power", s1.maxPower, s2.maxPower, "", "W"));
-		add(computeDiff("Avg HR", s1.avgHeartRate, s2.avgHeartRate, "", "bpm"));
-		add(computeDiff("Max HR", s1.maxHeartRate, s2.maxHeartRate, "", "bpm"));
-		add(computeDiff("Avg Cadence", s1.avgCadence, s2.avgCadence, "", "rpm"));
-		add(computeDiff("Total Work", s1.totalWork, s2.totalWork, "", "kJ"));
-		add(computeDiff("Peak 1min", p1.peak1min, p2.peak1min, "", "W"));
-		add(computeDiff("Peak 5min", p1.peak5min, p2.peak5min, "", "W"));
-		add(computeDiff("Peak 20min", p1.peak20min, p2.peak20min, "", "W"));
-
-		const lines: string[] = [];
-		lines.push(`Comparing ${a1.date} vs ${a2.date}:`);
-		lines.push("");
-		lines.push("Metric | Activity 1 | Activity 2 | Delta | %");
-		lines.push("--- | --- | --- | --- | ---");
-		for (const d of diffs) {
-			lines.push(
-				`${d.metric} | ${d.value1} | ${d.value2} | ${d.delta} | ${d.deltaPercent}`,
-			);
-		}
-
+	if (!id1 || !id2) {
 		return {
 			id: "",
 			name: "compare_activities",
-			content: lines.join("\n"),
-			display: {
-				activity1: {
-					id: a1.id,
-					date: a1.date,
-					summary: a1.summary,
-					peakPowers: a1.peakPowers,
-				},
-				activity2: {
-					id: a2.id,
-					date: a2.date,
-					summary: a2.summary,
-					peakPowers: a2.peakPowers,
-				},
-				diffs,
-			},
+			content: "",
+			display: null,
+			error:
+				"Provide two activity IDs or dates to compare. Use activityId1/activityId2 or date1/date2.",
 		};
-	} finally {
-		end();
 	}
+
+	if (id1 === id2) {
+		return {
+			id: "",
+			name: "compare_activities",
+			content: "",
+			display: null,
+			error: "Both activities are the same. Provide two different activities.",
+		};
+	}
+
+	const a1 = getActivityById(id1, context.userId);
+	const a2 = getActivityById(id2, context.userId);
+
+	if (!a1) {
+		return {
+			id: "",
+			name: "compare_activities",
+			content: "",
+			display: null,
+			error: `Activity ${id1} not found.`,
+		};
+	}
+	if (!a2) {
+		return {
+			id: "",
+			name: "compare_activities",
+			content: "",
+			display: null,
+			error: `Activity ${id2} not found.`,
+		};
+	}
+
+	const s1 = a1.summary;
+	const s2 = a2.summary;
+	const p1 = a1.peakPowers;
+	const p2 = a2.peakPowers;
+
+	const diffs: MetricDiff[] = [];
+
+	const add = (d: MetricDiff | null) => {
+		if (d) diffs.push(d);
+	};
+
+	add(
+		computeDiff("Duration", s1.totalTimerTime, s2.totalTimerTime, "s", "sec"),
+	);
+	add(
+		computeDiff("Distance", s1.totalDistanceKm, s2.totalDistanceKm, "", "km"),
+	);
+	add(computeDiff("Avg Power", s1.avgPower, s2.avgPower, "", "W"));
+	add(computeDiff("NP", s1.normalizedPower, s2.normalizedPower, "", "W"));
+	add(computeDiff("Max Power", s1.maxPower, s2.maxPower, "", "W"));
+	add(computeDiff("Avg HR", s1.avgHeartRate, s2.avgHeartRate, "", "bpm"));
+	add(computeDiff("Max HR", s1.maxHeartRate, s2.maxHeartRate, "", "bpm"));
+	add(computeDiff("Avg Cadence", s1.avgCadence, s2.avgCadence, "", "rpm"));
+	add(computeDiff("Total Work", s1.totalWork, s2.totalWork, "", "kJ"));
+	add(computeDiff("Peak 1min", p1.peak1min, p2.peak1min, "", "W"));
+	add(computeDiff("Peak 5min", p1.peak5min, p2.peak5min, "", "W"));
+	add(computeDiff("Peak 20min", p1.peak20min, p2.peak20min, "", "W"));
+
+	const lines: string[] = [];
+	lines.push(`Comparing ${a1.date} vs ${a2.date}:`);
+	lines.push("");
+	lines.push("Metric | Activity 1 | Activity 2 | Delta | %");
+	lines.push("--- | --- | --- | --- | ---");
+	for (const d of diffs) {
+		lines.push(
+			`${d.metric} | ${d.value1} | ${d.value2} | ${d.delta} | ${d.deltaPercent}`,
+		);
+	}
+
+	return {
+		id: "",
+		name: "compare_activities",
+		content: lines.join("\n"),
+		display: {
+			activity1: {
+				id: a1.id,
+				date: a1.date,
+				summary: a1.summary,
+				peakPowers: a1.peakPowers,
+			},
+			activity2: {
+				id: a2.id,
+				date: a2.date,
+				summary: a2.summary,
+				peakPowers: a2.peakPowers,
+			},
+			diffs,
+		},
+	};
 };

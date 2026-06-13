@@ -1,4 +1,3 @@
-import { debug } from "../debug.js";
 import type { ToolDefinition } from "@fit-analyzer/shared";
 import type { ToolHandler } from "./registry.js";
 import { computeAllTimeEstimates } from "../athleteStats.js";
@@ -49,158 +48,152 @@ export const zoneAnalysisDefinition: ToolDefinition = {
 };
 
 export const zoneAnalysisHandler: ToolHandler = async (args, context) => {
-	const end = debug.time("tool", "zone_analysis");
-	try {
-		const activityId = resolveActivityId(args, context);
-		if (!activityId) {
-			return {
-				id: "",
-				name: "zone_analysis",
-				content: "",
-				display: null,
-				error:
-					"No activity specified. Provide an activityId or use within a thread linked to an activity.",
-			};
-		}
-
-		const data = getActivityById(activityId, context.userId);
-		if (!data) {
-			return {
-				id: "",
-				name: "zone_analysis",
-				content: "",
-				display: null,
-				error: `Activity ${activityId} not found.`,
-			};
-		}
-
-		const ftp =
-			typeof args.ftp === "number" && args.ftp > 0
-				? args.ftp
-				: computeAllTimeEstimates(context.userId, null).estimatedFtp;
-		if (!ftp) {
-			return {
-				id: "",
-				name: "zone_analysis",
-				content: "",
-				display: null,
-				error: "Could not estimate FTP. Please provide the ftp parameter.",
-			};
-		}
-
-		const maxHr =
-			typeof args.maxHr === "number" && args.maxHr > 0
-				? args.maxHr
-				: data.summary.maxHeartRate;
-		if (!maxHr) {
-			return {
-				id: "",
-				name: "zone_analysis",
-				content: "",
-				display: null,
-				error:
-					"Could not determine max HR. Please provide the maxHr parameter.",
-			};
-		}
-
-		const records = data.records;
-		const totalSeconds =
-			records.length > 0 ? records[records.length - 1].elapsedSeconds : 0;
-
-		const powerZoneSeconds = new Array(POWER_ZONES.length).fill(0);
-		let powerZeroCount = 0;
-		const hrZoneSeconds = new Array(HR_ZONES.length).fill(0);
-		let hrNullCount = 0;
-
-		let prevElapsedSeconds = records.length > 0 ? records[0].elapsedSeconds : 0;
-
-		for (const r of records) {
-			const delta = r.elapsedSeconds - prevElapsedSeconds;
-			if (delta <= 0) continue;
-			prevElapsedSeconds = r.elapsedSeconds;
-
-			if (r.power != null && r.power > 0) {
-				const ratio = r.power / ftp;
-				for (let i = 0; i < POWER_ZONES.length; i++) {
-					if (ratio >= POWER_ZONES[i].minFtp && ratio < POWER_ZONES[i].maxFtp) {
-						powerZoneSeconds[i] += delta;
-						break;
-					}
-				}
-			} else if (r.power === 0) {
-				powerZeroCount += delta;
-			}
-
-			if (r.heartRate != null && r.heartRate > 0) {
-				const ratio = r.heartRate / maxHr;
-				for (let i = 0; i < HR_ZONES.length; i++) {
-					if (ratio >= HR_ZONES[i].minMaxHr && ratio < HR_ZONES[i].maxMaxHr) {
-						hrZoneSeconds[i] += delta;
-						break;
-					}
-				}
-			} else {
-				hrNullCount += delta;
-			}
-		}
-
-		const fmt = (s: number) => {
-			const m = Math.floor(s / 60);
-			const sec = Math.round(s % 60);
-			return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
-		};
-
-		const powerZoneData = POWER_ZONES.map((z, i) => ({
-			zone: z.name,
-			seconds: powerZoneSeconds[i],
-			percent:
-				totalSeconds > 0
-					? Math.round((powerZoneSeconds[i] / totalSeconds) * 100)
-					: 0,
-		}));
-
-		const hrZoneData = HR_ZONES.map((z, i) => ({
-			zone: z.name,
-			seconds: hrZoneSeconds[i],
-			percent:
-				totalSeconds > 0
-					? Math.round((hrZoneSeconds[i] / totalSeconds) * 100)
-					: 0,
-		}));
-
-		const lines: string[] = [];
-		lines.push(`Zone analysis for activity ${data.id} (${data.date})`);
-		lines.push(`FTP: ${ftp} W, Max HR: ${maxHr} bpm`);
-		lines.push("");
-		lines.push("Power Zones:");
-		for (const z of powerZoneData) {
-			lines.push(`  ${z.zone}: ${fmt(z.seconds)} (${z.percent}%)`);
-		}
-		if (powerZeroCount > 0) {
-			lines.push(
-				`  Coasting: ${fmt(powerZeroCount)} (${Math.round((powerZeroCount / totalSeconds) * 100)}%)`,
-			);
-		}
-		lines.push("");
-		lines.push("Heart Rate Zones:");
-		for (const z of hrZoneData) {
-			lines.push(`  ${z.zone}: ${fmt(z.seconds)} (${z.percent}%)`);
-		}
-
+	const activityId = resolveActivityId(args, context);
+	if (!activityId) {
 		return {
 			id: "",
 			name: "zone_analysis",
-			content: lines.join("\n"),
-			display: {
-				activityId: data.id,
-				date: data.date,
-				ftp,
-				maxHr,
-				powerZones: powerZoneData,
-				hrZones: hrZoneData,
-			},
+			content: "",
+			display: null,
+			error:
+				"No activity specified. Provide an activityId or use within a thread linked to an activity.",
 		};
-	} finally {
-		end();
 	}
+
+	const data = getActivityById(activityId, context.userId);
+	if (!data) {
+		return {
+			id: "",
+			name: "zone_analysis",
+			content: "",
+			display: null,
+			error: `Activity ${activityId} not found.`,
+		};
+	}
+
+	const ftp =
+		typeof args.ftp === "number" && args.ftp > 0
+			? args.ftp
+			: computeAllTimeEstimates(context.userId, null).estimatedFtp;
+	if (!ftp) {
+		return {
+			id: "",
+			name: "zone_analysis",
+			content: "",
+			display: null,
+			error: "Could not estimate FTP. Please provide the ftp parameter.",
+		};
+	}
+
+	const maxHr =
+		typeof args.maxHr === "number" && args.maxHr > 0
+			? args.maxHr
+			: data.summary.maxHeartRate;
+	if (!maxHr) {
+		return {
+			id: "",
+			name: "zone_analysis",
+			content: "",
+			display: null,
+			error: "Could not determine max HR. Please provide the maxHr parameter.",
+		};
+	}
+
+	const records = data.records;
+	const totalSeconds =
+		records.length > 0 ? records[records.length - 1].elapsedSeconds : 0;
+
+	const powerZoneSeconds = new Array(POWER_ZONES.length).fill(0);
+	let powerZeroCount = 0;
+	const hrZoneSeconds = new Array(HR_ZONES.length).fill(0);
+	let hrNullCount = 0;
+
+	let prevElapsedSeconds = records.length > 0 ? records[0].elapsedSeconds : 0;
+
+	for (const r of records) {
+		const delta = r.elapsedSeconds - prevElapsedSeconds;
+		if (delta <= 0) continue;
+		prevElapsedSeconds = r.elapsedSeconds;
+
+		if (r.power != null && r.power > 0) {
+			const ratio = r.power / ftp;
+			for (let i = 0; i < POWER_ZONES.length; i++) {
+				if (ratio >= POWER_ZONES[i].minFtp && ratio < POWER_ZONES[i].maxFtp) {
+					powerZoneSeconds[i] += delta;
+					break;
+				}
+			}
+		} else if (r.power === 0) {
+			powerZeroCount += delta;
+		}
+
+		if (r.heartRate != null && r.heartRate > 0) {
+			const ratio = r.heartRate / maxHr;
+			for (let i = 0; i < HR_ZONES.length; i++) {
+				if (ratio >= HR_ZONES[i].minMaxHr && ratio < HR_ZONES[i].maxMaxHr) {
+					hrZoneSeconds[i] += delta;
+					break;
+				}
+			}
+		} else {
+			hrNullCount += delta;
+		}
+	}
+
+	const fmt = (s: number) => {
+		const m = Math.floor(s / 60);
+		const sec = Math.round(s % 60);
+		return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+	};
+
+	const powerZoneData = POWER_ZONES.map((z, i) => ({
+		zone: z.name,
+		seconds: powerZoneSeconds[i],
+		percent:
+			totalSeconds > 0
+				? Math.round((powerZoneSeconds[i] / totalSeconds) * 100)
+				: 0,
+	}));
+
+	const hrZoneData = HR_ZONES.map((z, i) => ({
+		zone: z.name,
+		seconds: hrZoneSeconds[i],
+		percent:
+			totalSeconds > 0
+				? Math.round((hrZoneSeconds[i] / totalSeconds) * 100)
+				: 0,
+	}));
+
+	const lines: string[] = [];
+	lines.push(`Zone analysis for activity ${data.id} (${data.date})`);
+	lines.push(`FTP: ${ftp} W, Max HR: ${maxHr} bpm`);
+	lines.push("");
+	lines.push("Power Zones:");
+	for (const z of powerZoneData) {
+		lines.push(`  ${z.zone}: ${fmt(z.seconds)} (${z.percent}%)`);
+	}
+	if (powerZeroCount > 0) {
+		lines.push(
+			`  Coasting: ${fmt(powerZeroCount)} (${Math.round((powerZeroCount / totalSeconds) * 100)}%)`,
+		);
+	}
+	lines.push("");
+	lines.push("Heart Rate Zones:");
+	for (const z of hrZoneData) {
+		lines.push(`  ${z.zone}: ${fmt(z.seconds)} (${z.percent}%)`);
+	}
+
+	return {
+		id: "",
+		name: "zone_analysis",
+		content: lines.join("\n"),
+		display: {
+			activityId: data.id,
+			date: data.date,
+			ftp,
+			maxHr,
+			powerZones: powerZoneData,
+			hrZones: hrZoneData,
+		},
+	};
 };

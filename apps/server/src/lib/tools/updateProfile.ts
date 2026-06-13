@@ -1,7 +1,6 @@
 import type { ToolDefinition } from "@fit-analyzer/shared";
 import type { ToolHandler } from "./registry.js";
 import { updateAthleteProfile } from "../athleteProfile.js";
-import { debug } from "../debug.js";
 
 export const updateProfileDefinition: ToolDefinition = {
 	name: "update_profile",
@@ -47,65 +46,60 @@ export const updateProfileDefinition: ToolDefinition = {
 type ProfileUpdate = Parameters<typeof updateAthleteProfile>[1];
 
 export const updateProfileHandler: ToolHandler = async (args, context) => {
-	const end = debug.time("tool", "update_profile");
-	try {
-		const updates: ProfileUpdate = {};
+	const updates: ProfileUpdate = {};
 
-		if (typeof args.ftp === "number" && args.ftp > 0) updates.ftp = args.ftp;
-		if (typeof args.maxHr === "number" && args.maxHr > 0)
-			updates.maxHr = args.maxHr;
-		if (typeof args.goalEventDate === "string" && args.goalEventDate.trim())
-			updates.goalEventDate = args.goalEventDate.trim();
-		if (typeof args.goalEventName === "string" && args.goalEventName.trim())
-			updates.goalEventName = args.goalEventName.trim();
-		if (typeof args.goalDescription === "string" && args.goalDescription.trim())
-			updates.goalDescription = args.goalDescription.trim();
-		if (typeof args.weeklyHours === "number" && args.weeklyHours > 0)
-			updates.weeklyHours = args.weeklyHours;
-		if (typeof args.focusAreas === "string" && args.focusAreas.trim()) {
-			updates.focusAreas = args.focusAreas
-				.split(",")
-				.map((s: string) => s.trim().toLowerCase())
-				.filter(Boolean);
-		}
+	if (typeof args.ftp === "number" && args.ftp > 0) updates.ftp = args.ftp;
+	if (typeof args.maxHr === "number" && args.maxHr > 0)
+		updates.maxHr = args.maxHr;
+	if (typeof args.goalEventDate === "string" && args.goalEventDate.trim())
+		updates.goalEventDate = args.goalEventDate.trim();
+	if (typeof args.goalEventName === "string" && args.goalEventName.trim())
+		updates.goalEventName = args.goalEventName.trim();
+	if (typeof args.goalDescription === "string" && args.goalDescription.trim())
+		updates.goalDescription = args.goalDescription.trim();
+	if (typeof args.weeklyHours === "number" && args.weeklyHours > 0)
+		updates.weeklyHours = args.weeklyHours;
+	if (typeof args.focusAreas === "string" && args.focusAreas.trim()) {
+		updates.focusAreas = args.focusAreas
+			.split(",")
+			.map((s: string) => s.trim().toLowerCase())
+			.filter(Boolean);
+	}
 
-		if (Object.keys(updates).length === 0) {
-			return {
-				id: "",
-				name: "update_profile",
-				content: "",
-				display: null,
-				error: "No profile fields provided to update.",
-			};
-		}
-
-		const updated = updateAthleteProfile(context.userId, updates);
-
-		const lines: string[] = ["Athlete profile updated:"];
-		if (updates.ftp != null) lines.push(`- FTP: ${updated.ftp} W`);
-		if (updates.maxHr != null) lines.push(`- Max HR: ${updated.maxHr} bpm`);
-		if (updates.goalEventDate != null || updates.goalEventName != null) {
-			lines.push(
-				`- Goal Event: ${updated.goalEventName ?? "unset"} on ${updated.goalEventDate ?? "no date"}`,
-			);
-		}
-		if (updates.goalDescription != null)
-			lines.push(`- Goal: ${updated.goalDescription}`);
-		if (updates.weeklyHours != null)
-			lines.push(`- Weekly Hours: ${updated.weeklyHours}`);
-		if (updates.focusAreas != null)
-			lines.push(`- Focus Areas: ${updated.focusAreas.join(", ")}`);
-
+	if (Object.keys(updates).length === 0) {
 		return {
 			id: "",
 			name: "update_profile",
-			content: lines.join("\n"),
-			display: {
-				updated: Object.keys(updates),
-				profile: updated,
-			},
+			content: "",
+			display: null,
+			error: "No profile fields provided to update.",
 		};
-	} finally {
-		end();
 	}
+
+	const updated = updateAthleteProfile(context.userId, updates);
+
+	const lines: string[] = ["Athlete profile updated:"];
+	if (updates.ftp != null) lines.push(`- FTP: ${updated.ftp} W`);
+	if (updates.maxHr != null) lines.push(`- Max HR: ${updated.maxHr} bpm`);
+	if (updates.goalEventDate != null || updates.goalEventName != null) {
+		lines.push(
+			`- Goal Event: ${updated.goalEventName ?? "unset"} on ${updated.goalEventDate ?? "no date"}`,
+		);
+	}
+	if (updates.goalDescription != null)
+		lines.push(`- Goal: ${updated.goalDescription}`);
+	if (updates.weeklyHours != null)
+		lines.push(`- Weekly Hours: ${updated.weeklyHours}`);
+	if (updates.focusAreas != null)
+		lines.push(`- Focus Areas: ${updated.focusAreas.join(", ")}`);
+
+	return {
+		id: "",
+		name: "update_profile",
+		content: lines.join("\n"),
+		display: {
+			updated: Object.keys(updates),
+			profile: updated,
+		},
+	};
 };

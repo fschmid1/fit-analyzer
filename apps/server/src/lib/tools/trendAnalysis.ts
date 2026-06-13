@@ -1,5 +1,4 @@
 import { db } from "../../db.js";
-import { debug } from "../debug.js";
 import type { ActivitySummary, ToolDefinition } from "@fit-analyzer/shared";
 import type { ToolHandler } from "./registry.js";
 
@@ -111,135 +110,130 @@ export const trendAnalysisDefinition: ToolDefinition = {
 
 export const trendAnalysisHandler: ToolHandler = async (args, context) => {
 	const userId = context.userId;
-	const end = debug.time("tool", "trend_analysis");
-	try {
-		const metricRaw = typeof args.metric === "string" ? args.metric : "";
-		if (!METRIC_LIST.includes(metricRaw as MetricKey)) {
-			return {
-				id: "",
-				name: "trend_analysis",
-				content: "",
-				display: null,
-				error: `Invalid metric. Must be one of: ${METRIC_LIST.join(", ")}`,
-			};
-		}
-		const metric = metricRaw as MetricKey;
-
-		const daysRaw =
-			typeof args.days === "number" ? args.days : DEFAULT_LOOKBACK_DAYS;
-		const days =
-			Number.isFinite(daysRaw) && daysRaw > 0
-				? Math.min(365, Math.floor(daysRaw))
-				: DEFAULT_LOOKBACK_DAYS;
-
-		const now = new Date();
-		const endDay = new Date(now);
-		endDay.setDate(endDay.getDate() + 1);
-		const startDay = new Date(now);
-		startDay.setDate(startDay.getDate() - days);
-
-		const formatDay = (d: Date) => d.toISOString().split("T")[0];
-		const startStr = formatDay(startDay);
-		const endStr = formatDay(endDay);
-
-		const rows = summaryStmt.all(userId, startStr, endStr) as {
-			date: string;
-			summary: string;
-		}[];
-
-		const dates: string[] = [];
-		const values: number[] = [];
-
-		for (const row of rows) {
-			let summary: ActivitySummary;
-			try {
-				summary = JSON.parse(row.summary) as ActivitySummary;
-			} catch {
-				continue;
-			}
-			const val = extractMetric(summary, metric);
-			if (val != null) {
-				dates.push(row.date);
-				values.push(val);
-			}
-		}
-
-		if (values.length < 2) {
-			return {
-				id: "",
-				name: "trend_analysis",
-				content: `Not enough data points for ${METRIC_LABELS[metric]} in the last ${days} days. Found ${values.length} data point(s).`,
-				display: null,
-				error:
-					values.length === 0
-						? `No data found for ${METRIC_LABELS[metric]} in the last ${days} days.`
-						: `Only 1 data point found for ${METRIC_LABELS[metric]}. Need at least 2 for trend analysis.`,
-			};
-		}
-
-		const dayOffsets = dates.map((d) => {
-			const diff = new Date(d).getTime() - new Date(dates[0]).getTime();
-			return diff / 86400000;
-		});
-
-		const { slope, r2, intercept } = linearRegression(dayOffsets, values);
-
-		const changePerWeek = slope * 7;
-
-		let direction: string;
-		const isHigherBetter = !["avgHeartRate", "totalTimerTime"].includes(metric);
-		if (Math.abs(r2) < 0.05) {
-			direction = "stable";
-		} else if (changePerWeek > 0) {
-			direction = isHigherBetter ? "improving" : "declining";
-		} else {
-			direction = isHigherBetter ? "declining" : "improving";
-		}
-
-		const avg = rollingAverage(values, Math.min(7, values.length));
-
-		const current = values[values.length - 1];
-		const minVal = Math.min(...values);
-		const maxVal = Math.max(...values);
-
-		const label = METRIC_LABELS[metric];
-		const unit =
-			metric === "avgHeartRate" || metric === "avgCadence"
-				? ""
-				: metric === "totalDistanceKm"
-					? " km"
-					: metric === "totalTimerTime"
-						? " s"
-						: metric === "totalWork"
-							? " kJ"
-							: " W";
-
-		const content = [
-			`${label} trend (last ${days} days, ${values.length} activities):`,
-			`- Current: ${current.toFixed(1)}${unit}`,
-			`- Range: ${minVal.toFixed(1)}${unit} – ${maxVal.toFixed(1)}${unit}`,
-			`- Trend: ${direction} (${changePerWeek > 0 ? "+" : ""}${changePerWeek.toFixed(2)}${unit}/week)`,
-			`- R² = ${r2.toFixed(3)}`,
-		].join("\n");
-
+	const metricRaw = typeof args.metric === "string" ? args.metric : "";
+	if (!METRIC_LIST.includes(metricRaw as MetricKey)) {
 		return {
 			id: "",
 			name: "trend_analysis",
-			content,
-			display: {
-				metric: label,
-				dates,
-				values,
-				rollingAvg: avg,
-				trend: {
-					slope,
-					direction,
-					r2,
-					changePerWeek,
-				},
-			},
+			content: "",
+			display: null,
+			error: `Invalid metric. Must be one of: ${METRIC_LIST.join(", ")}`,
 		};
-	} finally {
-		end();
 	}
+	const metric = metricRaw as MetricKey;
+
+	const daysRaw =
+		typeof args.days === "number" ? args.days : DEFAULT_LOOKBACK_DAYS;
+	const days =
+		Number.isFinite(daysRaw) && daysRaw > 0
+			? Math.min(365, Math.floor(daysRaw))
+			: DEFAULT_LOOKBACK_DAYS;
+
+	const now = new Date();
+	const endDay = new Date(now);
+	endDay.setDate(endDay.getDate() + 1);
+	const startDay = new Date(now);
+	startDay.setDate(startDay.getDate() - days);
+
+	const formatDay = (d: Date) => d.toISOString().split("T")[0];
+	const startStr = formatDay(startDay);
+	const endStr = formatDay(endDay);
+
+	const rows = summaryStmt.all(userId, startStr, endStr) as {
+		date: string;
+		summary: string;
+	}[];
+
+	const dates: string[] = [];
+	const values: number[] = [];
+
+	for (const row of rows) {
+		let summary: ActivitySummary;
+		try {
+			summary = JSON.parse(row.summary) as ActivitySummary;
+		} catch {
+			continue;
+		}
+		const val = extractMetric(summary, metric);
+		if (val != null) {
+			dates.push(row.date);
+			values.push(val);
+		}
+	}
+
+	if (values.length < 2) {
+		return {
+			id: "",
+			name: "trend_analysis",
+			content: `Not enough data points for ${METRIC_LABELS[metric]} in the last ${days} days. Found ${values.length} data point(s).`,
+			display: null,
+			error:
+				values.length === 0
+					? `No data found for ${METRIC_LABELS[metric]} in the last ${days} days.`
+					: `Only 1 data point found for ${METRIC_LABELS[metric]}. Need at least 2 for trend analysis.`,
+		};
+	}
+
+	const dayOffsets = dates.map((d) => {
+		const diff = new Date(d).getTime() - new Date(dates[0]).getTime();
+		return diff / 86400000;
+	});
+
+	const { slope, r2, intercept } = linearRegression(dayOffsets, values);
+
+	const changePerWeek = slope * 7;
+
+	let direction: string;
+	const isHigherBetter = !["avgHeartRate", "totalTimerTime"].includes(metric);
+	if (Math.abs(r2) < 0.05) {
+		direction = "stable";
+	} else if (changePerWeek > 0) {
+		direction = isHigherBetter ? "improving" : "declining";
+	} else {
+		direction = isHigherBetter ? "declining" : "improving";
+	}
+
+	const avg = rollingAverage(values, Math.min(7, values.length));
+
+	const current = values[values.length - 1];
+	const minVal = Math.min(...values);
+	const maxVal = Math.max(...values);
+
+	const label = METRIC_LABELS[metric];
+	const unit =
+		metric === "avgHeartRate" || metric === "avgCadence"
+			? ""
+			: metric === "totalDistanceKm"
+				? " km"
+				: metric === "totalTimerTime"
+					? " s"
+					: metric === "totalWork"
+						? " kJ"
+						: " W";
+
+	const content = [
+		`${label} trend (last ${days} days, ${values.length} activities):`,
+		`- Current: ${current.toFixed(1)}${unit}`,
+		`- Range: ${minVal.toFixed(1)}${unit} – ${maxVal.toFixed(1)}${unit}`,
+		`- Trend: ${direction} (${changePerWeek > 0 ? "+" : ""}${changePerWeek.toFixed(2)}${unit}/week)`,
+		`- R² = ${r2.toFixed(3)}`,
+	].join("\n");
+
+	return {
+		id: "",
+		name: "trend_analysis",
+		content,
+		display: {
+			metric: label,
+			dates,
+			values,
+			rollingAvg: avg,
+			trend: {
+				slope,
+				direction,
+				r2,
+				changePerWeek,
+			},
+		},
+	};
 };

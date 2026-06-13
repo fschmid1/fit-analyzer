@@ -1,4 +1,3 @@
-import { debug } from "../debug.js";
 import type { Interval, ToolDefinition } from "@fit-analyzer/shared";
 import type { ToolHandler } from "./registry.js";
 import { getActivityById, resolveActivityId } from "./activityUtils.js";
@@ -224,151 +223,146 @@ export const analyzeIntervalsDefinition: ToolDefinition = {
 };
 
 export const analyzeIntervalsHandler: ToolHandler = async (args, context) => {
-	const end = debug.time("tool", "analyze_intervals");
-	try {
-		const activityId = resolveActivityId(args, context);
-		if (!activityId) {
-			return {
-				id: "",
-				name: "analyze_intervals",
-				content: "",
-				display: null,
-				error:
-					"No activity specified. Provide an activityId or use within a thread linked to an activity.",
-			};
-		}
-
-		const data = getActivityById(activityId, context.userId);
-		if (!data) {
-			return {
-				id: "",
-				name: "analyze_intervals",
-				content: "",
-				display: null,
-				error: `Activity ${activityId} not found.`,
-			};
-		}
-
-		const rawMode =
-			typeof args.detectionMode === "string"
-				? args.detectionMode.trim().toLowerCase()
-				: "power";
-		const ALLOWED_MODES = ["power", "heart_rate", "both"];
-		const mode = ALLOWED_MODES.includes(rawMode) ? rawMode : null;
-		if (mode == null) {
-			return {
-				id: "",
-				name: "analyze_intervals",
-				content: "",
-				display: null,
-				error: "detectionMode must be one of: power, heart_rate, both",
-			};
-		}
-		const minPower =
-			typeof args.minPower === "number" && args.minPower > 0
-				? args.minPower
-				: 200;
-		const minSeconds =
-			typeof args.minSeconds === "number" && args.minSeconds > 0
-				? args.minSeconds
-				: 10;
-		const coastingTolerance =
-			typeof args.coastingTolerance === "number" && args.coastingTolerance >= 0
-				? args.coastingTolerance
-				: 2;
-		const minHr =
-			typeof args.minHeartRate === "number" && args.minHeartRate > 0
-				? args.minHeartRate
-				: null;
-
-		const records = data.records;
-		if (records.length === 0) {
-			return {
-				id: "",
-				name: "analyze_intervals",
-				content: "",
-				display: null,
-				error: "Activity has no records.",
-			};
-		}
-
-		let powerIntervals: Interval[] = [];
-		let hrIntervals: Interval[] = [];
-
-		if (mode === "power" || mode === "both") {
-			powerIntervals = detectPowerIntervals(
-				records,
-				minPower,
-				minSeconds,
-				coastingTolerance,
-			);
-		}
-		if (mode === "heart_rate" || mode === "both") {
-			const hrThreshold =
-				minHr ??
-				(data.summary.avgHeartRate
-					? Math.round(data.summary.avgHeartRate * 0.85)
-					: 0);
-			if (hrThreshold > 0) {
-				hrIntervals = detectHrIntervals(records, hrThreshold, minSeconds);
-			}
-		}
-
-		const fmt = (s: number) => {
-			const m = Math.floor(s / 60);
-			const sec = s % 60;
-			return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
-		};
-
-		const lines: string[] = [];
-		lines.push(`Interval analysis for activity ${data.id} (${data.date})`);
-		lines.push(`Mode: ${mode}`);
-
-		if (powerIntervals.length > 0) {
-			lines.push("");
-			lines.push(`Power intervals (≥${minPower}W, ≥${minSeconds}s):`);
-			for (const iv of powerIntervals) {
-				lines.push(
-					`  #${iv.index + 1}: ${fmt(iv.duration)} @ ${iv.avgPower ?? "?"}W${iv.avgHeartRate != null ? `, HR ${iv.avgHeartRate}bpm` : ""}${iv.avgCadence != null ? `, ${iv.avgCadence}rpm` : ""}`,
-				);
-			}
-		} else if (mode === "power" || mode === "both") {
-			lines.push("");
-			lines.push(`No power intervals found (≥${minPower}W, ≥${minSeconds}s).`);
-		}
-
-		if (hrIntervals.length > 0) {
-			const hrThreshold =
-				minHr ??
-				(data.summary.avgHeartRate
-					? Math.round(data.summary.avgHeartRate * 0.85)
-					: 0);
-			lines.push("");
-			lines.push(`HR intervals (≥${hrThreshold}bpm, ≥${minSeconds}s):`);
-			for (const iv of hrIntervals) {
-				lines.push(
-					`  #${iv.index + 1}: ${fmt(iv.duration)} @ ${iv.avgHeartRate ?? "?"}bpm${iv.avgPower != null ? `, ${iv.avgPower}W` : ""}`,
-				);
-			}
-		} else if (mode === "heart_rate" || mode === "both") {
-			lines.push("");
-			lines.push("No HR intervals found matching criteria.");
-		}
-
+	const activityId = resolveActivityId(args, context);
+	if (!activityId) {
 		return {
 			id: "",
 			name: "analyze_intervals",
-			content: lines.join("\n"),
-			display: {
-				activityId: data.id,
-				date: data.date,
-				powerIntervals,
-				hrIntervals,
-				mode,
-				params: { minPower, minSeconds, coastingTolerance, minHr },
-			},
+			content: "",
+			display: null,
+			error:
+				"No activity specified. Provide an activityId or use within a thread linked to an activity.",
 		};
-	} finally {
-		end();
 	}
+
+	const data = getActivityById(activityId, context.userId);
+	if (!data) {
+		return {
+			id: "",
+			name: "analyze_intervals",
+			content: "",
+			display: null,
+			error: `Activity ${activityId} not found.`,
+		};
+	}
+
+	const rawMode =
+		typeof args.detectionMode === "string"
+			? args.detectionMode.trim().toLowerCase()
+			: "power";
+	const ALLOWED_MODES = ["power", "heart_rate", "both"];
+	const mode = ALLOWED_MODES.includes(rawMode) ? rawMode : null;
+	if (mode == null) {
+		return {
+			id: "",
+			name: "analyze_intervals",
+			content: "",
+			display: null,
+			error: "detectionMode must be one of: power, heart_rate, both",
+		};
+	}
+	const minPower =
+		typeof args.minPower === "number" && args.minPower > 0
+			? args.minPower
+			: 200;
+	const minSeconds =
+		typeof args.minSeconds === "number" && args.minSeconds > 0
+			? args.minSeconds
+			: 10;
+	const coastingTolerance =
+		typeof args.coastingTolerance === "number" && args.coastingTolerance >= 0
+			? args.coastingTolerance
+			: 2;
+	const minHr =
+		typeof args.minHeartRate === "number" && args.minHeartRate > 0
+			? args.minHeartRate
+			: null;
+
+	const records = data.records;
+	if (records.length === 0) {
+		return {
+			id: "",
+			name: "analyze_intervals",
+			content: "",
+			display: null,
+			error: "Activity has no records.",
+		};
+	}
+
+	let powerIntervals: Interval[] = [];
+	let hrIntervals: Interval[] = [];
+
+	if (mode === "power" || mode === "both") {
+		powerIntervals = detectPowerIntervals(
+			records,
+			minPower,
+			minSeconds,
+			coastingTolerance,
+		);
+	}
+	if (mode === "heart_rate" || mode === "both") {
+		const hrThreshold =
+			minHr ??
+			(data.summary.avgHeartRate
+				? Math.round(data.summary.avgHeartRate * 0.85)
+				: 0);
+		if (hrThreshold > 0) {
+			hrIntervals = detectHrIntervals(records, hrThreshold, minSeconds);
+		}
+	}
+
+	const fmt = (s: number) => {
+		const m = Math.floor(s / 60);
+		const sec = s % 60;
+		return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+	};
+
+	const lines: string[] = [];
+	lines.push(`Interval analysis for activity ${data.id} (${data.date})`);
+	lines.push(`Mode: ${mode}`);
+
+	if (powerIntervals.length > 0) {
+		lines.push("");
+		lines.push(`Power intervals (≥${minPower}W, ≥${minSeconds}s):`);
+		for (const iv of powerIntervals) {
+			lines.push(
+				`  #${iv.index + 1}: ${fmt(iv.duration)} @ ${iv.avgPower ?? "?"}W${iv.avgHeartRate != null ? `, HR ${iv.avgHeartRate}bpm` : ""}${iv.avgCadence != null ? `, ${iv.avgCadence}rpm` : ""}`,
+			);
+		}
+	} else if (mode === "power" || mode === "both") {
+		lines.push("");
+		lines.push(`No power intervals found (≥${minPower}W, ≥${minSeconds}s).`);
+	}
+
+	if (hrIntervals.length > 0) {
+		const hrThreshold =
+			minHr ??
+			(data.summary.avgHeartRate
+				? Math.round(data.summary.avgHeartRate * 0.85)
+				: 0);
+		lines.push("");
+		lines.push(`HR intervals (≥${hrThreshold}bpm, ≥${minSeconds}s):`);
+		for (const iv of hrIntervals) {
+			lines.push(
+				`  #${iv.index + 1}: ${fmt(iv.duration)} @ ${iv.avgHeartRate ?? "?"}bpm${iv.avgPower != null ? `, ${iv.avgPower}W` : ""}`,
+			);
+		}
+	} else if (mode === "heart_rate" || mode === "both") {
+		lines.push("");
+		lines.push("No HR intervals found matching criteria.");
+	}
+
+	return {
+		id: "",
+		name: "analyze_intervals",
+		content: lines.join("\n"),
+		display: {
+			activityId: data.id,
+			date: data.date,
+			powerIntervals,
+			hrIntervals,
+			mode,
+			params: { minPower, minSeconds, coastingTolerance, minHr },
+		},
+	};
 };

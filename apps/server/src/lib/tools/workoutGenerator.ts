@@ -1,4 +1,3 @@
-import { debug } from "../debug.js";
 import { computeAllTimeEstimates } from "../athleteStats.js";
 import type { ToolDefinition } from "@fit-analyzer/shared";
 import type { ToolHandler } from "./registry.js";
@@ -214,106 +213,101 @@ export const workoutGeneratorDefinition: ToolDefinition = {
 
 export const workoutGeneratorHandler: ToolHandler = async (args, context) => {
 	const userId = context.userId;
-	const end = debug.time("tool", "workout_generator");
-	try {
-		const focusRaw = typeof args.focus === "string" ? args.focus : "";
-		if (!FOCUS_LIST.includes(focusRaw as Focus)) {
-			return {
-				id: "",
-				name: "workout_generator",
-				content: "",
-				display: null,
-				error: `Invalid focus. Must be one of: ${FOCUS_LIST.join(", ")}`,
-			};
-		}
-		const focus = focusRaw as Focus;
-
-		const durationMinRaw =
-			typeof args.durationMinutes === "number" ? args.durationMinutes : 60;
-		const durationMin =
-			Number.isFinite(durationMinRaw) && durationMinRaw >= 30
-				? Math.min(300, Math.floor(durationMinRaw))
-				: 60;
-
-		let ftp: number | null =
-			typeof args.ftp === "number" && args.ftp > 0 ? args.ftp : null;
-
-		if (ftp == null) {
-			try {
-				ftp = computeAllTimeEstimates(userId, null).estimatedFtp;
-			} catch {
-				ftp = null;
-			}
-		}
-
-		if (ftp == null) {
-			return {
-				id: "",
-				name: "workout_generator",
-				content: "",
-				display: null,
-				error:
-					"Could not estimate FTP. Provide the ftp parameter or upload activities with power data.",
-			};
-		}
-
-		const eventDateRaw =
-			typeof args.eventDate === "string" ? args.eventDate.trim() : null;
-		const phase = resolvePhase(eventDateRaw);
-
-		const totalDurationSec = durationMin * 60;
-		const { intervals, warmup, cooldown } = buildWorkout(
-			focus,
-			ftp,
-			totalDurationSec,
-		);
-
-		const focusLabel = focus.replace(/_/g, " ");
-		const totalIntervalTime = intervals.reduce(
-			(sum, i) => sum + i.duration + i.restDuration,
-			0,
-		);
-		const totalTime =
-			(warmup?.duration ?? 0) + totalIntervalTime + (cooldown?.duration ?? 0);
-
-		const lines = [
-			`${focusLabel} workout (${Math.round(totalTime / 60)} min) · FTP: ${ftp}W`,
-			`Training phase: ${phase}`,
-			"",
-		];
-		if (warmup) {
-			lines.push(
-				`Warmup: ${Math.round(warmup.duration / 60)} min — ${warmup.description}`,
-			);
-		}
-		for (const interval of intervals) {
-			const onMin = Math.round(interval.duration / 60);
-			const offMin = Math.round(interval.restDuration / 60);
-			lines.push(
-				`  ${interval.description}: ${onMin} min @ ${interval.targetPower}W (${interval.targetPowerPercent}% FTP)${interval.restDuration > 0 ? ` / ${offMin} min rest` : ""}`,
-			);
-		}
-		if (cooldown) {
-			lines.push(
-				`Cooldown: ${Math.round(cooldown.duration / 60)} min — ${cooldown.description}`,
-			);
-		}
-
+	const focusRaw = typeof args.focus === "string" ? args.focus : "";
+	if (!FOCUS_LIST.includes(focusRaw as Focus)) {
 		return {
 			id: "",
 			name: "workout_generator",
-			content: lines.join("\n"),
-			display: {
-				focus: focusLabel,
-				totalDuration: totalTime,
-				ftp,
-				intervals,
-				warmup,
-				cooldown,
-				phase,
-			},
+			content: "",
+			display: null,
+			error: `Invalid focus. Must be one of: ${FOCUS_LIST.join(", ")}`,
 		};
-	} finally {
-		end();
 	}
+	const focus = focusRaw as Focus;
+
+	const durationMinRaw =
+		typeof args.durationMinutes === "number" ? args.durationMinutes : 60;
+	const durationMin =
+		Number.isFinite(durationMinRaw) && durationMinRaw >= 30
+			? Math.min(300, Math.floor(durationMinRaw))
+			: 60;
+
+	let ftp: number | null =
+		typeof args.ftp === "number" && args.ftp > 0 ? args.ftp : null;
+
+	if (ftp == null) {
+		try {
+			ftp = computeAllTimeEstimates(userId, null).estimatedFtp;
+		} catch {
+			ftp = null;
+		}
+	}
+
+	if (ftp == null) {
+		return {
+			id: "",
+			name: "workout_generator",
+			content: "",
+			display: null,
+			error:
+				"Could not estimate FTP. Provide the ftp parameter or upload activities with power data.",
+		};
+	}
+
+	const eventDateRaw =
+		typeof args.eventDate === "string" ? args.eventDate.trim() : null;
+	const phase = resolvePhase(eventDateRaw);
+
+	const totalDurationSec = durationMin * 60;
+	const { intervals, warmup, cooldown } = buildWorkout(
+		focus,
+		ftp,
+		totalDurationSec,
+	);
+
+	const focusLabel = focus.replace(/_/g, " ");
+	const totalIntervalTime = intervals.reduce(
+		(sum, i) => sum + i.duration + i.restDuration,
+		0,
+	);
+	const totalTime =
+		(warmup?.duration ?? 0) + totalIntervalTime + (cooldown?.duration ?? 0);
+
+	const lines = [
+		`${focusLabel} workout (${Math.round(totalTime / 60)} min) · FTP: ${ftp}W`,
+		`Training phase: ${phase}`,
+		"",
+	];
+	if (warmup) {
+		lines.push(
+			`Warmup: ${Math.round(warmup.duration / 60)} min — ${warmup.description}`,
+		);
+	}
+	for (const interval of intervals) {
+		const onMin = Math.round(interval.duration / 60);
+		const offMin = Math.round(interval.restDuration / 60);
+		lines.push(
+			`  ${interval.description}: ${onMin} min @ ${interval.targetPower}W (${interval.targetPowerPercent}% FTP)${interval.restDuration > 0 ? ` / ${offMin} min rest` : ""}`,
+		);
+	}
+	if (cooldown) {
+		lines.push(
+			`Cooldown: ${Math.round(cooldown.duration / 60)} min — ${cooldown.description}`,
+		);
+	}
+
+	return {
+		id: "",
+		name: "workout_generator",
+		content: lines.join("\n"),
+		display: {
+			focus: focusLabel,
+			totalDuration: totalTime,
+			ftp,
+			intervals,
+			warmup,
+			cooldown,
+			phase,
+		},
+	};
 };
