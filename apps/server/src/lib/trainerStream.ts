@@ -1,4 +1,15 @@
 import type { ModelMessage, StreamChunk } from "@tanstack/ai";
+import type { ToolDefinition } from "@fit-analyzer/shared";
+
+type OpenAiCompatibleToolCallDelta = {
+	index?: number;
+	id?: string;
+	type?: "function";
+	function?: {
+		name?: string;
+		arguments?: string;
+	};
+};
 
 type OpenAiCompatibleStreamChunk = {
 	choices?: Array<{
@@ -7,6 +18,7 @@ type OpenAiCompatibleStreamChunk = {
 			reasoning?: string;
 			reasoning_content?: string;
 			reasoning_text?: string;
+			tool_calls?: OpenAiCompatibleToolCallDelta[];
 		};
 		finish_reason?: "stop" | "length" | "content_filter" | "tool_calls" | null;
 	}>;
@@ -34,14 +46,27 @@ function messageContentToString(
 	return text || null;
 }
 
+function toOpenAiTool(tool: ToolDefinition) {
+	return {
+		type: "function" as const,
+		function: {
+			name: tool.name,
+			description: tool.description,
+			parameters: tool.parameters,
+		},
+	};
+}
+
 function toOpenAiMessages(systemPrompt: string, messages: ModelMessage[]) {
 	const mapped = messages
 		.map((message) => {
 			const content = messageContentToString(message.content);
-			if (content == null) return null;
+			if (content == null && !message.toolCalls) return null;
 			return {
 				role: message.role,
-				content,
+				content: content ?? "",
+				...(message.toolCalls ? { tool_calls: message.toolCalls } : {}),
+				...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
 			};
 		})
 		.filter(
@@ -81,6 +106,25 @@ async function* parseOpenAiSse(
 	}
 }
 
+interface ToolCallAccumulator {
+	id: string;
+	name: string;
+	arguments: string;
+}
+
+function safeParseArgs(raw: string): Record<string, unknown> | null {
+	if (!raw.trim()) return {};
+	try {
+		const parsed = JSON.parse(raw);
+		if (parsed && typeof parsed === "object") {
+			return parsed as Record<string, unknown>;
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
+
 export async function* createTrainerStream(options: {
 	baseUrl: string;
 	apiKey: string;
@@ -90,12 +134,13 @@ export async function* createTrainerStream(options: {
 	includeReasoning?: boolean;
 	metadata?: Record<string, unknown>;
 	threadId?: string;
+	tools?: ToolDefinition[];
+	messageId?: string;
 }): AsyncGenerator<StreamChunk> {
 	const runId = crypto.randomUUID();
-	const messageId = crypto.randomUUID();
+	const messageId = options.messageId ?? crypto.randomUUID();
 	const stepId = crypto.randomUUID();
 	let stepStarted = false;
-	let textStarted = false;
 	let accumulatedText = "";
 	let accumulatedReasoning = "";
 	let finishReason: "stop" | "length" | "content_filter" | "tool_calls" | null =
@@ -108,10 +153,25 @@ export async function* createTrainerStream(options: {
 		  }
 		| undefined;
 
+	const toolCallAccumulators = new Map<number, ToolCallAccumulator>();
+	const toolCallOrder: number[] = [];
+	let toolCallDeltaCount = 0;
+
 	yield {
 		type: "RUN_STARTED",
 		runId,
 		threadId: options.threadId,
+		model: options.model,
+		timestamp: Date.now(),
+	};
+
+	// Emit TEXT_MESSAGE_START immediately so the tanstack processor creates
+	// the assistant message with our ID before any STEP_FINISHED or other
+	// events arrive (otherwise thinking gets its own separate message).
+	yield {
+		type: "TEXT_MESSAGE_START",
+		messageId,
+		role: "assistant",
 		model: options.model,
 		timestamp: Date.now(),
 	};
@@ -128,6 +188,10 @@ export async function* createTrainerStream(options: {
 
 	if (options.metadata) {
 		body.metadata = options.metadata;
+	}
+
+	if (options.tools && options.tools.length > 0) {
+		body.tools = options.tools.map(toOpenAiTool);
 	}
 
 	const response = await fetch(`${options.baseUrl}/chat/completions`, {
@@ -182,17 +246,6 @@ export async function* createTrainerStream(options: {
 
 		const textDelta = delta?.content ?? "";
 		if (textDelta) {
-			if (!textStarted) {
-				textStarted = true;
-				yield {
-					type: "TEXT_MESSAGE_START",
-					messageId,
-					role: "assistant",
-					model: options.model,
-					timestamp: Date.now(),
-				};
-			}
-
 			accumulatedText += textDelta;
 			yield {
 				type: "TEXT_MESSAGE_CONTENT",
@@ -202,6 +255,40 @@ export async function* createTrainerStream(options: {
 				model: options.model,
 				timestamp: Date.now(),
 			};
+		}
+
+		if (delta?.tool_calls) {
+			for (const tc of delta.tool_calls) {
+				const idx = tc.index ?? 0;
+				let acc = toolCallAccumulators.get(idx);
+				if (!acc) {
+					acc = {
+						id: tc.id ?? `tool_${crypto.randomUUID()}`,
+						name: tc.function?.name ?? "",
+						arguments: "",
+					};
+					toolCallAccumulators.set(idx, acc);
+					toolCallOrder.push(idx);
+					yield {
+						type: "TOOL_CALL_START",
+						toolCallId: acc.id,
+						toolName: acc.name,
+						timestamp: Date.now(),
+					};
+				}
+				if (tc.id) acc.id = tc.id;
+				if (tc.function?.name) acc.name = tc.function.name;
+				if (tc.function?.arguments) {
+					acc.arguments += tc.function.arguments;
+					toolCallDeltaCount++;
+					yield {
+						type: "TOOL_CALL_ARGS",
+						toolCallId: acc.id,
+						delta: tc.function.arguments,
+						timestamp: Date.now(),
+					};
+				}
+			}
 		}
 
 		if (choice?.finish_reason !== undefined) {
@@ -217,7 +304,23 @@ export async function* createTrainerStream(options: {
 		}
 	}
 
-	if (textStarted) {
+	// Emit TOOL_CALL_END for every accumulated tool call so the client/UI
+	// can finalize the call's parsed `input`.
+	for (const idx of toolCallOrder) {
+		const acc = toolCallAccumulators.get(idx);
+		if (!acc) continue;
+		yield {
+			type: "TOOL_CALL_END",
+			toolCallId: acc.id,
+			toolName: acc.name,
+			input: safeParseArgs(acc.arguments),
+			timestamp: Date.now(),
+		};
+	}
+
+	const requiresToolContinuation = finishReason === "tool_calls";
+
+	if (!requiresToolContinuation) {
 		yield {
 			type: "TEXT_MESSAGE_END",
 			messageId,

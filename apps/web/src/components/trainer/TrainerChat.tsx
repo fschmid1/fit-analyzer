@@ -2,6 +2,12 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useChat } from "@tanstack/ai-react";
 import type { UIMessage } from "@tanstack/ai-react";
+import type { StreamChunk } from "@tanstack/ai";
+import type {
+	ToolStreamChunk,
+	UIToolCall,
+	ChartHighlight,
+} from "@fit-analyzer/shared";
 import {
 	ArrowDown,
 	ArrowUp,
@@ -31,16 +37,20 @@ import {
 } from "../../lib/trainerStreamState";
 import { ModelPicker } from "./ModelPicker";
 import {
+	applyResumedChunk,
+	applyToolChunks,
 	getTextContent,
+	isToolChunk,
+	patchMessagesWithToolCalls,
+	stripTrailingAssistant,
+	streamResumedChat,
 	toTrainerMessage,
 	toUIMessage,
-	stripTrailingAssistant,
-	applyResumedChunk,
-	streamResumedChat,
 } from "./trainerHelpers";
 import { useTrainerHistoryPersist } from "./useTrainerHistoryPersist";
 import { DotsLoader } from "./DotsLoader";
 import { ChatMessageRow } from "./ChatMessageRow";
+import { addChartHighlight } from "../../lib/chartHighlightStore";
 
 const PAGE_SIZE = 20;
 const TOP_SENTINEL_THRESHOLD_PX = 200;
@@ -50,6 +60,7 @@ interface TrainerChatProps {
 	activityId: string;
 	initialMessages: UIMessage[];
 	initialInput: string;
+	initialToolCalls?: UIToolCall[];
 	initialNextCursor: string | null;
 	initialHasMore: boolean;
 	initialTotal: number;
@@ -69,6 +80,7 @@ export function TrainerChat({
 	threadId,
 	activityId,
 	initialMessages,
+	initialToolCalls,
 	initialInput,
 	initialNextCursor,
 	initialHasMore,
@@ -90,6 +102,50 @@ export function TrainerChat({
 	if (connectionRef.current === null) {
 		connectionRef.current = createTrainerStreamConnection(threadId);
 	}
+	const [toolCalls, setToolCalls] = useState<UIToolCall[]>(
+		initialToolCalls ?? [],
+	);
+	useEffect(() => {
+		setToolCalls(initialToolCalls ?? []);
+	}, [initialToolCalls]);
+	const handleChunk = useCallback((chunk: StreamChunk | ToolStreamChunk) => {
+		if (isToolChunk(chunk)) {
+			setToolCalls((prev) => applyToolChunks(prev, chunk));
+			if (
+				chunk.toolName === "highlight_chart" &&
+				chunk.display &&
+				!chunk.error
+			) {
+				const d = chunk.display as {
+					activityId?: string;
+					startSeconds: number;
+					endSeconds: number;
+					label?: string;
+					color?: string;
+				};
+				if (
+					typeof d.startSeconds === "number" &&
+					typeof d.endSeconds === "number" &&
+					d.startSeconds >= 0 &&
+					d.endSeconds >= 0 &&
+					d.endSeconds >= d.startSeconds
+				) {
+					addChartHighlight({
+						activityId: d.activityId,
+						startSeconds: d.startSeconds,
+						endSeconds: d.endSeconds,
+						label: d.label,
+						color: d.color,
+					});
+				} else {
+					console.warn(
+						"Malformed highlight_chart display — skipping:",
+						chunk.display,
+					);
+				}
+			}
+		}
+	}, []);
 	const {
 		messages,
 		sendMessage,
@@ -103,6 +159,7 @@ export function TrainerChat({
 		connection: connectionRef.current,
 		initialMessages,
 		body: { threadId },
+		onChunk: handleChunk as unknown as (chunk: StreamChunk) => void,
 	});
 
 	const inputRef = useRef(initialInput);
@@ -158,11 +215,18 @@ export function TrainerChat({
 				baseMessages = applyResumedChunk(baseMessages, chunk);
 				setMessages(baseMessages);
 
-				if (chunk.type === "RUN_FINISHED" || chunk.type === "RUN_ERROR") {
+				if (
+					chunk.type === "RUN_FINISHED" &&
+					chunk.finishReason !== "tool_calls"
+				) {
 					clearActiveTrainerStream(threadId);
 					clearTrainerDraft(threadId);
 					// `useTrainerHistoryPersist` will save the full merged history
 					// on the streaming → ready transition.
+				}
+				if (chunk.type === "RUN_ERROR") {
+					clearActiveTrainerStream(threadId);
+					clearTrainerDraft(threadId);
 				}
 			},
 			abortController.signal,
@@ -369,7 +433,13 @@ export function TrainerChat({
 		[hasMore, nextCursor, threadId],
 	);
 
-	useTrainerHistoryPersist(threadId, messages, status, ensureFullHistory);
+	useTrainerHistoryPersist(
+		threadId,
+		messages,
+		status,
+		toolCalls,
+		ensureFullHistory,
+	);
 
 	const handleSend = useCallback(async () => {
 		const text = inputRef.current.trim();
@@ -399,7 +469,9 @@ export function TrainerChat({
 			setMessages(nextMessages);
 			setTotalServerMessages((n) => Math.max(0, n - 1));
 			(async () => {
-				const full = await ensureFullHistory(nextMessages);
+				const full = await ensureFullHistory(
+					patchMessagesWithToolCalls(nextMessages, toolCalls),
+				);
 				const toSave = full
 					.filter((m) => m.role === "user" || m.role === "assistant")
 					.map(toTrainerMessage)
@@ -408,7 +480,7 @@ export function TrainerChat({
 			})();
 			clearTrainerDraft(threadId);
 		},
-		[messages, setMessages, threadId, ensureFullHistory],
+		[messages, setMessages, threadId, ensureFullHistory, toolCalls],
 	);
 
 	const isGeneralChat = activityId === "general";
@@ -529,7 +601,9 @@ export function TrainerChat({
 								if (isLoading) stop();
 								const truncated = messages.slice(0, msgIndex);
 								setMessages(truncated);
-								const full = await ensureFullHistory(truncated);
+								const full = await ensureFullHistory(
+									patchMessagesWithToolCalls(truncated, toolCalls),
+								);
 								const toSave = full
 									.filter((m) => m.role === "user" || m.role === "assistant")
 									.map(toTrainerMessage)
@@ -555,7 +629,9 @@ export function TrainerChat({
 							if (isLoading) stop();
 							const truncated = messages.slice(0, lastUserIndex);
 							setMessages(truncated);
-							const full = await ensureFullHistory(truncated);
+							const full = await ensureFullHistory(
+								patchMessagesWithToolCalls(truncated, toolCalls),
+							);
 							const toSave = full
 								.filter((m) => m.role === "user" || m.role === "assistant")
 								.map(toTrainerMessage)
@@ -572,6 +648,7 @@ export function TrainerChat({
 								msgIndex={msgIndex}
 								isLastMsg={isLastMsg}
 								isCurrentlyStreaming={isCurrentlyStreaming}
+								externalToolCalls={toolCalls}
 								onDelete={() => setConfirmDeleteMessageId(msg.id)}
 								onRetry={handleRetry}
 							/>

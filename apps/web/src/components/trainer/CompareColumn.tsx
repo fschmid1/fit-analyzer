@@ -8,6 +8,8 @@ import {
 } from "react";
 import type { UIMessage } from "@tanstack/ai-react";
 import { useChat } from "@tanstack/ai-react";
+import type { StreamChunk } from "@tanstack/ai";
+import type { ToolStreamChunk, UIToolCall } from "@fit-analyzer/shared";
 import { ArrowDown, ArrowUp, Loader2, X } from "lucide-react";
 import {
 	AVAILABLE_MODELS,
@@ -25,11 +27,16 @@ import {
 } from "../../lib/trainerStreamState";
 import { DotsLoader } from "./DotsLoader";
 import { ModelPicker } from "./ModelPicker";
+import { ToolCallCard } from "./ToolCallCard";
 import {
 	applyResumedChunk,
+	applyToolChunks,
+	isToolChunk,
 	stripTrailingAssistant,
 	streamResumedChat,
 	toUIMessage,
+	toolCallsForMessage,
+	trailingToolCalls,
 } from "./trainerHelpers";
 import { useTrainerHistoryPersist } from "./useTrainerHistoryPersist";
 import { CompareMessageRow } from "./CompareMessageRow";
@@ -89,11 +96,18 @@ export const CompareColumn = forwardRef<
 	if (connectionRef.current === null) {
 		connectionRef.current = createTrainerStreamConnection(thread.id);
 	}
+	const [toolCalls, setToolCalls] = useState<UIToolCall[]>([]);
+	const handleChunk = useCallback((chunk: StreamChunk | ToolStreamChunk) => {
+		if (isToolChunk(chunk)) {
+			setToolCalls((prev) => applyToolChunks(prev, chunk));
+		}
+	}, []);
 	const { messages, sendMessage, status, isLoading, stop, error, setMessages } =
 		useChat({
 			connection: connectionRef.current,
 			initialMessages,
 			body: { threadId: thread.id },
+			onChunk: handleChunk as unknown as (chunk: StreamChunk) => void,
 		});
 
 	// `useChat`'s `setMessages` doesn't support the updater form, so we
@@ -127,6 +141,7 @@ export const CompareColumn = forwardRef<
 			const trimmed = text.trim();
 			if (!trimmed) return;
 			setTotalServerMessages((n) => n + 2);
+			setToolCalls([]);
 			await sendMessageRef.current(trimmed);
 		},
 		stop: () => {
@@ -178,6 +193,7 @@ export const CompareColumn = forwardRef<
 		if (activeStream) {
 			let baseMessages = stripTrailingAssistant(initialMessages);
 			setMessages(baseMessages);
+			setToolCalls([]);
 			const abortController = new AbortController();
 
 			streamResumedChat(
@@ -185,8 +201,18 @@ export const CompareColumn = forwardRef<
 				(chunk) => {
 					baseMessages = applyResumedChunk(baseMessages, chunk);
 					setMessages(baseMessages);
+					if (isToolChunk(chunk)) {
+						setToolCalls((prev) => applyToolChunks(prev, chunk));
+					}
 
-					if (chunk.type === "RUN_FINISHED" || chunk.type === "RUN_ERROR") {
+					if (
+						chunk.type === "RUN_FINISHED" &&
+						chunk.finishReason !== "tool_calls"
+					) {
+						clearActiveTrainerStream(thread.id);
+						clearTrainerDraft(thread.id);
+					}
+					if (chunk.type === "RUN_ERROR") {
 						clearActiveTrainerStream(thread.id);
 						clearTrainerDraft(thread.id);
 					}
@@ -205,7 +231,13 @@ export const CompareColumn = forwardRef<
 		setMessages(initialMessages);
 	}, [initialMessages, setMessages, thread.id]);
 
-	useTrainerHistoryPersist(thread.id, messages, status, ensureFullHistory);
+	useTrainerHistoryPersist(
+		thread.id,
+		messages,
+		status,
+		toolCalls,
+		ensureFullHistory,
+	);
 
 	const onStatusChangeRef = useRef(onStatusChange);
 	useEffect(() => {
@@ -422,6 +454,11 @@ export const CompareColumn = forwardRef<
 					{messages.map((msg) => {
 						const isLastMsg = msg.id === lastMessageId;
 						const isCurrentlyStreaming = isLastMsg && status === "streaming";
+						const callsForMsg = toolCallsForMessage(
+							messages,
+							toolCalls,
+							msg.id,
+						);
 
 						return (
 							<CompareMessageRow
@@ -429,9 +466,18 @@ export const CompareColumn = forwardRef<
 								msg={msg}
 								isLastMsg={isLastMsg}
 								isCurrentlyStreaming={isCurrentlyStreaming}
+								toolCalls={callsForMsg}
 							/>
 						);
 					})}
+
+					{trailingToolCalls(messages, toolCalls).length > 0 && (
+						<div className="ml-2 flex max-w-full flex-col gap-1.5">
+							{trailingToolCalls(messages, toolCalls).map((tc) => (
+								<ToolCallCard key={tc.id} toolCall={tc} defaultExpanded />
+							))}
+						</div>
+					)}
 
 					{status === "submitted" && (
 						<div className="flex justify-start">

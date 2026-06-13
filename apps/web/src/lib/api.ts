@@ -2,6 +2,7 @@ import {
 	AVAILABLE_MODELS,
 	type ActivityListItem,
 	type ActivityStats,
+	type AthleteProfile,
 	type CoachModelSettings,
 	type CompareSettings,
 	type HealthData,
@@ -18,6 +19,7 @@ import {
 	type TrainerChatHistory,
 	type TrainerMessage,
 	type TrainerThread,
+	type UpdateAthleteProfileBody,
 	type WaxedChainReminderSettings,
 } from "@fit-analyzer/shared";
 
@@ -36,6 +38,9 @@ export interface UserSettingsResponse {
 	openwearables: OpenwearablesSettings;
 	compare: CompareSettings;
 	healthAutoExport: HealthAutoExportSettings;
+	athleteProfile: AthleteProfile;
+	estimatedFtp: number | null;
+	estimatedMaxHr: number | null;
 }
 
 export async function fetchCurrentUser(): Promise<UserInfo | null> {
@@ -611,4 +616,23 @@ export async function updateHealthSource(
 		);
 	}
 	return (data as UserSettingsResponse).healthAutoExport;
+}
+
+export async function updateAthleteProfile(
+	input: UpdateAthleteProfileBody,
+): Promise<AthleteProfile> {
+	const res = await fetch(`${API_BASE}/me/settings`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(input),
+	});
+	const data = await res
+		.json()
+		.catch(() => ({ error: "Failed to update athlete profile" }));
+	if (!res.ok) {
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to update athlete profile",
+		);
+	}
+	return (data as UserSettingsResponse).athleteProfile;
 }

@@ -289,6 +289,8 @@ export interface TrainerMessage {
 	role: "user" | "assistant";
 	content: string;
 	createdAt: string; // ISO-8601
+	/** Tool calls attached to this message (only present for assistant messages with tool usage) */
+	toolCalls?: UIToolCall[];
 }
 
 /** A thread (conversation) within a trainer chat for an activity */
@@ -363,4 +365,93 @@ export interface HealthHistoryEntry {
 	sleepEfficiencyPercent: number | null;
 	deepMinutes: number | null;
 	remMinutes: number | null;
+}
+
+// --- Tool system types ---
+
+export interface ToolParameter {
+	type: "string" | "number" | "boolean";
+	description: string;
+	enum?: string[];
+}
+
+export interface ToolDefinition {
+	name: string;
+	description: string;
+	parameters: {
+		type: "object";
+		properties: Record<string, ToolParameter>;
+		required: string[];
+	};
+}
+
+export interface ToolCall {
+	id: string;
+	name: string;
+	arguments: Record<string, unknown>;
+}
+
+export interface ToolResult {
+	id: string;
+	name: string;
+	content: string;
+	display: unknown;
+	error?: string;
+}
+
+export type UIToolCallStatus = "executing" | "done" | "error";
+
+export interface UIToolCall {
+	id: string;
+	name: string;
+	arguments: Record<string, unknown>;
+	status: UIToolCallStatus;
+	result?: ToolResult;
+}
+
+// Custom stream chunk for tool results. The standard AG-UI tool
+// events (TOOL_CALL_START/ARGS/END) are emitted by the underlying
+// @tanstack/ai stream layer; TOOL_RESULT is server-emitted so the
+// client can pair a tool-call part with the executed tool's display
+// payload. Tool results are ephemeral and never persisted.
+export type ToolStreamChunk = {
+	type: "TOOL_RESULT";
+	toolCallId: string;
+	toolName: string;
+	content: string;
+	display: unknown;
+	error?: string;
+	timestamp: number;
+};
+
+export interface ChartHighlight {
+	activityId?: string;
+	startSeconds: number;
+	endSeconds: number;
+	label?: string;
+	color?: string;
+}
+
+export type TrainerStreamChunk = ToolStreamChunk;
+
+// --- Athlete profile types ---
+
+export interface AthleteProfile {
+	ftp: number | null;
+	maxHr: number | null;
+	goalEventDate: string | null;
+	goalEventName: string | null;
+	goalDescription: string | null;
+	weeklyHours: number | null;
+	focusAreas: string[];
+}
+
+export interface UpdateAthleteProfileBody {
+	ftp?: number | null;
+	maxHr?: number | null;
+	goalEventDate?: string | null;
+	goalEventName?: string | null;
+	goalDescription?: string | null;
+	weeklyHours?: number | null;
+	focusAreas?: string[];
 }

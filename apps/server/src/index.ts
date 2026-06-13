@@ -9,6 +9,9 @@ import { heatmap } from "./routes/heatmap.js";
 import { me } from "./routes/me.js";
 import { strava } from "./routes/strava.js";
 import { trainer } from "./routes/trainer.js";
+import { initTools } from "./lib/tools/init.js";
+
+initTools();
 
 const app = new Hono();
 

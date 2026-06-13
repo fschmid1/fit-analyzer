@@ -1,4 +1,5 @@
 import type { StreamChunk } from "@tanstack/ai";
+import type { ToolStreamChunk } from "@fit-analyzer/shared";
 
 type RegistryEntry = {
 	chunks: string[];
@@ -7,6 +8,8 @@ type RegistryEntry = {
 	startedAt: number;
 	userId: string | null;
 };
+
+type ProducerChunk = StreamChunk | ToolStreamChunk;
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const registry = new Map<string, RegistryEntry>();
@@ -40,11 +43,13 @@ function cleanupIfExpired(streamId: string, entry: RegistryEntry) {
 
 export function startTrainerStreamProducer(
 	streamId: string,
-	stream: AsyncIterable<StreamChunk>,
+	stream: AsyncIterable<ProducerChunk>,
 	userId: string,
 ) {
 	const entry = getOrCreateEntry(streamId);
-	if (entry.chunks.length > 0 || entry.done) return;
+	if (entry.chunks.length > 0 || entry.done) {
+		return;
+	}
 	entry.userId = userId;
 
 	void (async () => {

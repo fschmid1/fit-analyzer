@@ -1,6 +1,7 @@
 import type {
 	SaveTrainerHistoryBody,
 	TrainerMessage,
+	UIToolCall,
 } from "@fit-analyzer/shared";
 import { AVAILABLE_MODELS, getModelProvider } from "@fit-analyzer/shared";
 import { convertMessagesToModelMessages } from "@tanstack/ai";
@@ -9,12 +10,12 @@ import { db } from "../db.js";
 import { env } from "../env.js";
 import { getCoachModelSettings } from "../lib/coachModelSettings.js";
 import { getOllamaModels } from "../lib/ollamaModelCache.js";
-import { createOllamaTrainerStream } from "../lib/ollamaTrainerStream.js";
 import {
 	parseCoachingMarkdown,
 	serializeCoachingMarkdown,
 } from "../lib/parseCoachingMarkdown.js";
-import { createTrainerStream } from "../lib/trainerStream.js";
+import { getToolDefinitions } from "../lib/tools/registry.js";
+import { createTrainerToolLoop } from "../lib/trainerToolLoop.js";
 import {
 	createTrainerStreamConsumer,
 	hasActiveTrainerStream,
@@ -22,18 +23,36 @@ import {
 	verifyStreamOwner,
 } from "../lib/trainerStreamRegistry.js";
 import { buildTrainerAthleteContext } from "../lib/trainerSystemPrompt.js";
+import { formatCurrentActivity } from "../lib/trainerSystemPrompt.js";
 
 const BASE_SYSTEM_PROMPT =
 	"You are an expert endurance sports coach specialising in cycling and triathlon. " +
 	"You receive structured training data from Garmin FIT files and provide concise, actionable coaching feedback. " +
 	"When the user shares their activity summary and interval data, analyse power, heart rate and cadence trends " +
-	"and give practical training advice.";
+	"and give practical training advice.\n\n" +
+	"If a thread is linked to an activity, activity-specific tools (highlight_chart, analyze_intervals, zone_analysis, etc.) " +
+	"automatically use that activity. In general chat, you MUST provide an explicit activityId parameter to any activity-specific tool. " +
+	"If you do not know the activityId, ask the user for it rather than guessing.\n\n" +
+	"When the user refers to a date or time (e.g. yesterday, last week, a specific day), you MUST call the current_time tool FIRST " +
+	"before any other tool, then compute the absolute YYYY-MM-DD date from the current time before calling date-based tools. " +
+	"Never guess the current date.\n\n" +
+	"When you reference a specific section of a ride, use the highlight_chart tool to draw the user's attention " +
+	"to that time range on the chart. This creates a visual overlay so the user can see exactly which portion " +
+	"you are discussing. Call highlight_chart at most once per interval or section you discuss.\n\n" +
+	"When the athlete confirms a value you suggested (e.g. FTP, max HR, goal event), use the update_profile tool " +
+	"to persist it to their profile. Always ask for confirmation before updating their profile.\n\n" +
+	"Be efficient with tool calls. Prefer making parallel calls in a single round rather than sequential rounds. " +
+	"Avoid redundant lookups — if you already retrieved activity data, do not fetch it again.";
 
-async function buildSystemPrompt(userId: string): Promise<string> {
+async function buildSystemPrompt(
+	userId: string,
+	activityId?: string,
+): Promise<string> {
 	const athleteContext = await buildTrainerAthleteContext(userId);
-	const now = new Date();
-	const dateTimeText = `Current date and time: ${now.toISOString()}`;
-	return `${BASE_SYSTEM_PROMPT}\n${dateTimeText}${athleteContext}`;
+	const activityContext = activityId
+		? await formatCurrentActivity(activityId, userId)
+		: "";
+	return `${BASE_SYSTEM_PROMPT}${athleteContext}${activityContext}`;
 }
 
 const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 20;
@@ -93,6 +112,47 @@ function getUserId(c: {
 	return userId;
 }
 
+function parseToolCalls(raw: unknown): UIToolCall[] | undefined {
+	if (raw == null || raw === "") return undefined;
+	if (typeof raw !== "string") return undefined;
+	try {
+		const parsed = JSON.parse(raw);
+		if (!Array.isArray(parsed)) return undefined;
+		return parsed as UIToolCall[];
+	} catch {
+		return undefined;
+	}
+}
+
+function serializeToolCalls(
+	toolCalls: UIToolCall[] | undefined,
+): string | null {
+	if (!toolCalls || toolCalls.length === 0) return null;
+	return JSON.stringify(toolCalls);
+}
+
+interface MessageRow {
+	id: string;
+	role: string;
+	content: string;
+	createdAt: string;
+	toolCalls: unknown;
+}
+
+function rowToTrainerMessage(row: MessageRow): TrainerMessage {
+	const msg: TrainerMessage = {
+		id: row.id,
+		role: row.role as "user" | "assistant",
+		content: row.content,
+		createdAt: row.createdAt,
+	};
+	const toolCalls = parseToolCalls(row.toolCalls);
+	if (toolCalls && toolCalls.length > 0) {
+		msg.toolCalls = toolCalls;
+	}
+	return msg;
+}
+
 type TrainerChatRequestBody = {
 	messages?: Parameters<typeof convertMessagesToModelMessages>[0];
 	threadId?: unknown;
@@ -139,14 +199,14 @@ const getThreadByIdStmt = db.prepare(
 );
 
 const getMessagesStmt = db.prepare(
-	`SELECT id, role, content, created_at as createdAt
+	`SELECT id, role, content, created_at as createdAt, tool_calls as toolCalls
      FROM trainer_messages
      WHERE chat_id = ?
      ORDER BY created_at ASC, id ASC`,
 );
 
 const getMessagesPageStmt = db.prepare(
-	`SELECT id, role, content, created_at as createdAt
+	`SELECT id, role, content, created_at as createdAt, tool_calls as toolCalls
      FROM trainer_messages
      WHERE chat_id = ?
        AND (created_at < ? OR (created_at = ? AND id < ?))
@@ -155,7 +215,7 @@ const getMessagesPageStmt = db.prepare(
 );
 
 const getMessagesLatestStmt = db.prepare(
-	`SELECT id, role, content, created_at as createdAt
+	`SELECT id, role, content, created_at as createdAt, tool_calls as toolCalls
      FROM trainer_messages
      WHERE chat_id = ?
      ORDER BY created_at DESC, id DESC
@@ -194,8 +254,8 @@ const touchThreadStmt = db.prepare(
 );
 
 const insertMessageStmt = db.prepare(
-	`INSERT INTO trainer_messages (id, chat_id, role, content, created_at)
-     VALUES (?, ?, ?, ?, ?)`,
+	`INSERT INTO trainer_messages (id, chat_id, role, content, created_at, tool_calls)
+     VALUES (?, ?, ?, ?, ?, ?)`,
 );
 
 async function resolveThreadModel(
@@ -235,7 +295,7 @@ trainer.post("/chat", async (c) => {
 	const threadId = getStringBodyValue(body.threadId);
 	const thread = threadId
 		? (getThreadByIdStmt.get(threadId, userId) as
-				| { coachModel: string | null }
+				| { coachModel: string | null; activityId: string }
 				| undefined)
 		: undefined;
 	const model = await resolveThreadModel(thread, userId);
@@ -248,42 +308,37 @@ trainer.post("/chat", async (c) => {
 		);
 	}
 
-	if (!hasActiveTrainerStream(streamId)) {
-		const systemPrompt = await buildSystemPrompt(userId);
-
-		if (providerConfig.provider === "ollama-cloud") {
-			startTrainerStreamProducer(
-				streamId,
-				createOllamaTrainerStream({
-					baseUrl: providerConfig.baseUrl,
-					apiKey: providerConfig.apiKey,
-					model,
-					systemPrompt,
-					messages: modelMessages,
-					threadId: getStringBodyValue(body.threadId),
-				}),
-				userId,
-			);
-		} else {
-			const metadata = providerConfig.includeReasoning
-				? getKimiRequestMetadata(body, userId)
-				: undefined;
-
-			startTrainerStreamProducer(
-				streamId,
-				createTrainerStream({
-					baseUrl: providerConfig.baseUrl,
-					apiKey: providerConfig.apiKey,
-					model,
-					systemPrompt,
-					messages: modelMessages,
-					includeReasoning: providerConfig.includeReasoning,
-					metadata,
-					threadId: getStringBodyValue(body.threadId),
-				}),
-				userId,
-			);
+	if (hasActiveTrainerStream(streamId)) {
+		if (!verifyStreamOwner(streamId, userId)) {
+			return c.json({ error: "Stream not found or already completed" }, 404);
 		}
+	} else {
+		const activityId = thread
+			? ((thread as { activityId?: string }).activityId ?? undefined)
+			: undefined;
+		const systemPrompt = await buildSystemPrompt(userId, activityId);
+		const tools = getToolDefinitions();
+		const metadata = providerConfig.includeReasoning
+			? getKimiRequestMetadata(body, userId)
+			: undefined;
+
+		startTrainerStreamProducer(
+			streamId,
+			createTrainerToolLoop({
+				baseUrl: providerConfig.baseUrl,
+				apiKey: providerConfig.apiKey,
+				model,
+				systemPrompt,
+				messages: modelMessages,
+				provider: providerConfig.provider,
+				includeReasoning: providerConfig.includeReasoning,
+				metadata,
+				threadId: getStringBodyValue(body.threadId),
+				userId,
+				tools,
+			}),
+			userId,
+		);
 	}
 
 	return new Response(createTrainerStreamConsumer(streamId), {
@@ -313,7 +368,6 @@ trainer.get("/chat/:streamId", async (c) => {
 	}
 
 	if (hasActiveTrainerStream(streamId)) {
-		console.log("resuming stream");
 		return new Response(createTrainerStreamConsumer(streamId), {
 			headers: {
 				"Content-Type": "text/event-stream",
@@ -423,7 +477,7 @@ trainer.get("/history/:threadId", (c) => {
 			: DEFAULT_PAGE_SIZE;
 	const cursor = c.req.query("cursor");
 
-	let page: { id: string; role: string; content: string; createdAt: string }[];
+	let page: MessageRow[];
 	if (cursor) {
 		const sep = cursor.indexOf("|");
 		const cursorCreatedAt = sep === -1 ? cursor : cursor.slice(0, sep);
@@ -435,15 +489,15 @@ trainer.get("/history/:threadId", (c) => {
 			cursorCreatedAt,
 			cursorId,
 			limit + 1,
-		) as typeof page;
+		) as MessageRow[];
 	} else {
-		page = getMessagesLatestStmt.all(thread.id, limit + 1) as typeof page;
+		page = getMessagesLatestStmt.all(thread.id, limit + 1) as MessageRow[];
 	}
 
 	const hasMore = page.length > limit;
 	const trimmed = hasMore ? page.slice(0, limit) : page;
 	// We pulled most-recent-first; flip back to ascending so the chat renders oldest → newest.
-	const messages = trimmed.reverse() as TrainerMessage[];
+	const messages = trimmed.reverse().map(rowToTrainerMessage);
 
 	let nextCursor: string | null = null;
 	if (hasMore) {
@@ -476,7 +530,14 @@ trainer.put("/history/:threadId", async (c) => {
 		deleteMessagesStmt.run(threadId);
 		touchThreadStmt.run(threadId);
 		for (const m of messages) {
-			insertMessageStmt.run(m.id, threadId, m.role, m.content, m.createdAt);
+			insertMessageStmt.run(
+				m.id,
+				threadId,
+				m.role,
+				m.content,
+				m.createdAt,
+				serializeToolCalls(m.toolCalls),
+			);
 		}
 	})();
 
@@ -499,7 +560,9 @@ trainer.post("/compact/:threadId", async (c) => {
 		| undefined;
 	if (!sourceThread) return c.json({ error: "Thread not found" }, 404);
 
-	const allMessages = getMessagesStmt.all(threadId) as TrainerMessage[];
+	const allMessages = (getMessagesStmt.all(threadId) as MessageRow[]).map(
+		rowToTrainerMessage,
+	);
 
 	const keepEndIds = new Set<string>();
 	let userCount = 0;
@@ -660,7 +723,14 @@ ${summary}`,
 			sourceThread.coachModel,
 		);
 		for (const m of newMessages) {
-			insertMessageStmt.run(m.id, forkId, m.role, m.content, m.createdAt);
+			insertMessageStmt.run(
+				m.id,
+				forkId,
+				m.role,
+				m.content,
+				m.createdAt,
+				serializeToolCalls(m.toolCalls),
+			);
 		}
 	})();
 
@@ -696,7 +766,9 @@ trainer.post("/fork/:threadId", async (c) => {
 		| undefined;
 	if (!sourceThread) return c.json({ error: "Thread not found" }, 404);
 
-	const allMessages = getMessagesStmt.all(threadId) as TrainerMessage[];
+	const allMessages = (getMessagesStmt.all(threadId) as MessageRow[]).map(
+		rowToTrainerMessage,
+	);
 
 	const forkId = crypto.randomUUID();
 	const forkName = `${sourceThread.name} \u00b7 Copy`;
@@ -716,7 +788,14 @@ trainer.post("/fork/:threadId", async (c) => {
 			sourceThread.coachModel,
 		);
 		for (const m of newMessages) {
-			insertMessageStmt.run(m.id, forkId, m.role, m.content, m.createdAt);
+			insertMessageStmt.run(
+				m.id,
+				forkId,
+				m.role,
+				m.content,
+				m.createdAt,
+				serializeToolCalls(m.toolCalls),
+			);
 		}
 	})();
 
@@ -788,6 +867,7 @@ trainer.post("/import", async (c) => {
 				m.role,
 				m.content,
 				m.createdAt,
+				serializeToolCalls(m.toolCalls),
 			);
 		}
 	})();
@@ -821,7 +901,9 @@ trainer.get("/export/:threadId", async (c) => {
 		| undefined;
 	if (!thread) return c.json({ error: "Thread not found" }, 404);
 
-	const messages = getMessagesStmt.all(threadId) as TrainerMessage[];
+	const messages = (getMessagesStmt.all(threadId) as MessageRow[]).map(
+		rowToTrainerMessage,
+	);
 	if (messages.length === 0) {
 		return c.json({ error: "Thread has no messages to export" }, 400);
 	}

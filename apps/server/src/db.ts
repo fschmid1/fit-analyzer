@@ -157,6 +157,13 @@ try {
 	/* column already exists */
 }
 
+// Migration: add tool_calls column to trainer_messages
+try {
+	db.exec("ALTER TABLE trainer_messages ADD COLUMN tool_calls TEXT");
+} catch {
+	/* column already exists */
+}
+
 // Strava OAuth token storage
 db.exec(`
   CREATE TABLE IF NOT EXISTS strava_tokens (
@@ -253,6 +260,45 @@ try {
 }
 try {
 	db.exec("ALTER TABLE user_settings ADD COLUMN hae_last_sync_at TEXT");
+} catch {
+	/* column already exists */
+}
+
+// Migration: add athlete profile columns to user_settings
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN athlete_ftp INTEGER");
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN athlete_max_hr INTEGER");
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN athlete_goal_event_date TEXT");
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN athlete_goal_event_name TEXT");
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN athlete_goal_description TEXT");
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN athlete_weekly_hours REAL");
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec(
+		"ALTER TABLE user_settings ADD COLUMN athlete_focus_areas TEXT NOT NULL DEFAULT '[]'",
+	);
 } catch {
 	/* column already exists */
 }

@@ -5,11 +5,14 @@ import remarkGfm from "remark-gfm";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { DotsLoader } from "./DotsLoader";
 import { MessageActions } from "./MessageActions";
+import { ToolCallCard } from "./ToolCallCard";
 import {
 	getTextContent,
 	getThinkingContent,
+	getToolCallsFromParts,
 	formatTime,
 } from "./trainerHelpers";
+import type { UIToolCall } from "@fit-analyzer/shared";
 import { mdComponents } from "./markdownComponents";
 
 interface ChatMessageRowProps {
@@ -17,6 +20,7 @@ interface ChatMessageRowProps {
 	msgIndex: number;
 	isLastMsg: boolean;
 	isCurrentlyStreaming: boolean;
+	externalToolCalls?: UIToolCall[];
 	onDelete: (messageId: string) => void;
 	onRetry: (msgIndex: number) => void;
 }
@@ -25,6 +29,7 @@ function ChatMessageRowInner({
 	msg,
 	msgIndex,
 	isCurrentlyStreaming,
+	externalToolCalls,
 	onDelete,
 	onRetry,
 }: ChatMessageRowProps) {
@@ -32,6 +37,13 @@ function ChatMessageRowInner({
 	const text = getTextContent(msg);
 	const thinkingContent = getThinkingContent(msg);
 	const isThinkingPhase = isCurrentlyStreaming && !!thinkingContent && !text;
+	const toolCallsFromParts = getToolCallsFromParts(msg);
+	const externalById = new Map(
+		(externalToolCalls ?? []).map((tc) => [tc.id, tc]),
+	);
+	const toolCalls = toolCallsFromParts.map(
+		(tc) => externalById.get(tc.id) ?? tc,
+	);
 
 	if (isUser) {
 		if (!text) return null;
@@ -64,6 +76,13 @@ function ChatMessageRowInner({
 						content={thinkingContent}
 						isStreaming={isThinkingPhase}
 					/>
+				)}
+				{toolCalls.length > 0 && (
+					<div className="flex flex-col gap-1.5">
+						{toolCalls.map((tc) => (
+							<ToolCallCard key={tc.id} toolCall={tc} />
+						))}
+					</div>
 				)}
 				{text ? (
 					<ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>

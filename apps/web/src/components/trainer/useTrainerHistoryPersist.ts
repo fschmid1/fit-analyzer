@@ -1,25 +1,31 @@
 import { useEffect, useRef } from "react";
 import type { UIMessage } from "@tanstack/ai-react";
+import type { TrainerMessage, UIToolCall } from "@fit-analyzer/shared";
 import { saveTrainerHistory } from "../../lib/api";
 import {
 	clearTrainerDraft,
 	saveTrainerDraft,
 } from "../../lib/trainerStreamState";
-import { toTrainerMessage } from "./trainerHelpers";
+import { toTrainerMessage, patchMessagesWithToolCalls } from "./trainerHelpers";
 
 type ChatStatus = "submitted" | "streaming" | "ready" | "error";
 
-function persistable(messages: UIMessage[]) {
+function persistable(messages: UIMessage[]): TrainerMessage[] {
 	return messages
 		.filter((m) => m.role === "user" || m.role === "assistant")
 		.map(toTrainerMessage)
-		.filter((m) => m.content);
+		.filter(
+			(m) =>
+				m.content ||
+				(m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0),
+		);
 }
 
 export function useTrainerHistoryPersist(
 	threadId: string,
 	messages: UIMessage[],
 	status: ChatStatus,
+	toolCalls: UIToolCall[],
 	ensureFullHistory?: (current: UIMessage[]) => Promise<UIMessage[]>,
 ) {
 	const prevStatus = useRef<ChatStatus>(status);
@@ -31,8 +37,10 @@ export function useTrainerHistoryPersist(
 		if (wasStreaming && nowReady) {
 			const save = async () => {
 				const full = ensureFullHistory
-					? await ensureFullHistory(messages)
-					: messages;
+					? await ensureFullHistory(
+							patchMessagesWithToolCalls(messages, toolCalls),
+						)
+					: patchMessagesWithToolCalls(messages, toolCalls);
 				const toSave = persistable(full);
 				if (toSave.length > 0)
 					saveTrainerHistory(threadId, toSave).catch(console.error);
@@ -41,14 +49,17 @@ export function useTrainerHistoryPersist(
 			void save();
 		}
 		prevStatus.current = status;
-	}, [status, messages, threadId, ensureFullHistory]);
+	}, [status, messages, threadId, toolCalls, ensureFullHistory]);
 
 	useEffect(() => {
 		if (status === "streaming" || status === "submitted") {
 			const id = setTimeout(() => {
-				saveTrainerDraft(threadId, messages);
+				saveTrainerDraft(
+					threadId,
+					patchMessagesWithToolCalls(messages, toolCalls),
+				);
 			}, 600);
 			return () => clearTimeout(id);
 		}
-	}, [messages, status, threadId]);
+	}, [messages, status, threadId, toolCalls]);
 }

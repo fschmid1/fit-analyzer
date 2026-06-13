@@ -1,9 +1,11 @@
 import { db } from "../db.js";
 import type { ActivityStats, HealthContext } from "@fit-analyzer/shared";
+import { getAthleteProfile } from "./athleteProfile.js";
 import {
 	computeActivityStats,
 	computeAllTimeEstimates,
 } from "./athleteStats.js";
+import { getActivityById } from "./tools/activityUtils.js";
 import { getHaeHealthContext } from "./haeClient.js";
 import {
 	getOwBodySummary,
@@ -22,7 +24,7 @@ function formatSleepDuration(minutes: number): string {
 function formatHealthContext(ctx: HealthContext, sourceLabel: string): string {
 	const parts: string[] = [];
 	parts.push(
-		`*Health data retrieved ${new Date().toISOString().split("T")[0]} from ${sourceLabel} — this is live, up-to-date data.*`,
+		`*Health data retrieved from ${sourceLabel} — this is live, up-to-date data.*`,
 	);
 
 	if (ctx.rhr?.current != null) {
@@ -146,6 +148,30 @@ function formatBodyComposition(
 		? `${body.source.provider} (${body.source.device})`
 		: body.source.provider;
 	return `\n## Athlete Body Composition\nUse these baseline metrics when discussing training load, weight management, or aerobic capacity. Sourced from ${source}.\n${parts.join("\n")}\n`;
+}
+
+function formatAthleteProfile(
+	profile: Awaited<ReturnType<typeof getAthleteProfile>>,
+): string {
+	const parts: string[] = [];
+
+	if (profile.ftp != null)
+		parts.push(`- FTP: ${profile.ftp} W (user-provided)`);
+	if (profile.maxHr != null) parts.push(`- Max HR: ${profile.maxHr} bpm`);
+	if (profile.goalEventName || profile.goalEventDate) {
+		const event = profile.goalEventName ?? "Goal event";
+		const date = profile.goalEventDate ?? "no date set";
+		parts.push(`- Goal Event: ${event} on ${date}`);
+	}
+	if (profile.goalDescription) parts.push(`- Goal: ${profile.goalDescription}`);
+	if (profile.weeklyHours != null)
+		parts.push(`- Available: ${profile.weeklyHours} hours/week`);
+	if (profile.focusAreas.length > 0)
+		parts.push(`- Focus: ${profile.focusAreas.join(", ")}`);
+
+	if (parts.length === 0) return "";
+
+	return `\n## Athlete Profile\nUser-provided settings that override estimated values. Always prefer these values over estimates when they exist.\n${parts.join("\n")}\n`;
 }
 
 function formatTrainingHistory(
@@ -279,7 +305,13 @@ export async function buildTrainerAthleteContext(
 		context,
 	);
 
+	const profile = getAthleteProfile(userId);
+
 	const sections: string[] = [];
+
+	const profileText = formatAthleteProfile(profile);
+	if (profileText) sections.push(profileText);
+
 	if (context) {
 		sections.push(formatHealthContext(context, sourceLabel));
 	}
@@ -314,4 +346,43 @@ export async function buildTrainerAthleteContext(
 	}
 
 	return sections.join("\n");
+}
+
+export function formatCurrentActivity(
+	activityId: string,
+	userId: string,
+): string {
+	const data = getActivityById(activityId, userId);
+	if (!data) return "";
+
+	const s = data.summary;
+	const lines: string[] = [];
+	lines.push(`Date: ${data.date}`);
+	lines.push(
+		`Duration: ${Math.round((s.totalTimerTime ?? 0) / 60)} min, Distance: ${
+			s.totalDistanceKm != null ? `${s.totalDistanceKm} km` : "n/a"
+		}`,
+	);
+	if (s.avgPower != null) lines.push(`Avg Power: ${s.avgPower} W`);
+	if (s.normalizedPower != null) lines.push(`NP: ${s.normalizedPower} W`);
+	if (s.maxPower != null) lines.push(`Max Power: ${s.maxPower} W`);
+	if (s.avgHeartRate != null) lines.push(`Avg HR: ${s.avgHeartRate} bpm`);
+	if (s.maxHeartRate != null) lines.push(`Max HR: ${s.maxHeartRate} bpm`);
+
+	const peaks = data.peakPowers;
+	const peakLines: string[] = [];
+	if (peaks.peak1min != null) peakLines.push(`1min: ${peaks.peak1min} W`);
+	if (peaks.peak5min != null) peakLines.push(`5min: ${peaks.peak5min} W`);
+	if (peaks.peak20min != null) peakLines.push(`20min: ${peaks.peak20min} W`);
+	if (peakLines.length > 0) {
+		lines.push(`Peak Powers: ${peakLines.join(", ")}`);
+	}
+
+	if (data.intervals.length > 0) {
+		lines.push(
+			`Intervals: ${data.intervals.length} detected (${data.intervals.map((i) => `${Math.round(i.avgPower ?? 0)}W`).join("–")})`,
+		);
+	}
+
+	return `\n## Current Activity\nThe athlete is currently viewing this activity. Use the activity_lookup tool for full details.\n${lines.join("\n")}\n`;
 }

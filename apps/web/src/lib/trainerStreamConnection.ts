@@ -1,5 +1,6 @@
 import type { StreamChunk } from "@tanstack/ai";
 import type { ConnectionAdapter } from "@tanstack/ai-client";
+import type { ToolStreamChunk } from "@fit-analyzer/shared";
 import {
 	clearActiveTrainerStream,
 	loadActiveTrainerStream,
@@ -7,14 +8,16 @@ import {
 } from "./trainerStreamState";
 import { randomUUID } from "./randomUUID";
 
-type Deferred = (chunk: StreamChunk | null) => void;
+type TrainerChunk = StreamChunk | ToolStreamChunk;
+
+type Deferred = (chunk: TrainerChunk | null) => void;
 
 function createQueue() {
-	const buffer: StreamChunk[] = [];
+	const buffer: TrainerChunk[] = [];
 	let waiters: Deferred[] = [];
 
 	return {
-		push(chunk: StreamChunk) {
+		push(chunk: TrainerChunk) {
 			const waiter = waiters.shift();
 			if (waiter) waiter(chunk);
 			else buffer.push(chunk);
@@ -24,13 +27,13 @@ function createQueue() {
 			waiters = [];
 			for (const waiter of pending) waiter(null);
 		},
-		async *subscribe(abortSignal?: AbortSignal): AsyncIterable<StreamChunk> {
+		async *subscribe(abortSignal?: AbortSignal): AsyncIterable<TrainerChunk> {
 			while (!abortSignal?.aborted) {
-				let chunk: StreamChunk | null;
+				let chunk: TrainerChunk | null;
 				if (buffer.length > 0) {
 					chunk = buffer.shift() ?? null;
 				} else {
-					chunk = await new Promise<StreamChunk | null>((resolve) => {
+					chunk = await new Promise<TrainerChunk | null>((resolve) => {
 						const onAbort = () => resolve(null);
 						waiters.push((nextChunk) => {
 							abortSignal?.removeEventListener("abort", onAbort);
@@ -48,7 +51,7 @@ function createQueue() {
 
 async function streamSseResponse(
 	response: Response,
-	onChunk: (chunk: StreamChunk) => void,
+	onChunk: (chunk: TrainerChunk) => void,
 ): Promise<"done" | "incomplete"> {
 	if (!response.ok) {
 		throw new Error(
@@ -77,7 +80,7 @@ async function streamSseResponse(
 			if (!line) continue;
 			const data = line.slice(6);
 			if (data === "[DONE]") return "done";
-			onChunk(JSON.parse(data) as StreamChunk);
+			onChunk(JSON.parse(data) as TrainerChunk);
 		}
 	}
 
@@ -144,7 +147,7 @@ export function createTrainerStreamConnection(
 					threadId,
 				);
 			}
-			return queue.subscribe(abortSignal);
+			return queue.subscribe(abortSignal) as AsyncIterable<StreamChunk>;
 		},
 		async send(messages, data, abortSignal) {
 			const activeThreadId = getThreadIdFromData(data);
