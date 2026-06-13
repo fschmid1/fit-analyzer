@@ -119,22 +119,85 @@ export function trailingToolCalls(
 		.flatMap((g) => g.calls);
 }
 
+export function getToolCallsFromParts(msg: UIMessage): UIToolCall[] {
+	const toolCalls: UIToolCall[] = [];
+	for (const part of msg.parts) {
+		if (part.type === "tool-call") {
+			toolCalls.push({
+				id: part.id,
+				name: part.name,
+				arguments: safeParseArgs(part.arguments),
+				status: part.output ? "done" : "executing",
+				result: part.output
+					? {
+							id: part.id,
+							name: part.name,
+							content: part.output?.result?.content ?? "",
+							display: part.output?.result?.display ?? null,
+							error: part.output?.result?.error,
+						}
+					: undefined,
+			});
+		}
+	}
+	return toolCalls;
+}
+
+function safeParseArgs(raw: string): Record<string, unknown> {
+	try {
+		return JSON.parse(raw) as Record<string, unknown>;
+	} catch {
+		return {};
+	}
+}
+
 export function toUIMessage(m: TrainerMessage): UIMessage {
+	const parts: UIMessage["parts"] = [
+		{ type: "text" as const, content: m.content },
+	];
+	if (m.toolCalls && m.toolCalls.length > 0) {
+		for (const tc of m.toolCalls) {
+			parts.push({
+				type: "tool-call" as const,
+				id: tc.id,
+				name: tc.name,
+				arguments: JSON.stringify(tc.arguments),
+				state: tc.status === "error" ? "input-complete" : "input-complete",
+				output:
+					tc.status === "done" || tc.status === "error"
+						? {
+								type: "tool-result" as const,
+								toolCallId: tc.id,
+								toolName: tc.name,
+								result: tc.result?.error
+									? { error: tc.result.error }
+									: (tc.result?.display ?? tc.result?.content),
+								isError: !!tc.result?.error,
+							}
+						: undefined,
+			});
+		}
+	}
 	return {
 		id: m.id,
 		role: m.role,
-		parts: [{ type: "text" as const, content: m.content }],
+		parts,
 		createdAt: new Date(m.createdAt),
 	};
 }
 
 export function toTrainerMessage(m: UIMessage): TrainerMessage {
-	return {
+	const toolCalls = getToolCallsFromParts(m);
+	const msg: TrainerMessage = {
 		id: m.id,
 		role: m.role as "user" | "assistant",
 		content: getTextContent(m),
 		createdAt: (m.createdAt ?? new Date()).toISOString(),
 	};
+	if (toolCalls.length > 0) {
+		msg.toolCalls = toolCalls;
+	}
+	return msg;
 }
 
 export function reconstructToolCalls(messages: TrainerMessage[]): UIToolCall[] {

@@ -45,7 +45,6 @@ import {
 	streamResumedChat,
 	toTrainerMessage,
 	toUIMessage,
-	toolCallsForMessage,
 } from "./trainerHelpers";
 import { useTrainerHistoryPersist } from "./useTrainerHistoryPersist";
 import { DotsLoader } from "./DotsLoader";
@@ -420,13 +419,7 @@ export function TrainerChat({
 		[hasMore, nextCursor, threadId],
 	);
 
-	useTrainerHistoryPersist(
-		threadId,
-		messages,
-		status,
-		ensureFullHistory,
-		toolCalls,
-	);
+	useTrainerHistoryPersist(threadId, messages, status, ensureFullHistory);
 
 	const handleSend = useCallback(async () => {
 		const text = inputRef.current.trim();
@@ -579,11 +572,6 @@ export function TrainerChat({
 					{messages.map((msg, msgIndex) => {
 						const isLastMsg = msg.id === lastMessageId;
 						const isCurrentlyStreaming = isLastMsg && status === "streaming";
-						const callsForMsg = toolCallsForMessage(
-							messages,
-							toolCalls,
-							msg.id,
-						);
 
 						const handleRetry = async () => {
 							const msgText = getTextContent(msg);
@@ -636,7 +624,6 @@ export function TrainerChat({
 								isCurrentlyStreaming={isCurrentlyStreaming}
 								onDelete={() => setConfirmDeleteMessageId(msg.id)}
 								onRetry={handleRetry}
-								toolCalls={callsForMsg}
 							/>
 						);
 					})}

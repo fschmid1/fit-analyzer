@@ -1,6 +1,5 @@
 import { memo } from "react";
 import type { UIMessage } from "@tanstack/ai-react";
-import type { UIToolCall } from "@fit-analyzer/shared";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ThinkingBlock } from "./ThinkingBlock";
@@ -10,6 +9,7 @@ import { ToolCallCard } from "./ToolCallCard";
 import {
 	getTextContent,
 	getThinkingContent,
+	getToolCallsFromParts,
 	formatTime,
 } from "./trainerHelpers";
 import { mdComponents } from "./markdownComponents";
@@ -21,7 +21,6 @@ interface ChatMessageRowProps {
 	isCurrentlyStreaming: boolean;
 	onDelete: (messageId: string) => void;
 	onRetry: (msgIndex: number) => void;
-	toolCalls?: UIToolCall[];
 }
 
 function ChatMessageRowInner({
@@ -30,12 +29,12 @@ function ChatMessageRowInner({
 	isCurrentlyStreaming,
 	onDelete,
 	onRetry,
-	toolCalls,
 }: ChatMessageRowProps) {
 	const isUser = msg.role === "user";
 	const text = getTextContent(msg);
 	const thinkingContent = getThinkingContent(msg);
 	const isThinkingPhase = isCurrentlyStreaming && !!thinkingContent && !text;
+	const toolCalls = getToolCallsFromParts(msg);
 
 	if (isUser) {
 		if (!text) return null;
@@ -69,7 +68,7 @@ function ChatMessageRowInner({
 						isStreaming={isThinkingPhase}
 					/>
 				)}
-				{toolCalls && toolCalls.length > 0 && (
+				{toolCalls.length > 0 && (
 					<div className="flex flex-col gap-1.5">
 						{toolCalls.map((tc) => (
 							<ToolCallCard key={tc.id} toolCall={tc} />

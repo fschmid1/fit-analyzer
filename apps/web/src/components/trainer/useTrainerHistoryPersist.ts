@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { UIMessage } from "@tanstack/ai-react";
-import type { TrainerMessage, UIToolCall } from "@fit-analyzer/shared";
+import type { TrainerMessage } from "@fit-analyzer/shared";
 import { saveTrainerHistory } from "../../lib/api";
 import {
 	clearTrainerDraft,
@@ -10,35 +10,10 @@ import { toTrainerMessage } from "./trainerHelpers";
 
 type ChatStatus = "submitted" | "streaming" | "ready" | "error";
 
-function persistable(
-	messages: UIMessage[],
-	toolCalls: UIToolCall[],
-): TrainerMessage[] {
-	const toolCallsByMsgId = new Map<string, UIToolCall[]>();
-	for (const tc of toolCalls) {
-		const lastAssistantId = findLastAssistantId(messages);
-		const msgId = lastAssistantId ?? "";
-		const existing = toolCallsByMsgId.get(msgId) ?? [];
-		existing.push(tc);
-		toolCallsByMsgId.set(msgId, existing);
-	}
-
+function persistable(messages: UIMessage[]): TrainerMessage[] {
 	return messages
 		.filter((m) => m.role === "user" || m.role === "assistant")
-		.map((m) => {
-			const msg = toTrainerMessage(m);
-			const tcs = toolCallsByMsgId.get(m.id);
-			if (tcs && tcs.length > 0) {
-				msg.toolCalls = tcs.map((tc) => ({
-					id: tc.id,
-					name: tc.name,
-					arguments: tc.arguments,
-					status: "done" as const,
-					result: tc.result,
-				}));
-			}
-			return msg;
-		})
+		.map(toTrainerMessage)
 		.filter(
 			(m) =>
 				m.content ||
@@ -46,19 +21,11 @@ function persistable(
 		);
 }
 
-function findLastAssistantId(messages: UIMessage[]): string | undefined {
-	for (let i = messages.length - 1; i >= 0; i--) {
-		if (messages[i].role === "assistant") return messages[i].id;
-	}
-	return undefined;
-}
-
 export function useTrainerHistoryPersist(
 	threadId: string,
 	messages: UIMessage[],
 	status: ChatStatus,
 	ensureFullHistory?: (current: UIMessage[]) => Promise<UIMessage[]>,
-	toolCalls?: UIToolCall[],
 ) {
 	const prevStatus = useRef<ChatStatus>(status);
 
@@ -71,7 +38,7 @@ export function useTrainerHistoryPersist(
 				const full = ensureFullHistory
 					? await ensureFullHistory(messages)
 					: messages;
-				const toSave = persistable(full, toolCalls ?? []);
+				const toSave = persistable(full);
 				if (toSave.length > 0)
 					saveTrainerHistory(threadId, toSave).catch(console.error);
 				clearTrainerDraft(threadId);
@@ -79,7 +46,7 @@ export function useTrainerHistoryPersist(
 			void save();
 		}
 		prevStatus.current = status;
-	}, [status, messages, threadId, ensureFullHistory, toolCalls]);
+	}, [status, messages, threadId, ensureFullHistory]);
 
 	useEffect(() => {
 		if (status === "streaming" || status === "submitted") {
