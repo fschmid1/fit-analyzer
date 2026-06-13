@@ -24,7 +24,7 @@ function formatSleepDuration(minutes: number): string {
 function formatHealthContext(ctx: HealthContext, sourceLabel: string): string {
 	const parts: string[] = [];
 	parts.push(
-		`*Health data retrieved ${new Date().toISOString().split("T")[0]} from ${sourceLabel} — this is live, up-to-date data.*`,
+		`*Health data retrieved from ${sourceLabel} — this is live, up-to-date data.*`,
 	);
 
 	if (ctx.rhr?.current != null) {

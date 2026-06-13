@@ -10,6 +10,11 @@ export const highlightChartDefinition: ToolDefinition = {
 	parameters: {
 		type: "object",
 		properties: {
+			activityId: {
+				type: "string",
+				description:
+					"Activity ID to highlight (defaults to the current thread's activity; required in general chat)",
+			},
 			startSeconds: {
 				type: "number",
 				description: "Start time in seconds from the beginning of the activity",

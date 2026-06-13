@@ -41,18 +41,15 @@ import {
 	applyToolChunks,
 	getTextContent,
 	isToolChunk,
-	reconstructToolCalls,
 	stripTrailingAssistant,
 	streamResumedChat,
 	toTrainerMessage,
 	toUIMessage,
 	toolCallsForMessage,
-	trailingToolCalls,
 } from "./trainerHelpers";
 import { useTrainerHistoryPersist } from "./useTrainerHistoryPersist";
 import { DotsLoader } from "./DotsLoader";
 import { ChatMessageRow } from "./ChatMessageRow";
-import { ToolCallCard } from "./ToolCallCard";
 import { addChartHighlight } from "../../lib/chartHighlightStore";
 
 const PAGE_SIZE = 20;
@@ -62,8 +59,8 @@ interface TrainerChatProps {
 	threadId: string;
 	activityId: string;
 	initialMessages: UIMessage[];
-	initialToolCalls?: UIToolCall[];
 	initialInput: string;
+	initialToolCalls?: UIToolCall[];
 	initialNextCursor: string | null;
 	initialHasMore: boolean;
 	initialTotal: number;
@@ -108,12 +105,9 @@ export function TrainerChat({
 	const [toolCalls, setToolCalls] = useState<UIToolCall[]>(
 		initialToolCalls ?? [],
 	);
-	// Sync toolCalls when initialToolCalls changes (e.g. after history fetch)
 	useEffect(() => {
 		setToolCalls(initialToolCalls ?? []);
 	}, [initialToolCalls]);
-	const toolCallsRef = useRef<UIToolCall[]>([]);
-	toolCallsRef.current = toolCalls;
 	const handleChunk = useCallback((chunk: StreamChunk | ToolStreamChunk) => {
 		if (isToolChunk(chunk)) {
 			setToolCalls((prev) => applyToolChunks(prev, chunk));
@@ -201,16 +195,12 @@ export function TrainerChat({
 		const abortController = new AbortController();
 		let baseMessages = stripTrailingAssistant(initialMessages);
 		setMessages(baseMessages);
-		setToolCalls([]);
 
 		streamResumedChat(
 			activeStream.streamId,
 			(chunk) => {
 				baseMessages = applyResumedChunk(baseMessages, chunk);
 				setMessages(baseMessages);
-				if (isToolChunk(chunk)) {
-					setToolCalls((prev) => applyToolChunks(prev, chunk));
-				}
 
 				if (
 					chunk.type === "RUN_FINISHED" &&
@@ -446,7 +436,6 @@ export function TrainerChat({
 		setHasInput(false);
 		// Optimistic total so the next save recognises the new tail.
 		setTotalServerMessages((n) => n + 2);
-		setToolCalls([]);
 		await sendMessage(text);
 	}, [isLoading, sendMessage]);
 
@@ -466,9 +455,6 @@ export function TrainerChat({
 			const nextMessages = messages.filter((m) => m.id !== messageId);
 			setMessages(nextMessages);
 			setTotalServerMessages((n) => Math.max(0, n - 1));
-			// Tool calls are ephemeral and grouped with the latest assistant
-			// message; clearing them on delete keeps the UI consistent.
-			setToolCalls([]);
 			(async () => {
 				const full = await ensureFullHistory(nextMessages);
 				const toSave = full
@@ -605,7 +591,6 @@ export function TrainerChat({
 								if (isLoading) stop();
 								const truncated = messages.slice(0, msgIndex);
 								setMessages(truncated);
-								setToolCalls([]);
 								const full = await ensureFullHistory(truncated);
 								const toSave = full
 									.filter((m) => m.role === "user" || m.role === "assistant")
@@ -620,7 +605,6 @@ export function TrainerChat({
 								messages.findLastIndex((m) => m.role === "assistant") ===
 								msgIndex;
 							if (isLastAssistant) {
-								setToolCalls([]);
 								await reload();
 								return;
 							}
@@ -633,7 +617,6 @@ export function TrainerChat({
 							if (isLoading) stop();
 							const truncated = messages.slice(0, lastUserIndex);
 							setMessages(truncated);
-							setToolCalls([]);
 							const full = await ensureFullHistory(truncated);
 							const toSave = full
 								.filter((m) => m.role === "user" || m.role === "assistant")
@@ -657,14 +640,6 @@ export function TrainerChat({
 							/>
 						);
 					})}
-
-					{trailingToolCalls(messages, toolCalls).length > 0 && (
-						<div className="ml-2 flex max-w-[calc(100%-1rem)] flex-col gap-1.5 sm:max-w-[72%]">
-							{trailingToolCalls(messages, toolCalls).map((tc) => (
-								<ToolCallCard key={tc.id} toolCall={tc} defaultExpanded />
-							))}
-						</div>
-					)}
 
 					{status === "submitted" && (
 						<div className="flex justify-start">
