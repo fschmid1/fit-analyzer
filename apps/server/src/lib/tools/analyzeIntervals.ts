@@ -249,10 +249,21 @@ export const analyzeIntervalsHandler: ToolHandler = async (args, context) => {
 			};
 		}
 
-		const mode =
+		const rawMode =
 			typeof args.detectionMode === "string"
 				? args.detectionMode.trim().toLowerCase()
 				: "power";
+		const ALLOWED_MODES = ["power", "heart_rate", "both"];
+		const mode = ALLOWED_MODES.includes(rawMode) ? rawMode : null;
+		if (mode == null) {
+			return {
+				id: "",
+				name: "analyze_intervals",
+				content: "",
+				display: null,
+				error: "detectionMode must be one of: power, heart_rate, both",
+			};
+		}
 		const minPower =
 			typeof args.minPower === "number" && args.minPower > 0
 				? args.minPower

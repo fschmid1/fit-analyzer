@@ -104,10 +104,6 @@ export const trendAnalysisDefinition: ToolDefinition = {
 				type: "number",
 				description: "Number of days to look back (default 90)",
 			},
-			activityId: {
-				type: "string",
-				description: "Optional: compare against a specific activity",
-			},
 		},
 		required: ["metric"],
 	},

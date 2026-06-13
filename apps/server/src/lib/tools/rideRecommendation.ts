@@ -326,8 +326,6 @@ export const rideRecommendationHandler: ToolHandler = async (args, context) => {
 		const content = [
 			`Recommendation: ${recommendation.type}`,
 			`Intensity: ${recommendation.intensity}`,
-			`Recommendation: ${recommendation.type}`,
-			`Intensity: ${recommendation.intensity}`,
 			`Duration: ${recommendation.duration > 0 ? `${recommendation.duration} min` : "Rest"}`,
 			`Rationale: ${recommendation.rationale}`,
 			"",

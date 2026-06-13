@@ -1,5 +1,4 @@
 import type { ToolDefinition, ToolResult } from "@fit-analyzer/shared";
-import { debug } from "../debug.js";
 import type { ToolHandler } from "./registry.js";
 
 export const webFetchDefinition: ToolDefinition = {
@@ -19,7 +18,6 @@ export const webFetchDefinition: ToolDefinition = {
 };
 
 export const webFetchHandler: ToolHandler = async (args) => {
-	const end = debug.time("tool", "web_fetch");
 	try {
 		const url = typeof args.url === "string" ? args.url.trim() : "";
 		if (!url) {
@@ -32,7 +30,6 @@ export const webFetchHandler: ToolHandler = async (args) => {
 			};
 		}
 
-		debug.log("tool", "web_fetch fetch", { url });
 		const response = await fetch(url, {
 			headers: {
 				Accept:
@@ -72,7 +69,13 @@ export const webFetchHandler: ToolHandler = async (args) => {
 			content: trimmed,
 			display: { url, status: response.status, length: text.length },
 		};
-	} finally {
-		end();
+	} catch (error) {
+		return {
+			id: "",
+			name: "web_fetch",
+			content: "",
+			display: null,
+			error: error instanceof Error ? error.message : "Web fetch failed",
+		};
 	}
 };

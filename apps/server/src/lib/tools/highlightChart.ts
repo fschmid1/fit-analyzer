@@ -53,13 +53,19 @@ export const highlightChartHandler: ToolHandler = async (args, context) => {
 		const label =
 			typeof args.label === "string" ? args.label.trim() : undefined;
 
-		if (!Number.isFinite(startSeconds) || !Number.isFinite(endSeconds)) {
+		if (
+			!Number.isFinite(startSeconds) ||
+			!Number.isFinite(endSeconds) ||
+			startSeconds < 0 ||
+			endSeconds < 0
+		) {
 			return {
 				id: "",
 				name: "highlight_chart",
 				content: "",
 				display: null,
-				error: "startSeconds and endSeconds must be finite numbers.",
+				error:
+					"startSeconds and endSeconds must be non-negative finite numbers.",
 			};
 		}
 

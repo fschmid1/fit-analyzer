@@ -145,7 +145,7 @@ export const segmentFinderHandler: ToolHandler = async (args, context) => {
 							maxGradient,
 						))
 			) {
-				if (i - 1 > currentStart) {
+				if (i - 2 >= currentStart) {
 					const startGradient = records[currentStart].gradient;
 					const segType2 =
 						startGradient != null
@@ -155,7 +155,7 @@ export const segmentFinderHandler: ToolHandler = async (args, context) => {
 						segments.push({
 							type: segType2,
 							startIdx: currentStart,
-							endIdx: i - 1,
+							endIdx: i - 2,
 						});
 					}
 				}
@@ -222,9 +222,7 @@ export const segmentFinderHandler: ToolHandler = async (args, context) => {
 
 			const elevationGain =
 				distanceM != null && avgGradient != null
-					? Math.round(
-							distanceM * Math.tan((avgGradient * Math.PI) / 180) * 10,
-						) / 10
+					? Math.round(distanceM * (avgGradient / 100) * 10) / 10
 					: null;
 
 			results.push({

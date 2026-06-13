@@ -123,13 +123,26 @@ export function TrainerChat({
 					label?: string;
 					color?: string;
 				};
-				addChartHighlight({
-					activityId: d.activityId,
-					startSeconds: d.startSeconds,
-					endSeconds: d.endSeconds,
-					label: d.label,
-					color: d.color,
-				});
+				if (
+					typeof d.startSeconds === "number" &&
+					typeof d.endSeconds === "number" &&
+					d.startSeconds >= 0 &&
+					d.endSeconds >= 0 &&
+					d.endSeconds >= d.startSeconds
+				) {
+					addChartHighlight({
+						activityId: d.activityId,
+						startSeconds: d.startSeconds,
+						endSeconds: d.endSeconds,
+						label: d.label,
+						color: d.color,
+					});
+				} else {
+					console.warn(
+						"Malformed highlight_chart display — skipping:",
+						chunk.display,
+					);
+				}
 			}
 		}
 	}, []);

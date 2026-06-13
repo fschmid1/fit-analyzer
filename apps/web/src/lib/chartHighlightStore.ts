@@ -11,12 +11,12 @@ export function getChartHighlights(): ChartHighlight[] {
 
 export function addChartHighlight(highlight: ChartHighlight): void {
 	highlights = [...highlights, highlight];
-	for (const fn of listeners) fn(highlights);
+	for (const fn of listeners) fn([...highlights]);
 }
 
 export function clearChartHighlights(): void {
 	highlights = [];
-	for (const fn of listeners) fn(highlights);
+	for (const fn of listeners) fn([]);
 }
 
 export function subscribeChartHighlights(fn: Listener): () => void {

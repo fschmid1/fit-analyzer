@@ -1,6 +1,5 @@
 import type { ModelMessage, StreamChunk, ToolCall } from "@tanstack/ai";
 import type { ToolDefinition, ToolStreamChunk } from "@fit-analyzer/shared";
-import { debug } from "./debug.js";
 import { executeTool, getToolDefinitions } from "./tools/registry.js";
 import type { ToolHandlerContext } from "./tools/registry.js";
 import { createOllamaTrainerStream } from "./ollamaTrainerStream.js";
@@ -79,16 +78,6 @@ export async function* createTrainerToolLoop(
 	const tools = options.tools ?? getToolDefinitions();
 	const messages: ModelMessage[] = [...options.messages];
 
-	debug.log("trainer-loop", "createTrainerToolLoop start", {
-		provider: options.provider,
-		model: options.model,
-		maxRounds,
-		toolCount: tools.length,
-		toolNames: tools.map((t) => t.name),
-		initialMessageCount: messages.length,
-		userId: options.userId,
-	});
-
 	// Generate a single messageId that all rounds share so the tanstack
 	// processor keeps everything in one assistant message.
 	const sharedMessageId = crypto.randomUUID();
@@ -96,12 +85,6 @@ export async function* createTrainerToolLoop(
 	for (let round = 0; round <= maxRounds; round++) {
 		const isFirstRound = round === 0;
 		const observations: ToolCallObservation[] = [];
-
-		debug.log("trainer-loop", "round begin", {
-			round,
-			isFirstRound,
-			messageCount: messages.length,
-		});
 
 		const stream =
 			options.provider === "ollama-cloud"
@@ -137,13 +120,8 @@ export async function* createTrainerToolLoop(
 		let textStarted = false;
 		let textEnded = false;
 		const partialToolCalls = new Map<string, ToolCallObservation>();
-		const roundStart = Date.now();
-		let chunkCount = 0;
-		let lastChunkType = "(none)";
 
 		for await (const chunk of stream) {
-			chunkCount++;
-			lastChunkType = chunk.type;
 			if (!isFirstRound && chunk.type === "RUN_STARTED") {
 				// Suppress repeated RUN_STARTED on continuation rounds so the
 				// client only sees a single logical run envelope.
@@ -157,12 +135,6 @@ export async function* createTrainerToolLoop(
 					name: chunk.toolName,
 					arguments: args ?? {},
 				});
-				debug.log("trainer-loop", "TOOL_CALL_START", {
-					round,
-					toolCallId: chunk.toolCallId,
-					toolName: chunk.toolName,
-					parsedArgs: args ?? {},
-				});
 			}
 
 			if (chunk.type === "TOOL_CALL_END") {
@@ -172,29 +144,10 @@ export async function* createTrainerToolLoop(
 					name: chunk.toolName,
 					arguments: args ?? {},
 				});
-				debug.log("trainer-loop", "TOOL_CALL_END", {
-					round,
-					toolCallId: chunk.toolCallId,
-					toolName: chunk.toolName,
-					parsedArgs: args ?? {},
-				});
 			}
 
 			if (chunk.type === "RUN_FINISHED") {
 				finishReason = chunk.finishReason;
-				debug.log("trainer-loop", "RUN_FINISHED", {
-					round,
-					finishReason,
-					elapsedMs: Date.now() - roundStart,
-					chunkCount,
-				});
-			}
-
-			if (chunk.type === "RUN_ERROR") {
-				debug.error("trainer-loop", "RUN_ERROR", {
-					round,
-					error: (chunk as { error?: { message?: string } }).error?.message,
-				});
 			}
 
 			if (chunk.type === "TEXT_MESSAGE_START") {
@@ -207,17 +160,6 @@ export async function* createTrainerToolLoop(
 
 			yield chunk;
 		}
-
-		debug.log("trainer-loop", "round stream drained", {
-			round,
-			finishReason,
-			textStarted,
-			textEnded,
-			partialToolCallCount: partialToolCalls.size,
-			chunkCount,
-			lastChunkType,
-			elapsedMs: Date.now() - roundStart,
-		});
 
 		// If the stream ended in a text turn without sending TEXT_MESSAGE_END,
 		// emit one so the client sees a well-formed envelope.
@@ -233,14 +175,6 @@ export async function* createTrainerToolLoop(
 		if (finishReason !== "tool_calls") {
 			// Plain stop/length/content_filter — the inner stream already
 			// emitted RUN_FINISHED, so we're done.
-			debug.log(
-				"trainer-loop",
-				"createTrainerToolLoop done (no tool continuation)",
-				{
-					round,
-					finishReason,
-				},
-			);
 			return;
 		}
 
@@ -255,18 +189,9 @@ export async function* createTrainerToolLoop(
 		}
 		observations.push(...ordered);
 
-		debug.log("trainer-loop", "tool calls collected", {
-			round,
-			count: observations.length,
-			names: observations.map((o) => o.name),
-		});
-
 		if (observations.length === 0) {
 			// Provider reported tool_calls finish reason without any
 			// TOOL_CALL_END — bail out to avoid an infinite loop.
-			debug.warn("trainer-loop", "tool_calls finish without payload", {
-				round,
-			});
 			yield {
 				type: "RUN_ERROR",
 				runId: crypto.randomUUID(),
@@ -278,20 +203,9 @@ export async function* createTrainerToolLoop(
 
 		// Append the assistant message that contained the tool calls.
 		messages.push(appendAssistantToolCallMessage(messages, observations));
-		debug.log("trainer-loop", "appended assistant tool-call message", {
-			round,
-			messageCount: messages.length,
-		});
 
 		// Execute each tool sequentially and append tool-result messages.
 		for (const obs of observations) {
-			debug.log("trainer-loop", "execute tool begin", {
-				round,
-				toolCallId: obs.id,
-				toolName: obs.name,
-				args: obs.arguments,
-			});
-			const toolStart = Date.now();
 			const toolContext: ToolHandlerContext = {
 				userId: options.userId,
 				threadId: options.threadId,
@@ -301,14 +215,6 @@ export async function* createTrainerToolLoop(
 				obs.arguments,
 				toolContext,
 			);
-			debug.log("trainer-loop", "execute tool end", {
-				round,
-				toolCallId: obs.id,
-				toolName: obs.name,
-				elapsedMs: Date.now() - toolStart,
-				hasError: Boolean(toolResult.error),
-				contentBytes: toolResult.content.length,
-			});
 
 			yield {
 				type: "TOOL_RESULT",
@@ -331,15 +237,9 @@ export async function* createTrainerToolLoop(
 			});
 		}
 
-		debug.log("trainer-loop", "all tool results appended", {
-			round,
-			messageCount: messages.length,
-		});
-
 		if (round === maxRounds) {
 			// Safety: hit the round limit; stop looping and surface the
 			// error to the client.
-			debug.warn("trainer-loop", "max rounds reached", { round, maxRounds });
 			yield {
 				type: "RUN_ERROR",
 				runId: crypto.randomUUID(),

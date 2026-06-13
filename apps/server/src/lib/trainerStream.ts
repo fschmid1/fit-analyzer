@@ -1,6 +1,5 @@
 import type { ModelMessage, StreamChunk } from "@tanstack/ai";
 import type { ToolDefinition } from "@fit-analyzer/shared";
-import { debug } from "./debug.js";
 
 type OpenAiCompatibleToolCallDelta = {
 	index?: number;
@@ -158,15 +157,6 @@ export async function* createTrainerStream(options: {
 	const toolCallOrder: number[] = [];
 	let toolCallDeltaCount = 0;
 
-	debug.log("openrouter-stream", "createTrainerStream start", {
-		model: options.model,
-		threadId: options.threadId,
-		messageCount: options.messages.length,
-		hasTools: Boolean(options.tools && options.tools.length > 0),
-		toolCount: options.tools?.length ?? 0,
-		includeReasoning: Boolean(options.includeReasoning),
-	});
-
 	yield {
 		type: "RUN_STARTED",
 		runId,
@@ -204,11 +194,6 @@ export async function* createTrainerStream(options: {
 		body.tools = options.tools.map(toOpenAiTool);
 	}
 
-	const fetchStart = Date.now();
-	debug.log("openrouter-stream", "fetching chat/completions", {
-		url: `${options.baseUrl}/chat/completions`,
-		model: options.model,
-	});
 	const response = await fetch(`${options.baseUrl}/chat/completions`, {
 		method: "POST",
 		headers: {
@@ -220,19 +205,10 @@ export async function* createTrainerStream(options: {
 
 	if (!response.ok) {
 		const errorText = await response.text().catch(() => "");
-		debug.error("openrouter-stream", "chat/completions non-OK", {
-			status: response.status,
-			statusText: response.statusText,
-			errorText,
-			elapsedMs: Date.now() - fetchStart,
-		});
 		throw new Error(
 			`Stream failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
 		);
 	}
-	debug.log("openrouter-stream", "chat/completions connected", {
-		elapsedMs: Date.now() - fetchStart,
-	});
 
 	for await (const chunk of parseOpenAiSse(response)) {
 		const choice = chunk.choices?.[0];
@@ -293,11 +269,6 @@ export async function* createTrainerStream(options: {
 					};
 					toolCallAccumulators.set(idx, acc);
 					toolCallOrder.push(idx);
-					debug.log("openrouter-stream", "tool call start", {
-						idx,
-						toolCallId: acc.id,
-						toolName: acc.name,
-					});
 					yield {
 						type: "TOOL_CALL_START",
 						toolCallId: acc.id,
@@ -332,15 +303,6 @@ export async function* createTrainerStream(options: {
 			};
 		}
 	}
-
-	debug.log("openrouter-stream", "stream consumed", {
-		finishReason,
-		accumulatedTextBytes: accumulatedText.length,
-		accumulatedReasoningBytes: accumulatedReasoning.length,
-		toolCallCount: toolCallOrder.length,
-		toolCallDeltaCount,
-		usage,
-	});
 
 	// Emit TOOL_CALL_END for every accumulated tool call so the client/UI
 	// can finalize the call's parsed `input`.

@@ -44,10 +44,12 @@ export const updateProfileDefinition: ToolDefinition = {
 	},
 };
 
+type ProfileUpdate = Parameters<typeof updateAthleteProfile>[1];
+
 export const updateProfileHandler: ToolHandler = async (args, context) => {
 	const end = debug.time("tool", "update_profile");
 	try {
-		const updates: Record<string, unknown> = {};
+		const updates: ProfileUpdate = {};
 
 		if (typeof args.ftp === "number" && args.ftp > 0) updates.ftp = args.ftp;
 		if (typeof args.maxHr === "number" && args.maxHr > 0)

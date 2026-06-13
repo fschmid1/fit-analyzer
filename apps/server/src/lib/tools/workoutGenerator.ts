@@ -167,7 +167,7 @@ function buildWorkout(
 		mainDuration > 0 ? mainDuration : reps * (onDuration + offDuration);
 	const repDuration = onDuration + offDuration;
 	const maxReps = Math.floor(availableMain / repDuration);
-	const actualReps = Math.max(1, Math.min(reps, maxReps));
+	const actualReps = Math.max(0, Math.min(reps, maxReps));
 
 	const intervals: IntervalSpec[] = [];
 	for (let i = 0; i < actualReps; i++) {

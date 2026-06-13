@@ -1,5 +1,4 @@
 import type { ToolDefinition, ToolResult } from "@fit-analyzer/shared";
-import { debug } from "../debug.js";
 import type { ToolHandler } from "./registry.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -73,14 +72,11 @@ export const eventCountdownDefinition: ToolDefinition = {
 };
 
 export const eventCountdownHandler: ToolHandler = async (args) => {
-	const end = debug.time("tool", "event_countdown");
 	try {
 		const eventDate =
 			typeof args.eventDate === "string" ? args.eventDate.trim() : "";
 		const eventName =
 			typeof args.eventName === "string" ? args.eventName.trim() : "";
-
-		debug.log("tool", "event_countdown params", { eventDate, eventName });
 
 		if (!DATE_RE.test(eventDate)) {
 			return {
@@ -142,7 +138,13 @@ export const eventCountdownHandler: ToolHandler = async (args) => {
 				phaseDescription: phase.description,
 			},
 		};
-	} finally {
-		end();
+	} catch (error) {
+		return {
+			id: "",
+			name: "event_countdown",
+			content: "",
+			display: null,
+			error: error instanceof Error ? error.message : "Event countdown failed",
+		};
 	}
 };

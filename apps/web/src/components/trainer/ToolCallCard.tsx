@@ -29,8 +29,8 @@ interface ToolMeta {
 }
 
 const TOOL_META: Record<string, ToolMeta> = {
-	web_search: {
-		label: "Web Search",
+	web_fetch: {
+		label: "Web Fetch",
 		icon: Globe,
 		accent: "rgba(96, 165, 250, 0.7)", // blue
 	},

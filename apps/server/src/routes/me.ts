@@ -154,6 +154,29 @@ me.patch("/settings", async (c) => {
 		body.weeklyHours !== undefined ||
 		body.focusAreas !== undefined;
 	if (hasProfileUpdate) {
+		const isPositiveNumberOrNull = (v: unknown): v is number | null =>
+			v === null || (typeof v === "number" && Number.isFinite(v) && v > 0);
+		const isNullableString = (v: unknown): v is string | null =>
+			v === null || typeof v === "string";
+		const isStringArray = (v: unknown): v is string[] =>
+			Array.isArray(v) && v.every((x) => typeof x === "string");
+
+		if (
+			(body.ftp !== undefined && !isPositiveNumberOrNull(body.ftp)) ||
+			(body.maxHr !== undefined && !isPositiveNumberOrNull(body.maxHr)) ||
+			(body.weeklyHours !== undefined &&
+				!isPositiveNumberOrNull(body.weeklyHours)) ||
+			(body.goalEventDate !== undefined &&
+				!isNullableString(body.goalEventDate)) ||
+			(body.goalEventName !== undefined &&
+				!isNullableString(body.goalEventName)) ||
+			(body.goalDescription !== undefined &&
+				!isNullableString(body.goalDescription)) ||
+			(body.focusAreas !== undefined && !isStringArray(body.focusAreas))
+		) {
+			return c.json({ error: "Invalid athleteProfile payload" }, 400);
+		}
+
 		updateAthleteProfile(userId, {
 			ftp: body.ftp,
 			maxHr: body.maxHr,

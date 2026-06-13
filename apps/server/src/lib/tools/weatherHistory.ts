@@ -1,5 +1,4 @@
 import type { ToolDefinition, ToolResult } from "@fit-analyzer/shared";
-import { debug } from "../debug.js";
 import type { ToolHandler } from "./registry.js";
 
 interface OpenMeteoDaily {
@@ -109,81 +108,74 @@ async function fetchWeatherData(
 }
 
 export const weatherHistoryHandler: ToolHandler = async (args) => {
-	const end = debug.time("tool", "weather_history");
-	try {
-		const date = typeof args.date === "string" ? args.date.trim() : "";
-		const lat = args.lat;
-		const lng = args.lng;
+	const date = typeof args.date === "string" ? args.date.trim() : "";
+	const lat = args.lat;
+	const lng = args.lng;
 
-		debug.log("tool", "weather_history params", { date, lat, lng });
-
-		if (!isValidDateString(date)) {
-			return {
-				id: "",
-				name: "weather_history",
-				content: "",
-				display: null,
-				error: "`date` must be in YYYY-MM-DD format.",
-			};
-		}
-		if (!isValidLat(lat) || !isValidLng(lng)) {
-			return {
-				id: "",
-				name: "weather_history",
-				content: "",
-				display: null,
-				error: "`lat` must be in [-90, 90] and `lng` in [-180, 180].",
-			};
-		}
-
-		const data = await fetchWeatherData(lat, lng, date);
-		const daily = data.daily;
-		if (!daily?.time?.[0]) {
-			return {
-				id: "",
-				name: "weather_history",
-				content: "",
-				display: null,
-				error: "No weather data available for that date.",
-			};
-		}
-
-		const idx = 0;
-		const tempMax = daily.temperature_2m_max?.[idx] ?? null;
-		const tempMin = daily.temperature_2m_min?.[idx] ?? null;
-		const precip = daily.precipitation_sum?.[idx] ?? null;
-		const windMax = daily.wind_speed_10m_max?.[idx] ?? null;
-		const windDir = daily.wind_direction_10m_dominant?.[idx] ?? null;
-
-		const isPast = isPastDate(date);
-		const label = isPast ? "Historical weather" : "Forecast";
-		const fmt = (v: number | null, suffix: string) =>
-			v == null ? "n/a" : `${v}${suffix}`;
-		const content = [
-			`${label} on ${date} at (${lat}, ${lng}):`,
-			`- High temperature: ${fmt(tempMax, "°C")}`,
-			`- Low temperature: ${fmt(tempMin, "°C")}`,
-			`- Precipitation: ${fmt(precip, " mm")}`,
-			`- Max wind: ${fmt(windMax, " km/h")}`,
-			`- Dominant wind direction: ${fmt(windDir, "°")}`,
-		].join("\n");
-
+	if (!isValidDateString(date)) {
 		return {
 			id: "",
 			name: "weather_history",
-			content,
-			display: {
-				date,
-				location: { lat, lng },
-				tempMax,
-				tempMin,
-				precip,
-				windMax,
-				windDir,
-				isForecast: !isPast,
-			},
+			content: "",
+			display: null,
+			error: "`date` must be in YYYY-MM-DD format.",
 		};
-	} finally {
-		end();
 	}
+	if (!isValidLat(lat) || !isValidLng(lng)) {
+		return {
+			id: "",
+			name: "weather_history",
+			content: "",
+			display: null,
+			error: "`lat` must be in [-90, 90] and `lng` in [-180, 180].",
+		};
+	}
+
+	const data = await fetchWeatherData(lat, lng, date);
+	const daily = data.daily;
+	if (!daily?.time?.[0]) {
+		return {
+			id: "",
+			name: "weather_history",
+			content: "",
+			display: null,
+			error: "No weather data available for that date.",
+		};
+	}
+
+	const idx = 0;
+	const tempMax = daily.temperature_2m_max?.[idx] ?? null;
+	const tempMin = daily.temperature_2m_min?.[idx] ?? null;
+	const precip = daily.precipitation_sum?.[idx] ?? null;
+	const windMax = daily.wind_speed_10m_max?.[idx] ?? null;
+	const windDir = daily.wind_direction_10m_dominant?.[idx] ?? null;
+
+	const isPast = isPastDate(date);
+	const label = isPast ? "Historical weather" : "Forecast";
+	const fmt = (v: number | null, suffix: string) =>
+		v == null ? "n/a" : `${v}${suffix}`;
+	const content = [
+		`${label} on ${date} at (${lat}, ${lng}):`,
+		`- High temperature: ${fmt(tempMax, "°C")}`,
+		`- Low temperature: ${fmt(tempMin, "°C")}`,
+		`- Precipitation: ${fmt(precip, " mm")}`,
+		`- Max wind: ${fmt(windMax, " km/h")}`,
+		`- Dominant wind direction: ${fmt(windDir, "°")}`,
+	].join("\n");
+
+	return {
+		id: "",
+		name: "weather_history",
+		content,
+		display: {
+			date,
+			location: { lat, lng },
+			tempMax,
+			tempMin,
+			precip,
+			windMax,
+			windDir,
+			isForecast: !isPast,
+		},
+	};
 };

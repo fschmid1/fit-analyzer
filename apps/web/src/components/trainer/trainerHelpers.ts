@@ -127,14 +127,18 @@ export function getToolCallsFromParts(msg: UIMessage): UIToolCall[] {
 				id: part.id,
 				name: part.name,
 				arguments: safeParseArgs(part.arguments),
-				status: part.output ? "done" : "executing",
+				status: !part.output
+					? "executing"
+					: part.output.result?.error
+						? "error"
+						: "done",
 				result: part.output
 					? {
 							id: part.id,
 							name: part.name,
-							content: part.output?.result?.content ?? "",
+							content: part.output?.result?.content ?? null,
 							display: part.output?.result?.display ?? null,
-							error: part.output?.result?.error,
+							error: part.output?.result?.error ?? null,
 						}
 					: undefined,
 			});
@@ -162,7 +166,7 @@ export function toUIMessage(m: TrainerMessage): UIMessage {
 				id: tc.id,
 				name: tc.name,
 				arguments: JSON.stringify(tc.arguments),
-				state: tc.status === "error" ? "input-complete" : "input-complete",
+				state: "input-complete",
 				output:
 					tc.status === "done" || tc.status === "error"
 						? {

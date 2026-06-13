@@ -1,5 +1,4 @@
 import { db } from "../../db.js";
-import { debug } from "../debug.js";
 import {
 	buildPowerBySecond,
 	peakPowerFromSeconds,
@@ -119,7 +118,6 @@ export const trainingLoadDefinition: ToolDefinition = {
 
 export const trainingLoadHandler: ToolHandler = async (args, context) => {
 	const userId = context.userId;
-	const done = debug.time("tool", "training_load");
 	try {
 		const daysRaw =
 			typeof args.days === "number" ? args.days : DEFAULT_LOOKBACK_DAYS;
@@ -129,7 +127,6 @@ export const trainingLoadHandler: ToolHandler = async (args, context) => {
 				: DEFAULT_LOOKBACK_DAYS;
 
 		const ftp = estimateFtp(userId);
-		debug.log("tool", "training_load params", { userId, days, ftp });
 		if (ftp == null) {
 			return {
 				id: "",
@@ -238,7 +235,16 @@ export const trainingLoadHandler: ToolHandler = async (args, context) => {
 				},
 			},
 		};
-	} finally {
-		done();
+	} catch (error) {
+		return {
+			id: "",
+			name: "training_load",
+			content: "",
+			display: null,
+			error:
+				error instanceof Error
+					? error.message
+					: "Training load analysis failed",
+		};
 	}
 };

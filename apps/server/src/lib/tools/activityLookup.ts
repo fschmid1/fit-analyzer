@@ -1,5 +1,4 @@
 import { db } from "../../db.js";
-import { debug } from "../debug.js";
 import type { ToolDefinition, ToolResult } from "@fit-analyzer/shared";
 import type { ToolHandler } from "./registry.js";
 import { type ActivityRow, rowToActivity } from "./activityUtils.js";
@@ -46,112 +45,114 @@ export const activityLookupDefinition: ToolDefinition = {
 
 export const activityLookupHandler: ToolHandler = async (args, context) => {
 	const userId = context.userId;
-	const end = debug.time("tool", "activity_lookup");
-	try {
-		const date = typeof args.date === "string" ? args.date.trim() : "";
-		const activityId =
-			typeof args.activityId === "string" ? args.activityId.trim() : "";
+	const date = typeof args.date === "string" ? args.date.trim() : "";
+	const activityId =
+		typeof args.activityId === "string" ? args.activityId.trim() : "";
 
-		debug.log("tool", "activity_lookup lookup", { userId, date, activityId });
+	if (!date && !activityId) {
+		return {
+			id: "",
+			name: "activity_lookup",
+			content: "",
+			display: null,
+			error: "Provide at least one of `date` or `activityId`.",
+		};
+	}
 
-		if (!date && !activityId) {
+	let row: ActivityRow | undefined;
+	if (activityId) {
+		row = getByIdStmt.get(activityId, userId) as ActivityRow | undefined;
+		if (!row) {
 			return {
 				id: "",
 				name: "activity_lookup",
 				content: "",
 				display: null,
-				error: "Provide at least one of `date` or `activityId`.",
+				error: `No activity found for id ${activityId}.`,
 			};
 		}
-
-		let row: ActivityRow | undefined;
-		if (activityId) {
-			row = getByIdStmt.get(activityId, userId) as ActivityRow | undefined;
-			if (!row) {
+	} else {
+		row = getByDateStmt.get(userId, date) as ActivityRow | undefined;
+		if (!row) {
+			const sameDate = listByDateStmt.all(userId, date) as {
+				id: string;
+				date: string;
+			}[];
+			if (sameDate.length === 0) {
 				return {
 					id: "",
 					name: "activity_lookup",
 					content: "",
 					display: null,
-					error: `No activity found for id ${activityId}.`,
+					error: `No activity found for date ${date}.`,
 				};
 			}
-		} else {
-			row = getByDateStmt.get(userId, date) as ActivityRow | undefined;
-			if (!row) {
-				const sameDate = listByDateStmt.all(userId, date) as {
-					id: string;
-					date: string;
-				}[];
-				if (sameDate.length === 0) {
-					return {
-						id: "",
-						name: "activity_lookup",
-						content: "",
-						display: null,
-						error: `No activity found for date ${date}.`,
-					};
-				}
-				row = getByIdStmt.get(sameDate[0].id, userId) as ActivityRow;
-			}
+			row = getByIdStmt.get(sameDate[0].id, userId) as ActivityRow;
 		}
+	}
 
-		const data = rowToActivity(row);
-		const s = data.summary;
-		const lines: string[] = [];
-		lines.push(`Activity ${data.id} (${data.date}):`);
-		lines.push(
-			`Duration: ${Math.round((s.totalTimerTime ?? 0) / 60)} min, Distance: ${
-				s.totalDistanceKm != null ? `${s.totalDistanceKm} km` : "n/a"
-			}`,
-		);
-		if (s.avgPower != null) lines.push(`Avg power: ${s.avgPower} W`);
-		if (s.normalizedPower != null) lines.push(`NP: ${s.normalizedPower} W`);
-		if (s.maxPower != null) lines.push(`Max power: ${s.maxPower} W`);
-		if (s.avgHeartRate != null) lines.push(`Avg HR: ${s.avgHeartRate} bpm`);
-		if (s.maxHeartRate != null) lines.push(`Max HR: ${s.maxHeartRate} bpm`);
-		if (s.avgCadence != null) lines.push(`Avg cadence: ${s.avgCadence} rpm`);
-		if (s.totalWork != null) lines.push(`Total work: ${s.totalWork} kJ`);
-
-		const peaks = data.peakPowers;
-		const peakLines: string[] = [];
-		if (peaks.peak5s != null) peakLines.push(`5s: ${peaks.peak5s}W`);
-		if (peaks.peak30s != null) peakLines.push(`30s: ${peaks.peak30s}W`);
-		if (peaks.peak1min != null) peakLines.push(`1m: ${peaks.peak1min}W`);
-		if (peaks.peak5min != null) peakLines.push(`5m: ${peaks.peak5min}W`);
-		if (peaks.peak10min != null) peakLines.push(`10m: ${peaks.peak10min}W`);
-		if (peaks.peak20min != null) peakLines.push(`20m: ${peaks.peak20min}W`);
-		if (peaks.peak60min != null) peakLines.push(`60m: ${peaks.peak60min}W`);
-		if (peakLines.length > 0) {
-			lines.push(`Peak powers — ${peakLines.join(", ")}`);
-		}
-
-		if (data.intervals.length > 0) {
-			lines.push(
-				`Intervals: ${data.intervals
-					.map(
-						(i) =>
-							`#${i.index} ${Math.round(i.duration)}s @ ${i.avgPower ?? "?"}W`,
-					)
-					.join("; ")}`,
-			);
-		}
-
+	const data = rowToActivity(row);
+	if (!data) {
 		return {
 			id: "",
 			name: "activity_lookup",
-			content: lines.join("\n"),
-			display: {
-				id: data.id,
-				date: data.date,
-				summary: data.summary,
-				records: data.records,
-				intervals: data.intervals,
-				laps: data.laps,
-				peakPowers: data.peakPowers,
-			},
+			content: "",
+			display: null,
+			error: "Failed to parse activity data.",
 		};
-	} finally {
-		end();
 	}
+	const s = data.summary;
+	const lines: string[] = [];
+	lines.push(`Activity ${data.id} (${data.date}):`);
+	lines.push(
+		`Duration: ${Math.round((s.totalTimerTime ?? 0) / 60)} min, Distance: ${
+			s.totalDistanceKm != null ? `${s.totalDistanceKm} km` : "n/a"
+		}`,
+	);
+	if (s.avgPower != null) lines.push(`Avg power: ${s.avgPower} W`);
+	if (s.normalizedPower != null) lines.push(`NP: ${s.normalizedPower} W`);
+	if (s.maxPower != null) lines.push(`Max power: ${s.maxPower} W`);
+	if (s.avgHeartRate != null) lines.push(`Avg HR: ${s.avgHeartRate} bpm`);
+	if (s.maxHeartRate != null) lines.push(`Max HR: ${s.maxHeartRate} bpm`);
+	if (s.avgCadence != null) lines.push(`Avg cadence: ${s.avgCadence} rpm`);
+	if (s.totalWork != null) lines.push(`Total work: ${s.totalWork} kJ`);
+
+	const peaks = data.peakPowers;
+	const peakLines: string[] = [];
+	if (peaks.peak5s != null) peakLines.push(`5s: ${peaks.peak5s}W`);
+	if (peaks.peak30s != null) peakLines.push(`30s: ${peaks.peak30s}W`);
+	if (peaks.peak1min != null) peakLines.push(`1m: ${peaks.peak1min}W`);
+	if (peaks.peak5min != null) peakLines.push(`5m: ${peaks.peak5min}W`);
+	if (peaks.peak10min != null) peakLines.push(`10m: ${peaks.peak10min}W`);
+	if (peaks.peak20min != null) peakLines.push(`20m: ${peaks.peak20min}W`);
+	if (peaks.peak60min != null) peakLines.push(`60m: ${peaks.peak60min}W`);
+	if (peakLines.length > 0) {
+		lines.push(`Peak powers — ${peakLines.join(", ")}`);
+	}
+
+	if (data.intervals.length > 0) {
+		lines.push(
+			`Intervals: ${data.intervals
+				.map(
+					(i) =>
+						`#${i.index} ${Math.round(i.duration)}s @ ${i.avgPower ?? "?"}W`,
+				)
+				.join("; ")}`,
+		);
+	}
+
+	return {
+		id: "",
+		name: "activity_lookup",
+		content: lines.join("\n"),
+		display: {
+			id: data.id,
+			date: data.date,
+			summary: data.summary,
+			records: data.records,
+			intervals: data.intervals,
+			laps: data.laps,
+			peakPowers: data.peakPowers,
+		},
+	};
 };

@@ -1,5 +1,4 @@
 import { db } from "../../db.js";
-import { debug } from "../debug.js";
 import {
 	buildPowerBySecond,
 	peakPowerFromSeconds,
@@ -75,14 +74,11 @@ export const powerCurveDefinition: ToolDefinition = {
 
 export const powerCurveHandler: ToolHandler = async (args, context) => {
 	const userId = context.userId;
-	const end = debug.time("tool", "power_curve");
 	try {
 		const activityId =
 			typeof args.activityId === "string" ? args.activityId.trim() : "";
-
-		debug.log("tool", "power_curve params", { userId, activityId });
-
 		let row: ActivityRow | undefined;
+
 		if (activityId) {
 			row = getByIdStmt.get(activityId, userId) as ActivityRow | undefined;
 			if (!row) {
@@ -125,10 +121,6 @@ export const powerCurveHandler: ToolHandler = async (args, context) => {
 			records: string;
 			summary: string;
 		}[];
-		debug.log("tool", "power_curve computing all-time bests", {
-			userId,
-			activityCount: allRows.length,
-		});
 
 		const allTimeBest: Record<number, number> = {};
 		for (const seconds of DURATIONS_SECONDS) allTimeBest[seconds] = 0;
@@ -197,7 +189,14 @@ export const powerCurveHandler: ToolHandler = async (args, context) => {
 				durations,
 			},
 		};
-	} finally {
-		end();
+	} catch (error) {
+		return {
+			id: "",
+			name: "power_curve",
+			content: "",
+			display: null,
+			error:
+				error instanceof Error ? error.message : "Power curve analysis failed",
+		};
 	}
 };

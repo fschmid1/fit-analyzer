@@ -102,21 +102,25 @@ export const cardiacDriftHandler: ToolHandler = async (args, context) => {
 		while (i <= records.length - windowSize) {
 			const window = records.slice(i, i + windowSize);
 
-			const powers = window
-				.map((r) => r.power)
-				.filter((p): p is number => p != null && p > 0);
-			const hrs = window
-				.map((r) => r.heartRate)
-				.filter((h): h is number => h != null && h > 0);
+			const pairs = window
+				.map((r) => ({ power: r.power, heartRate: r.heartRate }))
+				.filter(
+					(p): p is { power: number; heartRate: number } =>
+						p.power != null &&
+						p.power > 0 &&
+						p.heartRate != null &&
+						p.heartRate > 0,
+				);
 
-			if (powers.length < windowSize * 0.5 || hrs.length < windowSize * 0.5) {
+			if (pairs.length < windowSize * 0.5) {
 				i += Math.max(1, Math.floor(windowSize / 2));
 				continue;
 			}
 
-			const avgPower = powers.reduce((a, b) => a + b, 0) / powers.length;
+			const avgPower = pairs.reduce((a, p) => a + p.power, 0) / pairs.length;
 			const powerStdDev = Math.sqrt(
-				powers.reduce((acc, p) => acc + (p - avgPower) ** 2, 0) / powers.length,
+				pairs.reduce((acc, p) => acc + (p.power - avgPower) ** 2, 0) /
+					pairs.length,
 			);
 			const powerVarPct = avgPower > 0 ? (powerStdDev / avgPower) * 100 : 100;
 
@@ -125,27 +129,25 @@ export const cardiacDriftHandler: ToolHandler = async (args, context) => {
 				continue;
 			}
 
-			const half = Math.floor(hrs.length / 2);
-			const firstHalfHR = hrs.slice(0, half);
-			const secondHalfHR = hrs.slice(half);
-			const firstHalfPower = powers.slice(0, half);
-			const secondHalfPower = powers.slice(half);
+			const half = Math.floor(pairs.length / 2);
+			const firstHalf = pairs.slice(0, half);
+			const secondHalf = pairs.slice(half);
 
 			const avgHR1 =
-				firstHalfHR.length > 0
-					? firstHalfHR.reduce((a, b) => a + b, 0) / firstHalfHR.length
+				firstHalf.length > 0
+					? firstHalf.reduce((a, p) => a + p.heartRate, 0) / firstHalf.length
 					: 0;
 			const avgHR2 =
-				secondHalfHR.length > 0
-					? secondHalfHR.reduce((a, b) => a + b, 0) / secondHalfHR.length
+				secondHalf.length > 0
+					? secondHalf.reduce((a, p) => a + p.heartRate, 0) / secondHalf.length
 					: 0;
 			const avgPow1 =
-				firstHalfPower.length > 0
-					? firstHalfPower.reduce((a, b) => a + b, 0) / firstHalfPower.length
+				firstHalf.length > 0
+					? firstHalf.reduce((a, p) => a + p.power, 0) / firstHalf.length
 					: 0;
 			const avgPow2 =
-				secondHalfPower.length > 0
-					? secondHalfPower.reduce((a, b) => a + b, 0) / secondHalfPower.length
+				secondHalf.length > 0
+					? secondHalf.reduce((a, p) => a + p.power, 0) / secondHalf.length
 					: 0;
 
 			const firstRatio = avgPow1 > 0 ? avgHR1 / avgPow1 : 0;

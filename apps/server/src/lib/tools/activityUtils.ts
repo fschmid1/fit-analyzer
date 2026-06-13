@@ -78,21 +78,25 @@ export interface ParsedActivity {
 	peakPowers: PeakPowers;
 }
 
-export function rowToActivity(row: ActivityRow): ParsedActivity {
-	const summary = JSON.parse(row.summary) as ActivitySummary;
-	const records = JSON.parse(row.records) as StoredRecord[];
-	const laps = JSON.parse(row.laps) as LapMarker[];
-	const intervals = JSON.parse(row.intervals || "[]") as Interval[];
-	const peakPowers = computePeakPowers(records, summary);
-	return {
-		id: row.id,
-		date: row.date,
-		summary,
-		records,
-		laps,
-		intervals,
-		peakPowers,
-	};
+export function rowToActivity(row: ActivityRow): ParsedActivity | null {
+	try {
+		const summary = JSON.parse(row.summary) as ActivitySummary;
+		const records = JSON.parse(row.records) as StoredRecord[];
+		const laps = JSON.parse(row.laps) as LapMarker[];
+		const intervals = JSON.parse(row.intervals || "[]") as Interval[];
+		const peakPowers = computePeakPowers(records, summary);
+		return {
+			id: row.id,
+			date: row.date,
+			summary,
+			records,
+			laps,
+			intervals,
+			peakPowers,
+		};
+	} catch {
+		return null;
+	}
 }
 
 export function getActivityById(

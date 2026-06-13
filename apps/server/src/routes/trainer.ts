@@ -24,7 +24,6 @@ import {
 } from "../lib/trainerStreamRegistry.js";
 import { buildTrainerAthleteContext } from "../lib/trainerSystemPrompt.js";
 import { formatCurrentActivity } from "../lib/trainerSystemPrompt.js";
-import { debug } from "../lib/debug.js";
 
 const BASE_SYSTEM_PROMPT =
 	"You are an expert endurance sports coach specialising in cycling and triathlon. " +
@@ -282,7 +281,6 @@ trainer.post("/chat", async (c) => {
 	try {
 		userId = getUserId(c);
 	} catch {
-		debug.warn("trainer", "POST /chat rejected: missing auth header");
 		return c.json(
 			{ error: "Unauthorized — missing x-authentik-username header" },
 			401,
@@ -291,13 +289,6 @@ trainer.post("/chat", async (c) => {
 	const body: TrainerChatRequestBody = await c.req.json();
 	const streamId = getStringBodyValue(body.streamId) ?? crypto.randomUUID();
 	const modelMessages = convertMessagesToModelMessages(body.messages ?? []);
-
-	debug.log("trainer", "POST /chat received", {
-		userId,
-		streamId,
-		messageCount: modelMessages.length,
-		hasThreadId: Boolean(getStringBodyValue(body.threadId)),
-	});
 
 	const threadId = getStringBodyValue(body.threadId);
 	const thread = threadId
@@ -308,27 +299,18 @@ trainer.post("/chat", async (c) => {
 	const model = await resolveThreadModel(thread, userId);
 	const providerConfig = await getProviderConfig(model);
 
-	debug.log("trainer", "POST /chat provider resolved", {
-		userId,
-		streamId,
-		model,
-		provider: providerConfig.provider,
-		hasApiKey: Boolean(providerConfig.apiKey),
-	});
-
 	if (!providerConfig.apiKey) {
-		debug.error("trainer", "POST /chat missing API key", {
-			userId,
-			streamId,
-			envName: providerConfig.apiKeyEnvName,
-		});
 		return c.json(
 			{ error: `${providerConfig.apiKeyEnvName} is not configured` },
 			500,
 		);
 	}
 
-	if (!hasActiveTrainerStream(streamId)) {
+	if (hasActiveTrainerStream(streamId)) {
+		if (!verifyStreamOwner(streamId, userId)) {
+			return c.json({ error: "Stream not found or already completed" }, 404);
+		}
+	} else {
 		const activityId = thread
 			? ((thread as { activityId?: string }).activityId ?? undefined)
 			: undefined;
@@ -337,16 +319,6 @@ trainer.post("/chat", async (c) => {
 		const metadata = providerConfig.includeReasoning
 			? getKimiRequestMetadata(body, userId)
 			: undefined;
-
-		debug.log("trainer", "POST /chat starting new producer", {
-			userId,
-			streamId,
-			model,
-			provider: providerConfig.provider,
-			toolCount: tools.length,
-			toolNames: tools.map((t) => t.name),
-			hasReasoning: providerConfig.includeReasoning,
-		});
 
 		startTrainerStreamProducer(
 			streamId,
@@ -365,11 +337,6 @@ trainer.post("/chat", async (c) => {
 			}),
 			userId,
 		);
-	} else {
-		debug.log("trainer", "POST /chat attaching to existing producer", {
-			userId,
-			streamId,
-		});
 	}
 
 	return new Response(createTrainerStreamConsumer(streamId), {
@@ -388,9 +355,6 @@ trainer.get("/chat/:streamId", async (c) => {
 	try {
 		userId = getUserId(c);
 	} catch {
-		debug.warn("trainer", "GET /chat/:streamId rejected: missing auth header", {
-			streamId,
-		});
 		return c.json(
 			{ error: "Unauthorized — missing x-authentik-username header" },
 			401,
@@ -398,15 +362,10 @@ trainer.get("/chat/:streamId", async (c) => {
 	}
 
 	if (!verifyStreamOwner(streamId, userId)) {
-		debug.warn("trainer", "GET /chat/:streamId owner mismatch", {
-			streamId,
-			userId,
-		});
 		return c.json({ error: "Stream not found or already completed" }, 404);
 	}
 
 	if (hasActiveTrainerStream(streamId)) {
-		debug.log("trainer", "GET /chat/:streamId resuming", { streamId, userId });
 		return new Response(createTrainerStreamConsumer(streamId), {
 			headers: {
 				"Content-Type": "text/event-stream",
@@ -416,7 +375,6 @@ trainer.get("/chat/:streamId", async (c) => {
 		});
 	}
 
-	debug.log("trainer", "GET /chat/:streamId not active", { streamId, userId });
 	return c.json({ error: "Stream not found or already completed" }, 404);
 });
 

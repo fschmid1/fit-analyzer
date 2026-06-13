@@ -57,7 +57,7 @@ export function renderCardiacDrift(display: unknown): ReactNode | null {
 					<div className="flex items-center gap-2 text-[11px]">
 						<span className="text-[#7c6fa0]">Drift:</span>
 						<span
-							className={`font-semibold ${DRIFT_COLORS[block.interpretation] ?? "text-[#c4b5fd]"}`}
+							className={`font-semibold ${DRIFT_COLORS[block.interpretation] ?? "text-violet-300"}`}
 						>
 							{block.driftPercent > 0 ? "+" : ""}
 							{block.driftPercent.toFixed(1)}%

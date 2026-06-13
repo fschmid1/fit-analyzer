@@ -6,21 +6,21 @@ import { getActivityById, resolveActivityId } from "./activityUtils.js";
 
 const POWER_ZONES = [
 	{ name: "Z1 Recovery", minFtp: 0, maxFtp: 0.55 },
-	{ name: "Z2 Endurance", minFtp: 0.56, maxFtp: 0.75 },
-	{ name: "Z3 Tempo", minFtp: 0.76, maxFtp: 0.9 },
-	{ name: "Z4 Threshold", minFtp: 0.91, maxFtp: 1.05 },
-	{ name: "Z5 VO2max", minFtp: 1.06, maxFtp: 1.2 },
-	{ name: "Z6 Anaerobic", minFtp: 1.21, maxFtp: 1.5 },
-	{ name: "Z7 Sprint", minFtp: 1.51, maxFtp: Number.POSITIVE_INFINITY },
+	{ name: "Z2 Endurance", minFtp: 0.55, maxFtp: 0.75 },
+	{ name: "Z3 Tempo", minFtp: 0.75, maxFtp: 0.9 },
+	{ name: "Z4 Threshold", minFtp: 0.9, maxFtp: 1.05 },
+	{ name: "Z5 VO2max", minFtp: 1.05, maxFtp: 1.2 },
+	{ name: "Z6 Anaerobic", minFtp: 1.2, maxFtp: 1.5 },
+	{ name: "Z7 Sprint", minFtp: 1.5, maxFtp: Number.POSITIVE_INFINITY },
 ];
 
 const HR_ZONES = [
 	{ name: "Z1 Recovery", minMaxHr: 0, maxMaxHr: 0.6 },
-	{ name: "Z2 Endurance", minMaxHr: 0.61, maxMaxHr: 0.7 },
-	{ name: "Z3 Tempo", minMaxHr: 0.71, maxMaxHr: 0.8 },
-	{ name: "Z4 Threshold", minMaxHr: 0.81, maxMaxHr: 0.9 },
-	{ name: "Z5 VO2max", minMaxHr: 0.91, maxMaxHr: 1.0 },
-	{ name: "Z6 Anaerobic", minMaxHr: 1.01, maxMaxHr: Number.POSITIVE_INFINITY },
+	{ name: "Z2 Endurance", minMaxHr: 0.6, maxMaxHr: 0.7 },
+	{ name: "Z3 Tempo", minMaxHr: 0.7, maxMaxHr: 0.8 },
+	{ name: "Z4 Threshold", minMaxHr: 0.8, maxMaxHr: 0.9 },
+	{ name: "Z5 VO2max", minMaxHr: 0.9, maxMaxHr: 1.0 },
+	{ name: "Z6 Anaerobic", minMaxHr: 1.0, maxMaxHr: Number.POSITIVE_INFINITY },
 ];
 
 export const zoneAnalysisDefinition: ToolDefinition = {
@@ -112,35 +112,41 @@ export const zoneAnalysisHandler: ToolHandler = async (args, context) => {
 		const hrZoneSeconds = new Array(HR_ZONES.length).fill(0);
 		let hrNullCount = 0;
 
+		let prevElapsedSeconds = records.length > 0 ? records[0].elapsedSeconds : 0;
+
 		for (const r of records) {
+			const delta = r.elapsedSeconds - prevElapsedSeconds;
+			if (delta <= 0) continue;
+			prevElapsedSeconds = r.elapsedSeconds;
+
 			if (r.power != null && r.power > 0) {
 				const ratio = r.power / ftp;
 				for (let i = 0; i < POWER_ZONES.length; i++) {
 					if (ratio >= POWER_ZONES[i].minFtp && ratio < POWER_ZONES[i].maxFtp) {
-						powerZoneSeconds[i]++;
+						powerZoneSeconds[i] += delta;
 						break;
 					}
 				}
 			} else if (r.power === 0) {
-				powerZeroCount++;
+				powerZeroCount += delta;
 			}
 
 			if (r.heartRate != null && r.heartRate > 0) {
 				const ratio = r.heartRate / maxHr;
 				for (let i = 0; i < HR_ZONES.length; i++) {
 					if (ratio >= HR_ZONES[i].minMaxHr && ratio < HR_ZONES[i].maxMaxHr) {
-						hrZoneSeconds[i]++;
+						hrZoneSeconds[i] += delta;
 						break;
 					}
 				}
 			} else {
-				hrNullCount++;
+				hrNullCount += delta;
 			}
 		}
 
 		const fmt = (s: number) => {
 			const m = Math.floor(s / 60);
-			const sec = s % 60;
+			const sec = Math.round(s % 60);
 			return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
 		};
 

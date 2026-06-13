@@ -19,6 +19,7 @@ import {
 	type TrainerChatHistory,
 	type TrainerMessage,
 	type TrainerThread,
+	type UpdateAthleteProfileBody,
 	type WaxedChainReminderSettings,
 } from "@fit-analyzer/shared";
 
@@ -617,15 +618,9 @@ export async function updateHealthSource(
 	return (data as UserSettingsResponse).healthAutoExport;
 }
 
-export async function updateAthleteProfile(input: {
-	ftp?: number | null;
-	maxHr?: number | null;
-	goalEventDate?: string | null;
-	goalEventName?: string | null;
-	goalDescription?: string | null;
-	weeklyHours?: number | null;
-	focusAreas?: string[];
-}): Promise<AthleteProfile> {
+export async function updateAthleteProfile(
+	input: UpdateAthleteProfileBody,
+): Promise<AthleteProfile> {
 	const res = await fetch(`${API_BASE}/me/settings`, {
 		method: "PATCH",
 		headers: { "Content-Type": "application/json" },
