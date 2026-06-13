@@ -101,7 +101,8 @@ export const trendAnalysisDefinition: ToolDefinition = {
 			},
 			days: {
 				type: "number",
-				description: "Number of days to look back (default 90)",
+				description:
+					"Number of days to look back from today (default 90). If unsure of today, call current_time first.",
 			},
 		},
 		required: ["metric"],

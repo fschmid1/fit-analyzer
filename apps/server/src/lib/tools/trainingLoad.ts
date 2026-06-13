@@ -109,7 +109,8 @@ export const trainingLoadDefinition: ToolDefinition = {
 		properties: {
 			days: {
 				type: "number",
-				description: "Number of days to look back (default 42)",
+				description:
+					"Number of days to look back from today (default 42). If unsure of today, call current_time first.",
 			},
 		},
 		required: [],

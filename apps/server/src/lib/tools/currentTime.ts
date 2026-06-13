@@ -4,7 +4,7 @@ import type { ToolHandler } from "./registry.js";
 export const currentTimeDefinition: ToolDefinition = {
 	name: "current_time",
 	description:
-		"Get the current date and time in UTC. Use this whenever you need to know the current date, time, day of the week, or relative time calculations.",
+		"Get the current date and time in UTC. You MUST call this tool FIRST whenever the user mentions relative dates (yesterday, last week, last Tuesday, etc.) or when you need to compute absolute dates for any tool lookup. Never assume or guess the current date.",
 	parameters: {
 		type: "object",
 		properties: {},

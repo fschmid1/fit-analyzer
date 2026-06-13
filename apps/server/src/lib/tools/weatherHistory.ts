@@ -35,13 +35,14 @@ function isValidLng(v: unknown): v is number {
 export const weatherHistoryDefinition: ToolDefinition = {
 	name: "weather_history",
 	description:
-		"Look up weather conditions (temperature, precipitation, wind) for a specific date and location. Works for both past dates (historical archive) and future dates up to 16 days ahead (forecast). Useful for contextualizing ride performance and planning upcoming rides.",
+		"Look up weather conditions (temperature, precipitation, wind) for a specific date and location. Works for both past dates (historical archive) and future dates up to 16 days ahead (forecast). Useful for contextualizing ride performance and planning upcoming rides. If the user mentions a relative date, call current_time first to resolve the absolute date.",
 	parameters: {
 		type: "object",
 		properties: {
 			date: {
 				type: "string",
-				description: "Date in YYYY-MM-DD format (past or future up to 16 days)",
+				description:
+					"Date in YYYY-MM-DD format (past or future up to 16 days). Must be absolute — resolve via current_time first if unsure.",
 			},
 			lat: {
 				type: "number",
