@@ -81,6 +81,10 @@ export async function* createTrainerToolLoop(
 	// Generate a single messageId that all rounds share so the tanstack
 	// processor keeps everything in one assistant message.
 	const sharedMessageId = crypto.randomUUID();
+	// Generate a single runId so the client sees one logical run envelope
+	// across all tool-call rounds. RUN_FINISHED is suppressed for tool_calls
+	// rounds and only emitted once at the very end.
+	const sharedRunId = crypto.randomUUID();
 
 	for (let round = 0; round <= maxRounds; round++) {
 		const isFirstRound = round === 0;
@@ -97,6 +101,7 @@ export async function* createTrainerToolLoop(
 						threadId: options.threadId,
 						tools: tools.length > 0 ? tools : undefined,
 						messageId: sharedMessageId,
+						runId: sharedRunId,
 					})
 				: createTrainerStream({
 						baseUrl: options.baseUrl,
@@ -109,6 +114,7 @@ export async function* createTrainerToolLoop(
 						threadId: options.threadId,
 						tools: tools.length > 0 ? tools : undefined,
 						messageId: sharedMessageId,
+						runId: sharedRunId,
 					});
 
 		let finishReason:
@@ -148,6 +154,9 @@ export async function* createTrainerToolLoop(
 
 			if (chunk.type === "RUN_FINISHED") {
 				finishReason = chunk.finishReason;
+				if (finishReason === "tool_calls") {
+					continue;
+				}
 			}
 
 			if (chunk.type === "TEXT_MESSAGE_START") {
@@ -194,7 +203,7 @@ export async function* createTrainerToolLoop(
 			// TOOL_CALL_END — bail out to avoid an infinite loop.
 			yield {
 				type: "RUN_ERROR",
-				runId: crypto.randomUUID(),
+				runId: sharedRunId,
 				error: { message: "Provider requested tool_calls without payload" },
 				timestamp: Date.now(),
 			};
@@ -242,7 +251,7 @@ export async function* createTrainerToolLoop(
 			// error to the client.
 			yield {
 				type: "RUN_ERROR",
-				runId: crypto.randomUUID(),
+				runId: sharedRunId,
 				error: {
 					message: `Tool loop exceeded ${maxRounds} rounds; aborting`,
 				},

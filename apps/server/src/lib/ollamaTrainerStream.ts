@@ -156,8 +156,9 @@ export async function* createOllamaTrainerStream(options: {
 	tools?: ToolDefinition[];
 	threadId?: string;
 	messageId?: string;
+	runId?: string;
 }): AsyncGenerator<StreamChunk> {
-	const runId = crypto.randomUUID();
+	const runId = options.runId ?? crypto.randomUUID();
 	const messageId = options.messageId ?? crypto.randomUUID();
 	const stepId = crypto.randomUUID();
 	let stepStarted = false;

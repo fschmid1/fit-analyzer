@@ -136,8 +136,9 @@ export async function* createTrainerStream(options: {
 	threadId?: string;
 	tools?: ToolDefinition[];
 	messageId?: string;
+	runId?: string;
 }): AsyncGenerator<StreamChunk> {
-	const runId = crypto.randomUUID();
+	const runId = options.runId ?? crypto.randomUUID();
 	const messageId = options.messageId ?? crypto.randomUUID();
 	const stepId = crypto.randomUUID();
 	let stepStarted = false;
