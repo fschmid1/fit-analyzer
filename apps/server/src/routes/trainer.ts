@@ -58,6 +58,19 @@ async function buildSystemPrompt(
 
 const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 20;
 
+// Target token budget for the compacted thread. We want the new thread to fit
+// comfortably inside a modest context window even after the system prompt and
+// the user's next message are added.
+const COMPACTION_TARGET_CONTEXT_TOKENS = 96_000;
+// Reserve space for the system prompt plus the user's next message.
+const COMPACTION_RESERVE_TOKENS = 12_000;
+// Do not summarize more than this many tokens in one LLM call; chunk if needed.
+const COMPACTION_MAX_PROMPT_TOKENS = 120_000;
+// Approximate tokens per UTF-16 code unit for quick budgeting. This is a
+// pessimistic heuristic (1 token ≈ 4 latin chars) so we stay safely under the
+// real budget.
+const APPROX_CHARS_PER_TOKEN = 4;
+
 async function getProviderConfig(modelId: string) {
 	const staticProvider = getModelProvider(modelId);
 	if (staticProvider === "ollama-cloud") {
@@ -570,27 +583,18 @@ trainer.put("/history/:threadId", async (c) => {
 	return c.json({ ok: true });
 });
 
-// ─── Compact / fork ───────────────────────────────────────────────────────────
+function estimateTokenLength(text: string): number {
+	return Math.ceil(text.length / APPROX_CHARS_PER_TOKEN);
+}
 
-trainer.post("/compact/:threadId", async (c) => {
-	const userId = getUserId(c);
-	const { threadId } = c.req.param();
-
-	const sourceThread = getThreadByIdStmt.get(threadId, userId) as
-		| {
-				id: string;
-				name: string;
-				activityId: string;
-				coachModel: string | null;
-		  }
-		| undefined;
-	if (!sourceThread) return c.json({ error: "Thread not found" }, 404);
-
-	const allMessages = (getMessagesStmt.all(threadId) as MessageRow[]).map(
-		rowToTrainerMessage,
-	);
-
+function computeRecentKeepWindow(
+	allMessages: TrainerMessage[],
+	targetContextTokens: number,
+	reserveTokens: number,
+): { keepEndIds: Set<string>; cutoffIndex: number } {
 	const keepEndIds = new Set<string>();
+
+	// First pass: keep the most recent N per role, then check token budget.
 	let userCount = 0;
 	let assistantCount = 0;
 	for (let i = allMessages.length - 1; i >= 0; i--) {
@@ -615,22 +619,33 @@ trainer.post("/compact/:threadId", async (c) => {
 			break;
 	}
 
-	const cutoffIndex = allMessages.findIndex((m) => keepEndIds.has(m.id));
-	const toCompact = cutoffIndex === -1 ? [] : allMessages.slice(0, cutoffIndex);
+	let cutoffIndex = allMessages.findIndex((m) => keepEndIds.has(m.id));
+	if (cutoffIndex === -1) cutoffIndex = allMessages.length;
 
-	if (toCompact.length === 0) {
-		return c.json({
-			thread: { ...sourceThread, messageCount: allMessages.length },
-			messages: allMessages,
-			compacted: false,
-		});
+	// Shrink the kept tail if it alone is already over budget. This handles
+	// threads where even the last few messages are enormous (e.g. huge pasted
+	// FIT data). We drop oldest first, keeping at least 1 user + 1 assistant.
+	const budgetForTail = targetContextTokens - reserveTokens;
+	let tailTokens = 0;
+	for (let i = cutoffIndex; i < allMessages.length; i++) {
+		tailTokens += estimateTokenLength(allMessages[i].content);
+	}
+	while (tailTokens > budgetForTail && keepEndIds.size > 2) {
+		const oldestKeptIndex = allMessages.findIndex((m) => keepEndIds.has(m.id));
+		if (oldestKeptIndex === -1) break;
+		const removed = allMessages[oldestKeptIndex];
+		keepEndIds.delete(removed.id);
+		tailTokens -= estimateTokenLength(removed.content);
+		// Recompute cutoff to the new oldest kept message.
+		const nextOldest = allMessages.findIndex((m) => keepEndIds.has(m.id));
+		cutoffIndex = nextOldest === -1 ? allMessages.length : nextOldest;
 	}
 
-	const messagesText = toCompact
-		.map((m) => `**${m.role === "user" ? "Athlete" : "Coach"}:** ${m.content}`)
-		.join("\n\n---\n\n");
+	return { keepEndIds, cutoffIndex };
+}
 
-	const compactionPrompt = `You are summarizing an older portion of a sports coaching conversation. Compress the following exchange into a concise but complete context summary using markdown. Preserve ALL important details:
+function buildCompactionPrompt(messagesText: string): string {
+	return `You are summarizing an older portion of a sports coaching conversation. Compress the exchange into a concise but complete context summary using markdown. Preserve ALL important details:
 
 - Training data (power, HR, cadence, intervals, zones)
 - Coaching advice and recommendations given
@@ -646,37 +661,13 @@ Messages to summarize:
 ---
 
 ${messagesText}`;
+}
 
-	const model = await resolveThreadModel(sourceThread, userId);
-	const providerConfig = await getProviderConfig(model);
-
-	if (!providerConfig.apiKey) {
-		return c.json(
-			{ error: `${providerConfig.apiKeyEnvName} is not configured` },
-			500,
-		);
-	}
-
-	const metadata: Record<string, unknown> | undefined =
-		providerConfig.includeReasoning
-			? {
-					app: "fit-analyzer",
-					feature: "trainer-compaction",
-					context_cache: "openrouter-moonshot-automatic",
-					user_id: userId,
-					source_thread_id: threadId,
-				}
-			: undefined;
-
-	const body: Record<string, unknown> = {
-		model,
-		messages: [{ role: "user", content: compactionPrompt }],
-	};
-
-	if (metadata) {
-		body.metadata = metadata;
-	}
-
+async function fetchCompactionSummary(
+	providerConfig: Awaited<ReturnType<typeof getProviderConfig>>,
+	model: string,
+	prompt: string,
+): Promise<string> {
 	let response: Response;
 
 	if (providerConfig.provider === "ollama-cloud") {
@@ -688,7 +679,7 @@ ${messagesText}`;
 			},
 			body: JSON.stringify({
 				model,
-				messages: [{ role: "user", content: compactionPrompt }],
+				messages: [{ role: "user", content: prompt }],
 				stream: false,
 			}),
 			signal: AbortSignal.timeout(240_000),
@@ -700,26 +691,150 @@ ${messagesText}`;
 				Authorization: `Bearer ${providerConfig.apiKey}`,
 				"Content-Type": "application/json",
 			},
-			body: JSON.stringify(body),
+			body: JSON.stringify({
+				model,
+				messages: [{ role: "user", content: prompt }],
+			}),
 			signal: AbortSignal.timeout(240_000),
 		});
 	}
 
 	if (!response.ok) {
 		const err = await response.json().catch(() => ({}));
-		return c.json({ error: "Compaction request failed", details: err }, 500);
+		throw new Error(`Compaction request failed: ${JSON.stringify(err)}`);
 	}
 
 	const data = await response.json();
-	let summary: string;
-
 	if (providerConfig.provider === "ollama-cloud") {
-		summary = data.message?.content ?? "*(Summary unavailable)*";
-	} else {
-		summary = data.choices?.[0]?.message?.content ?? "*(Summary unavailable)*";
+		return data.message?.content ?? "*(Summary unavailable)*";
+	}
+	return data.choices?.[0]?.message?.content ?? "*(Summary unavailable)*";
+}
+
+/**
+ * Summarize a batch of old messages without exceeding a single LLM prompt.
+ * If the batch is too large, split it into chunks, summarize each chunk, then
+ * merge the chunk summaries into one final summary.
+ */
+async function summarizeBatch(
+	toCompact: TrainerMessage[],
+	providerConfig: Awaited<ReturnType<typeof getProviderConfig>>,
+	model: string,
+): Promise<string> {
+	const messagesText = toCompact
+		.map((m) => `**${m.role === "user" ? "Athlete" : "Coach"}:** ${m.content}`)
+		.join("\n\n---\n\n");
+
+	const prompt = buildCompactionPrompt(messagesText);
+	const promptTokens = estimateTokenLength(prompt);
+	if (promptTokens <= COMPACTION_MAX_PROMPT_TOKENS) {
+		return fetchCompactionSummary(providerConfig, model, prompt);
 	}
 
-	const firstKeptAt = new Date(allMessages[cutoffIndex].createdAt).getTime();
+	// Split into chunks whose prompts fit under the limit. We leave room for
+	// the prompt wrapper so we measure the messages text, not the full prompt.
+	const wrapperTokens = estimateTokenLength(buildCompactionPrompt(""));
+	const chunkTextTokenBudget = COMPACTION_MAX_PROMPT_TOKENS - wrapperTokens;
+	const chunks: TrainerMessage[][] = [];
+	let currentChunk: TrainerMessage[] = [];
+	let currentChunkTokens = 0;
+	for (const msg of toCompact) {
+		const msgTokens = estimateTokenLength(
+			`**${msg.role === "user" ? "Athlete" : "Coach"}:** ${msg.content}`,
+		);
+		if (
+			currentChunkTokens + msgTokens > chunkTextTokenBudget &&
+			currentChunk.length > 0
+		) {
+			chunks.push(currentChunk);
+			currentChunk = [msg];
+			currentChunkTokens = msgTokens;
+		} else {
+			currentChunk.push(msg);
+			currentChunkTokens += msgTokens;
+		}
+	}
+	if (currentChunk.length > 0) chunks.push(currentChunk);
+
+	const chunkSummaries: string[] = [];
+	for (const chunk of chunks) {
+		const chunkText = chunk
+			.map(
+				(m) => `**${m.role === "user" ? "Athlete" : "Coach"}:** ${m.content}`,
+			)
+			.join("\n\n---\n\n");
+		const chunkPrompt = buildCompactionPrompt(chunkText);
+		const summary = await fetchCompactionSummary(
+			providerConfig,
+			model,
+			chunkPrompt,
+		);
+		chunkSummaries.push(summary);
+	}
+
+	const mergedPrompt = `You are merging several partial summaries of a long sports coaching conversation into one coherent, concise context summary. Preserve ALL important details and remove redundancy.
+
+${chunkSummaries.map((s, i) => `## Partial summary ${i + 1}\n\n${s}`).join("\n\n---\n\n")}`;
+	return fetchCompactionSummary(providerConfig, model, mergedPrompt);
+}
+
+// ─── Compact / fork ───────────────────────────────────────────────────────────
+
+trainer.post("/compact/:threadId", async (c) => {
+	const userId = getUserId(c);
+	const { threadId } = c.req.param();
+
+	const sourceThread = getThreadByIdStmt.get(threadId, userId) as
+		| {
+				id: string;
+				name: string;
+				activityId: string;
+				coachModel: string | null;
+		  }
+		| undefined;
+	if (!sourceThread) return c.json({ error: "Thread not found" }, 404);
+
+	const allMessages = (getMessagesStmt.all(threadId) as MessageRow[]).map(
+		rowToTrainerMessage,
+	);
+
+	const { keepEndIds, cutoffIndex } = computeRecentKeepWindow(
+		allMessages,
+		COMPACTION_TARGET_CONTEXT_TOKENS,
+		COMPACTION_RESERVE_TOKENS,
+	);
+	const toCompact = cutoffIndex === 0 ? [] : allMessages.slice(0, cutoffIndex);
+
+	if (toCompact.length === 0) {
+		return c.json({
+			thread: { ...sourceThread, messageCount: allMessages.length },
+			messages: allMessages,
+			compacted: false,
+		});
+	}
+
+	const model = await resolveThreadModel(sourceThread, userId);
+	const providerConfig = await getProviderConfig(model);
+
+	if (!providerConfig.apiKey) {
+		return c.json(
+			{ error: `${providerConfig.apiKeyEnvName} is not configured` },
+			500,
+		);
+	}
+
+	let summary: string;
+	try {
+		summary = await summarizeBatch(toCompact, providerConfig, model);
+	} catch (err) {
+		const details = err instanceof Error ? err.message : String(err);
+		return c.json({ error: "Compaction failed", details }, 500);
+	}
+
+	const firstKeptAt =
+		cutoffIndex < allMessages.length
+			? new Date(allMessages[cutoffIndex].createdAt).getTime()
+			: Date.now();
 	const summaryMessage: TrainerMessage = {
 		id: crypto.randomUUID(),
 		role: "assistant",

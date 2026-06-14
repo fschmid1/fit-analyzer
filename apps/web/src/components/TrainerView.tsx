@@ -18,7 +18,11 @@ import {
 	updateFavoriteModels,
 	updateThreadModel,
 } from "../lib/api";
-import { loadTrainerDraft } from "../lib/trainerStreamState";
+import {
+	clearActiveTrainerStream,
+	clearTrainerDraft,
+	loadTrainerDraft,
+} from "../lib/trainerStreamState";
 import { ThreadSidebar } from "./trainer/ThreadSidebar";
 import { TrainerChat } from "./trainer/TrainerChat";
 import { CoachOnboarding } from "./trainer/CoachOnboarding";
@@ -183,6 +187,13 @@ export function TrainerView({
 	const handleSelectThread = useCallback(
 		(id: string) => {
 			if (id === activeThreadId) return;
+			// Switching away from a thread may leave an orphaned active stream
+			// in storage. Clear it so the new thread does not accidentally resume
+			// a stream bound to the previous thread.
+			if (activeThreadId) {
+				clearActiveTrainerStream(activeThreadId);
+				clearTrainerDraft(activeThreadId);
+			}
 			const cached = threadCache.current[id];
 			if (cached?.messages) {
 				setInitialMessages(cached.messages);
@@ -311,7 +322,26 @@ export function TrainerView({
 		const result = await compactTrainerHistory(threadId);
 		if (result.compacted && result.thread) {
 			setThreads((prev) => [...prev, result.thread]);
+			// The old thread is being replaced by the compacted fork; clear any
+			// active stream state bound to it so it cannot resume accidentally.
+			clearActiveTrainerStream(threadId);
+			clearTrainerDraft(threadId);
+			// Warm the cache with the server-returned messages so the new thread
+			// is usable immediately and the paginated chat state is consistent.
+			const messages = result.messages.map(toUIMessage);
+			const toolCalls = reconstructToolCalls(result.messages);
+			threadCache.current[result.thread.id] = {
+				messages,
+				nextCursor: null,
+				hasMore: false,
+				total: result.thread.messageCount ?? messages.length,
+				toolCalls,
+				stale: false,
+			};
+			setInitialMessages(messages);
+			setInitialToolCalls(toolCalls);
 			setActiveThreadId(result.thread.id);
+			setChatKey((k) => k + 1);
 		}
 	}, []);
 
