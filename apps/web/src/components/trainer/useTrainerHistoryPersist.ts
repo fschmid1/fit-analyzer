@@ -6,12 +6,7 @@ import {
 	clearTrainerDraft,
 	saveTrainerDraft,
 } from "../../lib/trainerStreamState";
-import {
-	toTrainerMessage,
-	patchMessagesWithToolCalls,
-	countContextTokens,
-} from "./trainerHelpers";
-import { updateThreadContextTokens } from "../../lib/api";
+import { toTrainerMessage, patchMessagesWithToolCalls } from "./trainerHelpers";
 
 type ChatStatus = "submitted" | "streaming" | "ready" | "error";
 
@@ -48,11 +43,7 @@ export function useTrainerHistoryPersist(
 					: patchMessagesWithToolCalls(messages, toolCalls);
 				const toSave = persistable(full);
 				if (toSave.length > 0) {
-					const contextTokens = countContextTokens(toSave);
 					saveTrainerHistory(threadId, toSave).catch(console.error);
-					updateThreadContextTokens(threadId, contextTokens).catch(
-						console.error,
-					);
 				}
 				clearTrainerDraft(threadId);
 			};

@@ -1,5 +1,10 @@
 import type { StreamChunk } from "@tanstack/ai";
 import type { ToolStreamChunk } from "@fit-analyzer/shared";
+import { db } from "../db.js";
+
+const updateContextTokensStmt = db.prepare(
+	"UPDATE trainer_chats SET context_tokens = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+);
 
 type RegistryEntry = {
 	chunks: string[];
@@ -7,6 +12,7 @@ type RegistryEntry = {
 	waiters: Set<() => void>;
 	startedAt: number;
 	userId: string | null;
+	threadId: string | null;
 	abortController: AbortController | null;
 };
 
@@ -25,6 +31,7 @@ function getOrCreateEntry(streamId: string): RegistryEntry {
 		waiters: new Set(),
 		startedAt: Date.now(),
 		userId: null,
+		threadId: null,
 		abortController: null,
 	};
 	registry.set(streamId, entry);
@@ -47,6 +54,7 @@ export function startTrainerStreamProducer(
 	streamId: string,
 	stream: AsyncIterable<ProducerChunk>,
 	userId: string,
+	threadId: string | undefined,
 	abortSignal?: AbortSignal,
 ) {
 	const entry = getOrCreateEntry(streamId);
@@ -54,6 +62,7 @@ export function startTrainerStreamProducer(
 		return;
 	}
 	entry.userId = userId;
+	entry.threadId = threadId ?? null;
 
 	const abortController = new AbortController();
 	entry.abortController = abortController;
@@ -63,11 +72,22 @@ export function startTrainerStreamProducer(
 		: abortController.signal;
 
 	void (async () => {
+		let lastPromptTokens: number | undefined;
 		try {
 			for await (const chunk of stream) {
 				if (combinedSignal.aborted) break;
 				entry.chunks.push(`data: ${JSON.stringify(chunk)}\n\n`);
 				notify(entry);
+				if (
+					chunk.type === "RUN_FINISHED" &&
+					"usage" in chunk &&
+					chunk.usage &&
+					typeof chunk.usage === "object" &&
+					"promptTokens" in chunk.usage &&
+					typeof chunk.usage.promptTokens === "number"
+				) {
+					lastPromptTokens = chunk.usage.promptTokens;
+				}
 			}
 			if (!combinedSignal.aborted) {
 				entry.chunks.push("data: [DONE]\n\n");
@@ -88,6 +108,22 @@ export function startTrainerStreamProducer(
 		} finally {
 			entry.done = true;
 			entry.abortController = null;
+			if (
+				lastPromptTokens !== undefined &&
+				lastPromptTokens > 0 &&
+				entry.threadId &&
+				entry.userId
+			) {
+				try {
+					updateContextTokensStmt.run(
+						lastPromptTokens,
+						entry.threadId,
+						entry.userId,
+					);
+				} catch {
+					// Persisting context tokens is best-effort; don't fail the stream.
+				}
+			}
 			notify(entry);
 			setTimeout(() => cleanupIfExpired(streamId, entry), ONE_HOUR_MS);
 		}

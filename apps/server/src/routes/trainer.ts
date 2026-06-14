@@ -222,7 +222,7 @@ const getThreadsStmt = db.prepare(
 
 const getThreadByIdStmt = db.prepare(
 	`SELECT id, name, activity_id as activityId, coach_model as coachModel, user_id as userId,
-            created_at as createdAt, updated_at as updatedAt
+            context_tokens as contextTokens, created_at as createdAt, updated_at as updatedAt
      FROM trainer_chats
      WHERE id = ? AND user_id = ?`,
 );
@@ -373,6 +373,7 @@ trainer.post("/chat", async (c) => {
 				abortSignal: c.req.raw.signal,
 			}),
 			userId,
+			threadId ?? undefined,
 			c.req.raw.signal,
 		);
 	}
@@ -573,7 +574,7 @@ trainer.get("/history/:threadId", (c) => {
 	const userId = getUserId(c);
 	const { threadId } = c.req.param();
 	const thread = getThreadByIdStmt.get(threadId, userId) as
-		| { id: string; updatedAt: string }
+		| { id: string; updatedAt: string; contextTokens: number | null }
 		| undefined;
 	if (!thread) {
 		return c.json({
@@ -624,7 +625,10 @@ trainer.get("/history/:threadId", (c) => {
 	}
 
 	const { c: total } = countMessagesStmt.get(thread.id) as { c: number };
-	const contextTokens = countThreadContextTokens(thread.id, messages);
+	const contextTokens =
+		thread.contextTokens != null
+			? thread.contextTokens
+			: countThreadContextTokens(thread.id, messages);
 
 	return c.json({
 		threadId,

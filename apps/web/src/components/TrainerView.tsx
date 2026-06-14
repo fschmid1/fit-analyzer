@@ -126,7 +126,7 @@ export function TrainerView({
 		} finally {
 			setThreadsLoading(false);
 		}
-	}, [activityId]);
+	}, [activityId, urlThreadId, navigate]);
 
 	useEffect(() => {
 		loadThreads();
@@ -273,7 +273,9 @@ export function TrainerView({
 				if (activeThreadId === threadId) {
 					const fallbackId = next.length > 0 ? next[next.length - 1].id : null;
 					setActiveThreadId(fallbackId);
-					navigate(fallbackId ? `/trainer/${fallbackId}` : "/trainer", { replace: true });
+					navigate(fallbackId ? `/trainer/${fallbackId}` : "/trainer", {
+						replace: true,
+					});
 				}
 				return next;
 			});
@@ -311,12 +313,15 @@ export function TrainerView({
 		});
 	}, []);
 
-	const handleForkThread = useCallback(async (threadId: string) => {
-		const newThread = await forkThread(threadId);
-		setThreads((prev) => [...prev, newThread]);
-		setActiveThreadId(newThread.id);
-		navigate(`/trainer/${newThread.id}`, { replace: true });
-	}, [navigate]);
+	const handleForkThread = useCallback(
+		async (threadId: string) => {
+			const newThread = await forkThread(threadId);
+			setThreads((prev) => [...prev, newThread]);
+			setActiveThreadId(newThread.id);
+			navigate(`/trainer/${newThread.id}`, { replace: true });
+		},
+		[navigate],
+	);
 
 	const handleImported = useCallback(() => {
 		if (!activeThreadId) return;
@@ -411,7 +416,7 @@ export function TrainerView({
 				compactionAbortRef.current = null;
 			}
 		},
-		[compactingThreadId, loadThreads, pollCompactionStatus],
+		[compactingThreadId, loadThreads, pollCompactionStatus, navigate],
 	);
 
 	const handleExportThread = useCallback(async (threadId: string) => {
