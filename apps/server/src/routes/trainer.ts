@@ -60,20 +60,23 @@ async function buildSystemPrompt(
 	return `${BASE_SYSTEM_PROMPT}${athleteContext}${activityContext}`;
 }
 
-const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 8;
+const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 4;
 
-// Target token budget for the compacted thread. We want the new thread to fit
-// comfortably inside a modest context window even after the system prompt and
-// the user's next message are added.
-const COMPACTION_TARGET_CONTEXT_TOKENS = 32_000;
-// Reserve space for the system prompt plus the user's next message.
-const COMPACTION_RESERVE_TOKENS = 8_000;
+// The Ollama backend supports 262144 tokens. We target a compacted fork that
+// fits comfortably, reserving generous space for the system prompt, tool
+// definitions, and the user's next message.
+const COMPACTION_MAX_CONTEXT_TOKENS = 200_000;
+const COMPACTION_RESERVE_TOKENS = 62_144;
+const COMPACTION_KEPT_BUDGET_TOKENS =
+	COMPACTION_MAX_CONTEXT_TOKENS - COMPACTION_RESERVE_TOKENS;
 // Do not summarize more than this many tokens in one LLM call; chunk if needed.
-const COMPACTION_MAX_PROMPT_TOKENS = 48_000;
-// If a single user message is larger than the entire compaction budget,
-// we can't keep the whole thing. Cap any individual kept message at this
-// many tokens by summarizing oversized user messages too.
-const MAX_KEPT_MESSAGE_TOKENS = COMPACTION_TARGET_CONTEXT_TOKENS / 4;
+const COMPACTION_MAX_PROMPT_TOKENS = 24_000;
+// If a single message exceeds this, it must be summarized rather than kept
+// verbatim. Set to a fraction of the kept budget so a few large messages
+// can still fit.
+const MAX_KEPT_MESSAGE_TOKENS = COMPACTION_KEPT_BUDGET_TOKENS / 4;
+// Cap any summary we insert so the compacted fork cannot bloat back up.
+const COMPACTION_MAX_SUMMARY_TOKENS = 4_000;
 
 // Active compaction requests by user/thread. Prevents duplicate concurrent
 // compactions and gives the UI a way to know that work is in progress.
@@ -718,8 +721,10 @@ function computeRecentKeepWindow(
 
 	// Shrink the kept tail if it alone is already over budget. This handles
 	// threads where even the last few messages are enormous (e.g. huge pasted
-	// FIT data). We drop oldest first, keeping at least 1 user + 1 assistant
-	// and never breaking the order required by the LLM APIs.
+	// FIT data). We drop oldest first until the budget is met. If the tail
+	// still exceeds the budget after dropping everything, the oversized
+	// message check in the compaction endpoint will summarize the remaining
+	// messages individually.
 	const budgetForTail = targetContextTokens - reserveTokens;
 	let tailTokens = 0;
 	const keptTail: TrainerMessage[] = [];
@@ -729,7 +734,7 @@ function computeRecentKeepWindow(
 		tailTokens += messageTokenLength(m);
 		keptTail.push(m);
 	}
-	while (tailTokens > budgetForTail && keptTail.length > 2) {
+	while (tailTokens > budgetForTail && keptTail.length > 0) {
 		const removed = keptTail.shift();
 		if (!removed) break;
 		keepEndIds.delete(removed.id);
@@ -773,6 +778,12 @@ Messages to summarize:
 ---
 
 ${messagesText}`;
+}
+
+function truncateSummary(text: string): string {
+	const maxChars = COMPACTION_MAX_SUMMARY_TOKENS * APPROX_CHARS_PER_TOKEN;
+	if (text.length <= maxChars) return text;
+	return `${text.slice(0, maxChars)}…`;
 }
 
 async function fetchCompactionSummary(
@@ -917,8 +928,8 @@ trainer.post("/compact/:threadId", async (c) => {
 
 	const { keepEndIds, cutoffIndex } = computeRecentKeepWindow(
 		allMessages,
-		COMPACTION_TARGET_CONTEXT_TOKENS,
-		COMPACTION_RESERVE_TOKENS,
+		COMPACTION_KEPT_BUDGET_TOKENS,
+		0,
 	);
 	const toCompact = cutoffIndex === 0 ? [] : allMessages.slice(0, cutoffIndex);
 
@@ -950,16 +961,13 @@ trainer.post("/compact/:threadId", async (c) => {
 		}
 
 		// The tail we kept verbatim must itself fit under the per-message limit.
-		// If a single user message is huge (e.g. pasted FIT data), summarize it
-		// too so the resulting fork never exceeds the LLM context window.
+		// Any message (user or assistant) that exceeds the limit is summarized
+		// so the resulting fork never exceeds the LLM context window.
 		const keptMessages = allMessages.slice(cutoffIndex);
 		let keptTailSummary: string | undefined;
 		const oversizedKeptMessages: TrainerMessage[] = [];
 		for (const m of keptMessages) {
-			if (
-				m.role === "user" &&
-				messageTokenLength(m) > MAX_KEPT_MESSAGE_TOKENS
-			) {
+			if (messageTokenLength(m) > MAX_KEPT_MESSAGE_TOKENS) {
 				oversizedKeptMessages.push(m);
 			}
 		}
@@ -991,7 +999,7 @@ trainer.post("/compact/:threadId", async (c) => {
 			newMessages.push({
 				id: crypto.randomUUID(),
 				role: "assistant",
-				content: `## Context Summary\n\n*The following is a compressed summary of the earlier conversation to preserve context:*\n\n${summary}`,
+				content: `## Context Summary\n\n*The following is a compressed summary of the earlier conversation to preserve context:*\n\n${truncateSummary(summary)}`,
 				createdAt: new Date(firstKeptAt - 2).toISOString(),
 			});
 		}
@@ -999,18 +1007,13 @@ trainer.post("/compact/:threadId", async (c) => {
 			newMessages.push({
 				id: crypto.randomUUID(),
 				role: "assistant",
-				content: `## Earlier Message Summary\n\n*A large message from earlier in the thread was also summarized to keep the conversation within the model's context window:*\n\n${keptTailSummary}`,
+				content: `## Earlier Message Summary\n\n*A large message from earlier in the thread was also summarized to keep the conversation within the model's context window:*\n\n${truncateSummary(keptTailSummary)}`,
 				createdAt: new Date(firstKeptAt - 1).toISOString(),
 			});
 		}
 
 		for (const m of keptMessages) {
 			if (oversizedKeptMessages.includes(m) && keptTailSummary) {
-				// Replaced by the summary above, but keep assistant replies that
-				// immediately follow oversized user messages so advice isn't lost.
-				if (m.role === "assistant") {
-					newMessages.push({ ...m, id: crypto.randomUUID() });
-				}
 				continue;
 			}
 			newMessages.push({ ...m, id: crypto.randomUUID() });
