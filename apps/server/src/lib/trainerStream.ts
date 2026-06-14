@@ -95,13 +95,22 @@ async function* parseOpenAiSse(
 		buffer = events.pop() ?? "";
 
 		for (const event of events) {
-			for (const line of event.split("\n")) {
-				if (!line.startsWith("data: ")) continue;
-				const data = line.slice(6).trim();
-				if (!data) continue;
-				if (data === "[DONE]") return;
-				yield JSON.parse(data) as OpenAiCompatibleStreamChunk;
+			const lines = event.split("\n");
+			let data: string | undefined;
+			for (const line of lines) {
+				if (line.startsWith("data: ")) {
+					data = line.slice(6).trim();
+				} else if (line.startsWith("event: ") || line.trim() === "") {
+					// Ignore SSE event name / field names and empty lines.
+				} else if (line.trim()) {
+					// Unknown line: don't mistake an event name line for data.
+					data = undefined;
+				}
 			}
+			if (data === undefined) continue;
+			if (!data) continue;
+			if (data === "[DONE]") return;
+			yield JSON.parse(data) as OpenAiCompatibleStreamChunk;
 		}
 	}
 }

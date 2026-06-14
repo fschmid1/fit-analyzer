@@ -75,11 +75,19 @@ async function streamSseResponse(
 		buffer = events.pop() ?? "";
 
 		for (const event of events) {
-			const line = event
-				.split("\n")
-				.find((candidate) => candidate.startsWith("data: "));
-			if (!line) continue;
-			const data = line.slice(6);
+			const lines = event.split("\n");
+			let data: string | undefined;
+			for (const line of lines) {
+				if (line.startsWith("data: ")) {
+					data = line.slice(6);
+				} else if (line.startsWith("event: ") || line.trim() === "") {
+					// Ignore SSE event name / field names and empty lines.
+				} else if (line.trim()) {
+					// Unknown line: don't mistake an event name line for data.
+					data = undefined;
+				}
+			}
+			if (data === undefined) continue;
 			if (data === "[DONE]") return "done";
 			onChunk(JSON.parse(data) as TrainerChunk);
 		}
