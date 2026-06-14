@@ -9,6 +9,7 @@ import {
 	Clock,
 	Target,
 	Loader2,
+	MapPin,
 } from "lucide-react";
 import { fetchUserSettings, updateAthleteProfile } from "../lib/api";
 import { AnimatedButton } from "./AnimatedButton";
@@ -31,6 +32,7 @@ const DEFAULT_PROFILE: AthleteProfile = {
 	goalDescription: null,
 	weeklyHours: null,
 	focusAreas: [],
+	location: null,
 };
 
 export function AthleteProfileSettings() {
@@ -40,6 +42,7 @@ export function AthleteProfileSettings() {
 		ftp: number | null;
 		maxHr: number | null;
 	}>({ ftp: null, maxHr: null });
+	const [inferredLocation, setInferredLocation] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [notification, setNotification] = useState<{
@@ -57,10 +60,12 @@ export function AthleteProfileSettings() {
 					maxHr: data.estimatedMaxHr ?? null,
 				};
 				setEstimates(e);
+				setInferredLocation(data.inferredLocation ?? null);
 				setDraft({
 					...p,
 					ftp: p.ftp ?? e.ftp,
 					maxHr: p.maxHr ?? e.maxHr,
+					location: p.location ?? data.inferredLocation ?? null,
 				});
 			})
 			.catch(() => {
@@ -86,7 +91,8 @@ export function AthleteProfileSettings() {
 		draft.goalDescription !== profile.goalDescription ||
 		draft.weeklyHours !== profile.weeklyHours ||
 		draft.focusAreas.length !== profile.focusAreas.length ||
-		!draft.focusAreas.every((f) => profile.focusAreas.includes(f));
+		!draft.focusAreas.every((f) => profile.focusAreas.includes(f)) ||
+		draft.location !== profile.location;
 
 	const handleSave = async () => {
 		setSaving(true);
@@ -100,9 +106,11 @@ export function AthleteProfileSettings() {
 				goalDescription: draft.goalDescription,
 				weeklyHours: draft.weeklyHours,
 				focusAreas: draft.focusAreas,
+				location: draft.location,
 			});
 			setProfile(next);
 			setDraft(next);
+			setInferredLocation(null);
 			setNotification({ type: "success", message: "Athlete profile updated." });
 		} catch (error) {
 			setNotification({
@@ -264,6 +272,44 @@ export function AthleteProfileSettings() {
 									className="w-full px-3 py-2 text-sm bg-[#0f0b1a] border border-[rgba(139,92,246,0.2)] rounded-lg text-[#f1f5f9] placeholder-[#4a4468] outline-none focus:border-[#8b5cf6]/40 transition-colors [color-scheme:dark]"
 								/>
 							</div>
+						</div>
+
+						<div className="flex flex-col gap-1.5">
+							<span className="flex items-center gap-1.5 text-xs font-medium text-[#cbd5e1]">
+								<MapPin className="w-3 h-3 text-[#f59e0b]" />
+								Location
+							</span>
+							<input
+								type="text"
+								value={draft.location ?? ""}
+								onChange={(e) =>
+									setDraft((prev) => ({
+										...prev,
+										location: e.target.value || null,
+									}))
+								}
+								placeholder="e.g. Boulder, CO"
+								className="w-full px-3 py-2 text-sm bg-[#0f0b1a] border border-[rgba(139,92,246,0.2)] rounded-lg text-[#f1f5f9] placeholder-[#4a4468] outline-none focus:border-[#8b5cf6]/40 transition-colors"
+							/>
+							{profile.location == null && inferredLocation && (
+								<div className="flex items-center justify-between gap-2">
+									<span className="text-[10px] text-[#64748b]">
+										Inferred: {inferredLocation}
+									</span>
+									<button
+										type="button"
+										onClick={() =>
+											setDraft((prev) => ({
+												...prev,
+												location: inferredLocation,
+											}))
+										}
+										className="text-[10px] text-[#a78bfa] hover:text-[#c4b5fd] transition-colors cursor-pointer"
+									>
+										Use inferred location
+									</button>
+								</div>
+							)}
 						</div>
 
 						<div className="flex flex-col gap-1.5">

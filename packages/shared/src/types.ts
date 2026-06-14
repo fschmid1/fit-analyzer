@@ -27,6 +27,12 @@ export interface ActivitySummary {
 	peak1minPower: number | null;
 	peak5minPower: number | null;
 	peak20minPower: number | null;
+	/** City where the activity took place, when available (e.g. from Strava). */
+	locationCity?: string | null;
+	/** State/region where the activity took place, when available. */
+	locationState?: string | null;
+	/** Country where the activity took place, when available. */
+	locationCountry?: string | null;
 }
 
 export interface LapMarker {
@@ -444,6 +450,7 @@ export interface AthleteProfile {
 	goalDescription: string | null;
 	weeklyHours: number | null;
 	focusAreas: string[];
+	location: string | null;
 }
 
 export interface UpdateAthleteProfileBody {
@@ -454,4 +461,5 @@ export interface UpdateAthleteProfileBody {
 	goalDescription?: string | null;
 	weeklyHours?: number | null;
 	focusAreas?: string[];
+	location?: string | null;
 }

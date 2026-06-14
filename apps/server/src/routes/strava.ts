@@ -11,6 +11,11 @@ import { Hono } from "hono";
 import { db } from "../db.js";
 import { env } from "../env.js";
 import { handleNewActivityForWaxedChainReminder } from "../lib/waxedChainReminders.js";
+import {
+	getAthleteProfile,
+	updateAthleteProfile,
+} from "../lib/athleteProfile.js";
+import { inferLocationFromActivities } from "../lib/athleteStats.js";
 
 const strava = new Hono();
 
@@ -39,6 +44,9 @@ interface StravaActivity {
 	max_heartrate?: number;
 	average_cadence?: number;
 	kilojoules?: number;
+	location_city?: string | null;
+	location_state?: string | null;
+	location_country?: string | null;
 }
 
 interface StravaNumericStream {
@@ -174,6 +182,31 @@ const insertActivityStmt = db.prepare(
      (id, date, summary, records, laps, intervals, user_id, strava_activity_id)
    VALUES (?, ?, ?, ?, ?, '[]', ?, ?)`,
 );
+
+/**
+ * Update the athlete's inferred location from recent activities, but only if
+ * they haven't set a location manually. Runs async and logs failures instead of
+ * blocking the import path.
+ */
+function maybeUpdateAthleteLocation(userId: string): void {
+	const profile = getAthleteProfile(userId);
+	if (profile.location) return;
+
+	const inferred = inferLocationFromActivities(userId);
+	if (!inferred) return;
+
+	try {
+		updateAthleteProfile(userId, { location: inferred });
+		console.log(
+			`[strava] Inferred athlete location for user ${userId}: ${inferred}`,
+		);
+	} catch (err) {
+		console.error(
+			`[strava] Failed to update inferred location for user ${userId}:`,
+			err,
+		);
+	}
+}
 
 /** Return a valid access token for the user, refreshing if within 60s of expiry. */
 async function getValidToken(userId: string): Promise<string> {
@@ -369,6 +402,9 @@ function buildSummary(
 		peak1minPower: computePeakPower(timeArr, wattsArr, 60),
 		peak5minPower: computePeakPower(timeArr, wattsArr, 300),
 		peak20minPower: computePeakPower(timeArr, wattsArr, 1200),
+		locationCity: activity.location_city ?? null,
+		locationState: activity.location_state ?? null,
+		locationCountry: activity.location_country ?? null,
 	};
 }
 
@@ -469,6 +505,7 @@ async function importSingleActivity(
 	);
 
 	await handleNewActivityForWaxedChainReminder(userId, records);
+	maybeUpdateAthleteLocation(userId);
 
 	console.log(
 		`[strava] ${alreadyExists ? "Re-imported" : "Imported"} activity ${stravaActivityId} (${activity.name}) → ${id}`,

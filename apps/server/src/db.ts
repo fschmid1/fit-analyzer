@@ -302,6 +302,11 @@ try {
 } catch {
 	/* column already exists */
 }
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN athlete_location TEXT");
+} catch {
+	/* column already exists */
+}
 
 // Health Auto Export historical data table
 db.exec(`

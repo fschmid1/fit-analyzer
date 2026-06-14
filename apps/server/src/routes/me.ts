@@ -28,7 +28,10 @@ import {
 	getAthleteProfile,
 	updateAthleteProfile,
 } from "../lib/athleteProfile.js";
-import { computeAllTimeEstimates } from "../lib/athleteStats.js";
+import {
+	computeAllTimeEstimates,
+	inferLocationFromActivities,
+} from "../lib/athleteStats.js";
 import { db } from "../db.js";
 
 const me = new Hono();
@@ -85,6 +88,7 @@ me.get("/settings", async (c) => {
 		.get(userId) as { health_source: string } | undefined;
 
 	const estimates = getUserEstimates(userId);
+	const profile = getAthleteProfile(userId);
 
 	return c.json({
 		waxedChainReminder: getWaxedChainReminderSettings(userId),
@@ -101,7 +105,10 @@ me.get("/settings", async (c) => {
 				| "auto",
 			lastSyncAt: haeLastSyncAt,
 		},
-		athleteProfile: getAthleteProfile(userId),
+		athleteProfile: profile,
+		inferredLocation: profile.location
+			? null
+			: inferLocationFromActivities(userId),
 		...estimates,
 	});
 });
@@ -152,7 +159,8 @@ me.patch("/settings", async (c) => {
 		body.goalEventName !== undefined ||
 		body.goalDescription !== undefined ||
 		body.weeklyHours !== undefined ||
-		body.focusAreas !== undefined;
+		body.focusAreas !== undefined ||
+		body.location !== undefined;
 	if (hasProfileUpdate) {
 		const isPositiveNumberOrNull = (v: unknown): v is number | null =>
 			v === null || (typeof v === "number" && Number.isFinite(v) && v > 0);
@@ -172,7 +180,8 @@ me.patch("/settings", async (c) => {
 				!isNullableString(body.goalEventName)) ||
 			(body.goalDescription !== undefined &&
 				!isNullableString(body.goalDescription)) ||
-			(body.focusAreas !== undefined && !isStringArray(body.focusAreas))
+			(body.focusAreas !== undefined && !isStringArray(body.focusAreas)) ||
+			(body.location !== undefined && !isNullableString(body.location))
 		) {
 			return c.json({ error: "Invalid athleteProfile payload" }, 400);
 		}
@@ -185,6 +194,7 @@ me.patch("/settings", async (c) => {
 			goalDescription: body.goalDescription,
 			weeklyHours: body.weeklyHours,
 			focusAreas: body.focusAreas,
+			location: body.location,
 		});
 	}
 
@@ -242,6 +252,7 @@ me.patch("/settings", async (c) => {
 		.get(userId) as { health_source: string } | undefined;
 
 	const patchEstimates = getUserEstimates(userId);
+	const patchProfile = getAthleteProfile(userId);
 
 	return c.json({
 		waxedChainReminder: getWaxedChainReminderSettings(userId),
@@ -258,7 +269,10 @@ me.patch("/settings", async (c) => {
 				| "auto",
 			lastSyncAt: haeLastSyncAt,
 		},
-		athleteProfile: getAthleteProfile(userId),
+		athleteProfile: patchProfile,
+		inferredLocation: patchProfile.location
+			? null
+			: inferLocationFromActivities(userId),
 		...patchEstimates,
 	});
 });

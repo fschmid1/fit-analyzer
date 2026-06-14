@@ -109,6 +109,97 @@ const allActivitiesStmt = db.prepare(
 	"SELECT summary, records FROM activities WHERE user_id = ?",
 );
 
+const recentActivitiesStmt = db.prepare(
+	`SELECT id, summary, records, created_at FROM activities
+   WHERE user_id = ? AND date >= date('now', '-90 days')
+   ORDER BY date DESC, created_at DESC
+   LIMIT 100`,
+);
+
+/**
+ * Extract a human-readable location label from a Strava-style activity object.
+ * Prefers the most specific non-empty value: city, state, then country.
+ */
+function formatLocation(
+	city: string | null | undefined,
+	state: string | null | undefined,
+	country: string | null | undefined,
+): string | null {
+	const parts: string[] = [];
+	if (city?.trim()) parts.push(city.trim());
+	if (state?.trim()) parts.push(state.trim());
+	if (parts.length === 0 && country?.trim()) parts.push(country.trim());
+	return parts.length > 0 ? parts.join(", ") : null;
+}
+
+/**
+ * Infer the athlete's likely home location from recent activities.
+ * Returns the most frequently occurring location label in the trailing 90 days,
+ * requiring it to appear in at least 20% of activities to avoid noise.
+ */
+export function inferLocationFromActivities(userId: string): string | null {
+	const rows = recentActivitiesStmt.all(userId) as {
+		id: string;
+		summary: string;
+		records: string;
+		created_at: string;
+	}[];
+
+	const counts = new Map<string, { count: number; lastSeenAt: string }>();
+
+	for (const row of rows) {
+		const summary = JSON.parse(row.summary) as ActivitySummary & {
+			locationCity?: string | null;
+			locationState?: string | null;
+			locationCountry?: string | null;
+		};
+
+		const label =
+			formatLocation(
+				summary.locationCity,
+				summary.locationState,
+				summary.locationCountry,
+			) ?? inferLocationFromRecords(JSON.parse(row.records) as StoredRecord[]);
+
+		if (!label) continue;
+
+		const existing = counts.get(label);
+		counts.set(label, {
+			count: (existing?.count ?? 0) + 1,
+			lastSeenAt:
+				existing && existing.lastSeenAt > row.created_at
+					? existing.lastSeenAt
+					: row.created_at,
+		});
+	}
+
+	if (counts.size === 0) return null;
+
+	const minFrequency = Math.max(1, Math.floor(rows.length * 0.2));
+	let best: { label: string; count: number; lastSeenAt: string } | null = null;
+
+	for (const [label, { count, lastSeenAt }] of counts) {
+		if (count < minFrequency) continue;
+		if (
+			!best ||
+			count > best.count ||
+			(count === best.count && lastSeenAt > best.lastSeenAt)
+		) {
+			best = { label, count, lastSeenAt };
+		}
+	}
+
+	return best?.label ?? null;
+}
+
+/** Fallback: use the midpoint of the activity records to look up a location. */
+function inferLocationFromRecords(_records: StoredRecord[]): string | null {
+	// Reverse geocoding is intentionally not implemented to avoid external
+	// API dependencies. Activities imported from Strava already carry location
+	// fields in their summary; FIT uploads have no location metadata today.
+	return null;
+}
+
 /**
  * Hawley–Noakes cycling VO₂max estimate from peak power output (PPO).
  *   VO₂max (ml/kg/min) = 10.8 × (PPO / kg) + 7

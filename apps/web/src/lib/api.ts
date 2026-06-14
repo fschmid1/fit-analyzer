@@ -39,6 +39,7 @@ export interface UserSettingsResponse {
 	compare: CompareSettings;
 	healthAutoExport: HealthAutoExportSettings;
 	athleteProfile: AthleteProfile;
+	inferredLocation: string | null;
 	estimatedFtp: number | null;
 	estimatedMaxHr: number | null;
 }

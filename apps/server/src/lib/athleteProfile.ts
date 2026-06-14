@@ -4,7 +4,7 @@ import type { AthleteProfile } from "@fit-analyzer/shared";
 const getProfileStmt = db.prepare(
 	`SELECT athlete_ftp, athlete_max_hr, athlete_goal_event_date,
 	        athlete_goal_event_name, athlete_goal_description,
-	        athlete_weekly_hours, athlete_focus_areas
+	        athlete_weekly_hours, athlete_focus_areas, athlete_location
      FROM user_settings WHERE user_id = ?`,
 );
 
@@ -43,6 +43,11 @@ const upsertFocusAreasStmt = db.prepare(
      ON CONFLICT(user_id) DO UPDATE SET athlete_focus_areas = excluded.athlete_focus_areas`,
 );
 
+const upsertLocationStmt = db.prepare(
+	`INSERT INTO user_settings (user_id, athlete_location) VALUES (?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET athlete_location = excluded.athlete_location`,
+);
+
 interface ProfileRow {
 	athlete_ftp: number | null;
 	athlete_max_hr: number | null;
@@ -51,6 +56,7 @@ interface ProfileRow {
 	athlete_goal_description: string | null;
 	athlete_weekly_hours: number | null;
 	athlete_focus_areas: string;
+	athlete_location: string | null;
 }
 
 export function getAthleteProfile(userId: string): AthleteProfile {
@@ -64,6 +70,7 @@ export function getAthleteProfile(userId: string): AthleteProfile {
 			goalDescription: null,
 			weeklyHours: null,
 			focusAreas: [],
+			location: null,
 		};
 	}
 
@@ -83,6 +90,7 @@ export function getAthleteProfile(userId: string): AthleteProfile {
 		goalDescription: row.athlete_goal_description,
 		weeklyHours: row.athlete_weekly_hours,
 		focusAreas,
+		location: row.athlete_location,
 	};
 }
 
@@ -96,6 +104,7 @@ export function updateAthleteProfile(
 		goalDescription?: string | null;
 		weeklyHours?: number | null;
 		focusAreas?: string[];
+		location?: string | null;
 	},
 ): AthleteProfile {
 	if (updates.ftp !== undefined) upsertFtpStmt.run(userId, updates.ftp);
@@ -110,6 +119,8 @@ export function updateAthleteProfile(
 		upsertWeeklyHoursStmt.run(userId, updates.weeklyHours);
 	if (updates.focusAreas !== undefined)
 		upsertFocusAreasStmt.run(userId, JSON.stringify(updates.focusAreas));
+	if (updates.location !== undefined)
+		upsertLocationStmt.run(userId, updates.location);
 
 	return getAthleteProfile(userId);
 }
