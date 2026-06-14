@@ -31,6 +31,13 @@ function createQueue() {
 			waiters = [];
 			for (const waiter of pending) waiter(null);
 		},
+		reset() {
+			buffer.length = 0;
+			const pending = waiters;
+			waiters = [];
+			for (const waiter of pending) waiter(null);
+			closed = false;
+		},
 		async *subscribe(abortSignal?: AbortSignal): AsyncIterable<TrainerChunk> {
 			while (!abortSignal?.aborted) {
 				let chunk: TrainerChunk | null;
@@ -126,6 +133,7 @@ export function createTrainerStreamConnection(
 		activeThreadId: string,
 		streamId?: string,
 	) => {
+		queue.reset();
 		let shouldClearActiveStream = false;
 		try {
 			const response = await request;
