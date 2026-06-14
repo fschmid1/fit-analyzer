@@ -157,6 +157,13 @@ try {
 	/* column already exists */
 }
 
+// Migration: add context_tokens column to trainer_chats (client-computed full context size)
+try {
+	db.exec("ALTER TABLE trainer_chats ADD COLUMN context_tokens INTEGER");
+} catch {
+	/* column already exists */
+}
+
 // Migration: add tool_calls column to trainer_messages
 try {
 	db.exec("ALTER TABLE trainer_messages ADD COLUMN tool_calls TEXT");

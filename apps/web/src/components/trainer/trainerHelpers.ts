@@ -5,6 +5,7 @@ import type {
 	TrainerMessage,
 	UIToolCall,
 } from "@fit-analyzer/shared";
+import { estimateContextTokens } from "@fit-analyzer/shared";
 import { randomUUID } from "../../lib/randomUUID";
 
 export function getTextContent(msg: UIMessage): string {
@@ -222,6 +223,22 @@ export function reconstructToolCalls(messages: TrainerMessage[]): UIToolCall[] {
 		}
 	}
 	return toolCalls;
+}
+
+export function countContextTokens(messages: TrainerMessage[]): number {
+	return messages.reduce((sum, m) => {
+		let tokens = estimateContextTokens(m.content);
+		if (m.toolCalls) {
+			for (const tc of m.toolCalls) {
+				tokens += estimateContextTokens(tc.name);
+				tokens += estimateContextTokens(JSON.stringify(tc.arguments));
+				if (tc.result?.content) {
+					tokens += estimateContextTokens(tc.result.content);
+				}
+			}
+		}
+		return sum + tokens;
+	}, 0);
 }
 
 /**

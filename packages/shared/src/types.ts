@@ -289,6 +289,14 @@ export interface HeatmapResponse {
 
 // --- Trainer chat types ---
 
+// Approximate characters per token used for quick context-size budgeting.
+export const APPROX_CHARS_PER_TOKEN = 4;
+
+/** Estimate the number of tokens in a text string using a simple heuristic. */
+export function estimateContextTokens(text: string): number {
+	return Math.ceil(text.length / APPROX_CHARS_PER_TOKEN);
+}
+
 /** A single persisted trainer chat message */
 export interface TrainerMessage {
 	id: string;

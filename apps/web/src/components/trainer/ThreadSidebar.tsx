@@ -429,11 +429,28 @@ export function ThreadSidebar({
 								<button
 									type="button"
 									onClick={(e) => handleMenuButtonClick(thread, e)}
-									className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[#7c6fa0] opacity-100 transition-colors hover:bg-[#241e3d] hover:text-[#c4b5fd] focus:opacity-100 focus:outline-none focus:ring-1 focus:ring-[#8b5cf6]/40 md:opacity-0 md:group-hover:opacity-100"
-									title={`Actions for ${thread.name}`}
-									aria-label={`Actions for ${thread.name}`}
+									disabled={compactingThreadId === thread.id}
+									className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors focus:opacity-100 focus:outline-none focus:ring-1 focus:ring-[#8b5cf6]/40 md:opacity-0 md:group-hover:opacity-100 ${
+										compactingThreadId === thread.id
+											? "text-[#8b5cf6] bg-[#8b5cf6]/15 animate-pulse"
+											: "text-[#7c6fa0] opacity-100 hover:bg-[#241e3d] hover:text-[#c4b5fd]"
+									}`}
+									title={
+										compactingThreadId === thread.id
+											? `Compacting ${thread.name}…`
+											: `Actions for ${thread.name}`
+									}
+									aria-label={
+										compactingThreadId === thread.id
+											? `Compacting ${thread.name}`
+											: `Actions for ${thread.name}`
+									}
 								>
-									<MoreVertical className="h-3.5 w-3.5" />
+									{compactingThreadId === thread.id ? (
+										<Loader2 className="h-3.5 w-3.5 animate-spin" />
+									) : (
+										<MoreVertical className="h-3.5 w-3.5" />
+									)}
 								</button>
 							)}
 						</div>
@@ -504,11 +521,18 @@ export function ThreadSidebar({
 						<button
 							type="button"
 							onClick={() => handleCompact(contextMenu.threadId)}
-							className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-[#c4b5fd] hover:bg-[#8b5cf6]/15 transition-colors cursor-pointer"
+							disabled={compactingThreadId === contextMenu.threadId}
+							className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-[#c4b5fd] hover:bg-[#8b5cf6]/15 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
 							role="menuitem"
 						>
-							<Minimize2 className="w-3.5 h-3.5" />
-							Compact
+							{compactingThreadId === contextMenu.threadId ? (
+								<Loader2 className="w-3.5 h-3.5 animate-spin" />
+							) : (
+								<Minimize2 className="w-3.5 h-3.5" />
+							)}
+							{compactingThreadId === contextMenu.threadId
+								? "Compacting…"
+								: "Compact"}
 						</button>
 						<div className="my-1 border-t border-[rgba(139,92,246,0.1)]" />
 						<button

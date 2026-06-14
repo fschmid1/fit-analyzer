@@ -354,6 +354,17 @@ export async function updateThreadModel(
 	});
 }
 
+export async function updateThreadContextTokens(
+	threadId: string,
+	contextTokens: number,
+): Promise<void> {
+	await fetch(`${API_BASE}/trainer/threads/${threadId}`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ contextTokens }),
+	});
+}
+
 export async function deleteThread(threadId: string): Promise<void> {
 	await fetch(`${API_BASE}/trainer/threads/${threadId}`, { method: "DELETE" });
 }
@@ -394,18 +405,30 @@ export async function saveTrainerHistory(
 	});
 }
 
-export async function compactTrainerHistory(threadId: string): Promise<{
+export async function compactTrainerHistory(
+	threadId: string,
+	signal?: AbortSignal,
+): Promise<{
 	thread: TrainerThread;
 	messages: TrainerMessage[];
 	compacted: boolean;
 }> {
 	const res = await fetch(`${API_BASE}/trainer/compact/${threadId}`, {
 		method: "POST",
+		signal,
 	});
 	if (!res.ok) {
 		const err = await res.json().catch(() => ({ error: "Compaction failed" }));
 		throw new Error((err as { error?: string }).error ?? "Compaction failed");
 	}
+	return res.json();
+}
+
+export async function getCompactionStatus(
+	threadId: string,
+): Promise<{ running: boolean }> {
+	const res = await fetch(`${API_BASE}/trainer/compact/${threadId}/status`);
+	if (!res.ok) return { running: false };
 	return res.json();
 }
 

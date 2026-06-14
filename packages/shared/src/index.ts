@@ -52,6 +52,11 @@ export type {
 } from "./types.js";
 
 export {
+	APPROX_CHARS_PER_TOKEN,
+	estimateContextTokens,
+} from "./types.js";
+
+export {
 	AVAILABLE_MODELS,
 	getCoachModelDisplayName,
 	getModelProvider,

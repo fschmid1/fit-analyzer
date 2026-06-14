@@ -3,7 +3,11 @@ import type {
 	TrainerMessage,
 	UIToolCall,
 } from "@fit-analyzer/shared";
-import { AVAILABLE_MODELS, getModelProvider } from "@fit-analyzer/shared";
+import {
+	APPROX_CHARS_PER_TOKEN,
+	AVAILABLE_MODELS,
+	getModelProvider,
+} from "@fit-analyzer/shared";
 import { convertMessagesToModelMessages } from "@tanstack/ai";
 import { Hono } from "hono";
 import { db } from "../db.js";
@@ -56,20 +60,20 @@ async function buildSystemPrompt(
 	return `${BASE_SYSTEM_PROMPT}${athleteContext}${activityContext}`;
 }
 
-const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 20;
+const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 8;
 
 // Target token budget for the compacted thread. We want the new thread to fit
 // comfortably inside a modest context window even after the system prompt and
 // the user's next message are added.
-const COMPACTION_TARGET_CONTEXT_TOKENS = 96_000;
+const COMPACTION_TARGET_CONTEXT_TOKENS = 32_000;
 // Reserve space for the system prompt plus the user's next message.
-const COMPACTION_RESERVE_TOKENS = 12_000;
+const COMPACTION_RESERVE_TOKENS = 8_000;
 // Do not summarize more than this many tokens in one LLM call; chunk if needed.
-const COMPACTION_MAX_PROMPT_TOKENS = 120_000;
-// Approximate tokens per UTF-16 code unit for quick budgeting. This is a
-// pessimistic heuristic (1 token ≈ 4 latin chars) so we stay safely under the
-// real budget.
-const APPROX_CHARS_PER_TOKEN = 4;
+const COMPACTION_MAX_PROMPT_TOKENS = 48_000;
+// If a single user message is larger than the entire compaction budget,
+// we can't keep the whole thing. Cap any individual kept message at this
+// many tokens by summarizing oversized user messages too.
+const MAX_KEPT_MESSAGE_TOKENS = COMPACTION_TARGET_CONTEXT_TOKENS / 4;
 
 // Active compaction requests by user/thread. Prevents duplicate concurrent
 // compactions and gives the UI a way to know that work is in progress.
@@ -205,7 +209,7 @@ const getThreadsStmt = db.prepare(
 	`SELECT c.id, c.name, c.activity_id as activityId, c.coach_model as coachModel,
             c.created_at as createdAt, c.updated_at as updatedAt,
             COUNT(m.id) as messageCount,
-            SUM(LENGTH(m.content)) / ${APPROX_CHARS_PER_TOKEN} as contextTokens
+            COALESCE(c.context_tokens, SUM(LENGTH(m.content)) / ${APPROX_CHARS_PER_TOKEN}, 0) as contextTokens
      FROM trainer_chats c
      LEFT JOIN trainer_messages m ON m.chat_id = c.id
      WHERE c.user_id = ? AND c.activity_id = ?
@@ -260,6 +264,11 @@ const renameThreadStmt = db.prepare(
 
 const updateThreadModelStmt = db.prepare(
 	`UPDATE trainer_chats SET coach_model = ?, updated_at = datetime('now')
+     WHERE id = ? AND user_id = ?`,
+);
+
+const updateThreadContextTokensStmt = db.prepare(
+	`UPDATE trainer_chats SET context_tokens = ?, updated_at = datetime('now')
      WHERE id = ? AND user_id = ?`,
 );
 
@@ -497,8 +506,16 @@ trainer.patch("/threads/:threadId", async (c) => {
 	const model: string | undefined = (
 		body.coachModel as string | undefined
 	)?.trim();
-	if (!name && !model)
-		return c.json({ error: "Name or coachModel is required" }, 400);
+	const contextTokens: number | undefined =
+		typeof body.contextTokens === "number" &&
+		Number.isFinite(body.contextTokens)
+			? Math.max(0, Math.floor(body.contextTokens))
+			: undefined;
+	if (!name && !model && contextTokens === undefined)
+		return c.json(
+			{ error: "Name, coachModel or contextTokens is required" },
+			400,
+		);
 	if (name) renameThreadStmt.run(name, threadId, userId);
 	if (model) {
 		const known =
@@ -506,6 +523,9 @@ trainer.patch("/threads/:threadId", async (c) => {
 			(await getOllamaModels()).some((m) => m.id === model);
 		const coachModel = known ? model : null;
 		updateThreadModelStmt.run(coachModel, threadId, userId);
+	}
+	if (contextTokens !== undefined) {
+		updateThreadContextTokensStmt.run(contextTokens, threadId, userId);
 	}
 	return c.json({ ok: true });
 });
@@ -641,20 +661,24 @@ trainer.put("/history/:threadId", async (c) => {
 	return c.json({ ok: true });
 });
 
-function estimateTokenLength(text: string): number {
-	return Math.ceil(text.length / APPROX_CHARS_PER_TOKEN);
-}
-
 function messageTokenLength(m: TrainerMessage): number {
-	let n = estimateTokenLength(m.content);
+	let n = Math.ceil(m.content.length / APPROX_CHARS_PER_TOKEN);
 	if (m.toolCalls && m.toolCalls.length > 0) {
 		for (const tc of m.toolCalls) {
-			n += estimateTokenLength(tc.name);
-			n += estimateTokenLength(JSON.stringify(tc.arguments));
-			n += tc.result ? estimateTokenLength(JSON.stringify(tc.result)) : 0;
+			n += Math.ceil(tc.name.length / APPROX_CHARS_PER_TOKEN);
+			n += Math.ceil(
+				JSON.stringify(tc.arguments).length / APPROX_CHARS_PER_TOKEN,
+			);
+			n += tc.result
+				? Math.ceil(JSON.stringify(tc.result).length / APPROX_CHARS_PER_TOKEN)
+				: 0;
 		}
 	}
 	return n;
+}
+
+function estimateTokenLength(text: string): number {
+	return Math.ceil(text.length / APPROX_CHARS_PER_TOKEN);
 }
 
 function computeRecentKeepWindow(
@@ -925,22 +949,72 @@ trainer.post("/compact/:threadId", async (c) => {
 			throw new Error(`Compaction failed: ${details}`);
 		}
 
+		// The tail we kept verbatim must itself fit under the per-message limit.
+		// If a single user message is huge (e.g. pasted FIT data), summarize it
+		// too so the resulting fork never exceeds the LLM context window.
+		const keptMessages = allMessages.slice(cutoffIndex);
+		let keptTailSummary: string | undefined;
+		const oversizedKeptMessages: TrainerMessage[] = [];
+		for (const m of keptMessages) {
+			if (
+				m.role === "user" &&
+				messageTokenLength(m) > MAX_KEPT_MESSAGE_TOKENS
+			) {
+				oversizedKeptMessages.push(m);
+			}
+		}
+		if (oversizedKeptMessages.length > 0) {
+			const keptText = oversizedKeptMessages
+				.map(formatMessageForCompaction)
+				.join("\n\n---\n\n");
+			keptTailSummary = await summarizeBatch(
+				[
+					{
+						id: crypto.randomUUID(),
+						role: "user",
+						content: keptText,
+						createdAt: oversizedKeptMessages[0].createdAt,
+					},
+				],
+				providerConfig,
+				model,
+			);
+		}
+
 		const firstKeptAt =
 			cutoffIndex < allMessages.length
 				? new Date(allMessages[cutoffIndex].createdAt).getTime()
 				: Date.now();
-		const summaryMessage: TrainerMessage = {
-			id: crypto.randomUUID(),
-			role: "assistant",
-			content: `## Context Summary\n\n*The following is a compressed summary of the earlier conversation to preserve context:*\n\n${summary}`,
-			createdAt: new Date(firstKeptAt - 1).toISOString(),
-		};
 
-		// Give every message a fresh ID — the originals still exist in the source thread
-		const newMessages: TrainerMessage[] = [
-			summaryMessage,
-			...allMessages.slice(cutoffIndex),
-		].map((m) => ({ ...m, id: crypto.randomUUID() }));
+		const newMessages: TrainerMessage[] = [];
+		if (summary) {
+			newMessages.push({
+				id: crypto.randomUUID(),
+				role: "assistant",
+				content: `## Context Summary\n\n*The following is a compressed summary of the earlier conversation to preserve context:*\n\n${summary}`,
+				createdAt: new Date(firstKeptAt - 2).toISOString(),
+			});
+		}
+		if (keptTailSummary) {
+			newMessages.push({
+				id: crypto.randomUUID(),
+				role: "assistant",
+				content: `## Earlier Message Summary\n\n*A large message from earlier in the thread was also summarized to keep the conversation within the model's context window:*\n\n${keptTailSummary}`,
+				createdAt: new Date(firstKeptAt - 1).toISOString(),
+			});
+		}
+
+		for (const m of keptMessages) {
+			if (oversizedKeptMessages.includes(m) && keptTailSummary) {
+				// Replaced by the summary above, but keep assistant replies that
+				// immediately follow oversized user messages so advice isn't lost.
+				if (m.role === "assistant") {
+					newMessages.push({ ...m, id: crypto.randomUUID() });
+				}
+				continue;
+			}
+			newMessages.push({ ...m, id: crypto.randomUUID() });
+		}
 
 		const forkId = crypto.randomUUID();
 		const forkName = `${sourceThread.name} · Compacted`;

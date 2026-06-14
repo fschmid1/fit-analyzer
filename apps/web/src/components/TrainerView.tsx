@@ -12,6 +12,7 @@ import {
 	fetchTrainerHistory,
 	fetchUserSettings,
 	forkThread,
+	getCompactionStatus,
 	importTrainerChat,
 	renameThread,
 	updateCompareSettings,
@@ -63,6 +64,7 @@ export function TrainerView({
 	const [compactingThreadId, setCompactingThreadId] = useState<string | null>(
 		null,
 	);
+	const compactionAbortRef = useRef<AbortController | null>(null);
 	const settingsHydrated = useRef(false);
 	const initialized = useRef(false);
 	const threadCache = useRef<
@@ -321,29 +323,56 @@ export function TrainerView({
 			.catch(() => setInitialMessages([]));
 	}, [activeThreadId]);
 
+	const pollCompactionStatus = useCallback(
+		async (threadId: string, signal: AbortSignal) => {
+			while (!signal.aborted) {
+				try {
+					const { running } = await getCompactionStatus(threadId);
+					if (!running) {
+						// The server finished but the POST may still be in flight; keep
+						// the spinner active a bit longer so we don't flicker off early.
+						await new Promise((resolve) => setTimeout(resolve, 500));
+						break;
+					}
+					await new Promise((resolve) => setTimeout(resolve, 1_000));
+				} catch {
+					await new Promise((resolve) => setTimeout(resolve, 1_000));
+				}
+			}
+		},
+		[],
+	);
+
 	const handleCompactThread = useCallback(
 		async (threadId: string) => {
 			if (compactingThreadId) return;
 			setCompactingThreadId(threadId);
+			compactionAbortRef.current?.abort();
+			const abortController = new AbortController();
+			compactionAbortRef.current = abortController;
 			try {
-				const result = await compactTrainerHistory(threadId);
+				// Start polling the server-side status immediately so the UI reflects
+				// the long-running LLM work even before the POST returns.
+				const statusPromise = pollCompactionStatus(
+					threadId,
+					abortController.signal,
+				);
+				const result = await compactTrainerHistory(
+					threadId,
+					abortController.signal,
+				);
+				await statusPromise;
 				if (result.compacted && result.thread) {
 					setThreads((prev) => {
 						const source = prev.find((t) => t.id === threadId);
 						const next = [...prev, result.thread];
-						// If the source thread no longer needs attention, also refresh
-						// its token count so the old row doesn't show stale data.
 						if (source) {
 							void loadThreads();
 						}
 						return next;
 					});
-					// The old thread is being replaced by the compacted fork; clear any
-					// active stream state bound to it so it cannot resume accidentally.
 					clearActiveTrainerStream(threadId);
 					clearTrainerDraft(threadId);
-					// Warm the cache with the server-returned messages so the new thread
-					// is usable immediately and the paginated chat state is consistent.
 					const messages = result.messages.map(toUIMessage);
 					const toolCalls = reconstructToolCalls(result.messages);
 					threadCache.current[result.thread.id] = {
@@ -360,12 +389,14 @@ export function TrainerView({
 					setChatKey((k) => k + 1);
 				}
 			} catch (err) {
+				if (err instanceof Error && err.name === "AbortError") return;
 				console.error("Failed to compact thread:", err);
 			} finally {
 				setCompactingThreadId(null);
+				compactionAbortRef.current = null;
 			}
 		},
-		[compactingThreadId, loadThreads],
+		[compactingThreadId, loadThreads, pollCompactionStatus],
 	);
 
 	const handleExportThread = useCallback(async (threadId: string) => {
