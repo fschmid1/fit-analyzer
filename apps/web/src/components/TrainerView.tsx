@@ -60,6 +60,9 @@ export function TrainerView({
 	const [showOnboarding, setShowOnboarding] = useState(false);
 	const [compareMode, setCompareMode] = useState(false);
 	const [pinnedThreadIds, setPinnedThreadIds] = useState<string[]>([]);
+	const [compactingThreadId, setCompactingThreadId] = useState<string | null>(
+		null,
+	);
 	const settingsHydrated = useRef(false);
 	const initialized = useRef(false);
 	const threadCache = useRef<
@@ -318,32 +321,52 @@ export function TrainerView({
 			.catch(() => setInitialMessages([]));
 	}, [activeThreadId]);
 
-	const handleCompactThread = useCallback(async (threadId: string) => {
-		const result = await compactTrainerHistory(threadId);
-		if (result.compacted && result.thread) {
-			setThreads((prev) => [...prev, result.thread]);
-			// The old thread is being replaced by the compacted fork; clear any
-			// active stream state bound to it so it cannot resume accidentally.
-			clearActiveTrainerStream(threadId);
-			clearTrainerDraft(threadId);
-			// Warm the cache with the server-returned messages so the new thread
-			// is usable immediately and the paginated chat state is consistent.
-			const messages = result.messages.map(toUIMessage);
-			const toolCalls = reconstructToolCalls(result.messages);
-			threadCache.current[result.thread.id] = {
-				messages,
-				nextCursor: null,
-				hasMore: false,
-				total: result.thread.messageCount ?? messages.length,
-				toolCalls,
-				stale: false,
-			};
-			setInitialMessages(messages);
-			setInitialToolCalls(toolCalls);
-			setActiveThreadId(result.thread.id);
-			setChatKey((k) => k + 1);
-		}
-	}, []);
+	const handleCompactThread = useCallback(
+		async (threadId: string) => {
+			if (compactingThreadId) return;
+			setCompactingThreadId(threadId);
+			try {
+				const result = await compactTrainerHistory(threadId);
+				if (result.compacted && result.thread) {
+					setThreads((prev) => {
+						const source = prev.find((t) => t.id === threadId);
+						const next = [...prev, result.thread];
+						// If the source thread no longer needs attention, also refresh
+						// its token count so the old row doesn't show stale data.
+						if (source) {
+							void loadThreads();
+						}
+						return next;
+					});
+					// The old thread is being replaced by the compacted fork; clear any
+					// active stream state bound to it so it cannot resume accidentally.
+					clearActiveTrainerStream(threadId);
+					clearTrainerDraft(threadId);
+					// Warm the cache with the server-returned messages so the new thread
+					// is usable immediately and the paginated chat state is consistent.
+					const messages = result.messages.map(toUIMessage);
+					const toolCalls = reconstructToolCalls(result.messages);
+					threadCache.current[result.thread.id] = {
+						messages,
+						nextCursor: null,
+						hasMore: false,
+						total: result.thread.messageCount ?? messages.length,
+						toolCalls,
+						stale: false,
+					};
+					setInitialMessages(messages);
+					setInitialToolCalls(toolCalls);
+					setActiveThreadId(result.thread.id);
+					setChatKey((k) => k + 1);
+				}
+			} catch (err) {
+				console.error("Failed to compact thread:", err);
+			} finally {
+				setCompactingThreadId(null);
+			}
+		},
+		[compactingThreadId, loadThreads],
+	);
 
 	const handleExportThread = useCallback(async (threadId: string) => {
 		const { filename, markdown } = await exportTrainerThread(threadId);
@@ -486,6 +509,7 @@ export function TrainerView({
 				onDelete={handleDeleteThread}
 				onFork={handleForkThread}
 				onCompact={handleCompactThread}
+				compactingThreadId={compactingThreadId}
 				onExport={handleExportThread}
 				open={threadsOpen}
 				onClose={() => setThreadsOpen(false)}

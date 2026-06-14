@@ -308,6 +308,8 @@ export interface TrainerThread {
 	createdAt: string;
 	updatedAt: string;
 	messageCount: number;
+	/** Approximate number of tokens in the thread's current context window. */
+	contextTokens: number;
 }
 
 /** Response body for GET /api/trainer/history/:threadId */

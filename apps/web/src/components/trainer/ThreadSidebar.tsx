@@ -27,6 +27,7 @@ interface ThreadSidebarProps {
 	onDelete: (id: string) => void;
 	onFork: (id: string) => void;
 	onCompact: (id: string) => void;
+	compactingThreadId: string | null;
 	onExport: (id: string) => void;
 	open: boolean;
 	onClose: () => void;
@@ -64,6 +65,13 @@ function getContextMenuPosition(x: number, y: number) {
 	};
 }
 
+function formatContextTokens(tokens: number | undefined): string {
+	if (tokens == null) return "—";
+	if (tokens < 1_000) return `${tokens}`;
+	if (tokens < 1_000_000) return `${(tokens / 1_000).toFixed(1)}k`;
+	return `${(tokens / 1_000_000).toFixed(2)}M`;
+}
+
 export function ThreadSidebar({
 	threads,
 	activeThreadId,
@@ -73,6 +81,7 @@ export function ThreadSidebar({
 	onDelete,
 	onFork,
 	onCompact,
+	compactingThreadId,
 	onExport,
 	open,
 	onClose,
@@ -404,8 +413,15 @@ export function ThreadSidebar({
 							)}
 
 							{thread.messageCount > 0 && !isEditing && (
-								<span className="text-[10px] text-[#4a4468] shrink-0 tabular-nums">
-									{thread.messageCount}
+								<span
+									className="text-[10px] shrink-0 tabular-nums"
+									title={`${formatContextTokens(thread.contextTokens)} tokens · ${thread.messageCount} messages`}
+								>
+									<span className="text-[#7c6fa0]">
+										{formatContextTokens(thread.contextTokens)}
+									</span>
+									<span className="text-[#4a4468] mx-1">·</span>
+									<span className="text-[#4a4468]">{thread.messageCount}</span>
 								</span>
 							)}
 

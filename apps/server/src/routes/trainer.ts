@@ -71,6 +71,13 @@ const COMPACTION_MAX_PROMPT_TOKENS = 120_000;
 // real budget.
 const APPROX_CHARS_PER_TOKEN = 4;
 
+// Active compaction requests by user/thread. Prevents duplicate concurrent
+// compactions and gives the UI a way to know that work is in progress.
+const activeCompactions = new Map<string, Promise<unknown>>();
+function compactionKey(userId: string, threadId: string) {
+	return `${userId}:${threadId}`;
+}
+
 async function getProviderConfig(modelId: string) {
 	const staticProvider = getModelProvider(modelId);
 	if (staticProvider === "ollama-cloud") {
@@ -197,7 +204,8 @@ function getKimiRequestMetadata(body: TrainerChatRequestBody, userId: string) {
 const getThreadsStmt = db.prepare(
 	`SELECT c.id, c.name, c.activity_id as activityId, c.coach_model as coachModel,
             c.created_at as createdAt, c.updated_at as updatedAt,
-            COUNT(m.id) as messageCount
+            COUNT(m.id) as messageCount,
+            SUM(LENGTH(m.content)) / ${APPROX_CHARS_PER_TOKEN} as contextTokens
      FROM trainer_chats c
      LEFT JOIN trainer_messages m ON m.chat_id = c.id
      WHERE c.user_id = ? AND c.activity_id = ?
@@ -434,8 +442,32 @@ trainer.get("/models", async (c) => {
 trainer.get("/threads/:activityId", (c) => {
 	const userId = getUserId(c);
 	const { activityId } = c.req.param();
-	const threads = getThreadsStmt.all(userId, activityId);
+	const threads = (
+		getThreadsStmt.all(userId, activityId) as Array<{
+			id: string;
+			name: string;
+			activityId: string;
+			coachModel: string | null;
+			createdAt: string;
+			updatedAt: string;
+			messageCount: number;
+			contextTokens: number | null;
+		}>
+	).map((t) => ({
+		...t,
+		messageCount: t.messageCount ?? 0,
+		contextTokens: Math.ceil(t.contextTokens ?? 0),
+	}));
 	return c.json({ threads });
+});
+
+// Query whether a thread is currently being compacted. The UI polls this
+// after triggering a compaction so it can show an in-progress indicator.
+trainer.get("/compact/:threadId/status", (c) => {
+	const userId = getUserId(c);
+	const { threadId } = c.req.param();
+	const running = activeCompactions.has(compactionKey(userId, threadId));
+	return c.json({ running });
 });
 
 trainer.post("/threads/:activityId", async (c) => {
@@ -489,6 +521,30 @@ trainer.delete("/threads/:threadId", (c) => {
 });
 
 // ─── Thread history ───────────────────────────────────────────────────────────
+
+// In-memory cache for thread token counts. We recalculate on demand, but a
+// short TTL prevents repeated full-message scans for frequently refreshed UIs.
+const threadTokenCache = new Map<
+	string,
+	{ tokens: number; expiresAt: number }
+>();
+const TOKEN_CACHE_TTL_MS = 60_000;
+
+function countThreadContextTokens(
+	threadId: string,
+	messages: TrainerMessage[],
+): number {
+	const cached = threadTokenCache.get(threadId);
+	if (cached && cached.expiresAt > Date.now()) {
+		return cached.tokens;
+	}
+	const tokens = messages.reduce((sum, m) => sum + messageTokenLength(m), 0);
+	threadTokenCache.set(threadId, {
+		tokens,
+		expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
+	});
+	return tokens;
+}
 
 trainer.get("/history/:threadId", (c) => {
 	const userId = getUserId(c);
@@ -545,6 +601,7 @@ trainer.get("/history/:threadId", (c) => {
 	}
 
 	const { c: total } = countMessagesStmt.get(thread.id) as { c: number };
+	const contextTokens = countThreadContextTokens(thread.id, messages);
 
 	return c.json({
 		threadId,
@@ -553,6 +610,7 @@ trainer.get("/history/:threadId", (c) => {
 		nextCursor,
 		hasMore,
 		total,
+		contextTokens,
 	});
 });
 
@@ -587,6 +645,18 @@ function estimateTokenLength(text: string): number {
 	return Math.ceil(text.length / APPROX_CHARS_PER_TOKEN);
 }
 
+function messageTokenLength(m: TrainerMessage): number {
+	let n = estimateTokenLength(m.content);
+	if (m.toolCalls && m.toolCalls.length > 0) {
+		for (const tc of m.toolCalls) {
+			n += estimateTokenLength(tc.name);
+			n += estimateTokenLength(JSON.stringify(tc.arguments));
+			n += tc.result ? estimateTokenLength(JSON.stringify(tc.result)) : 0;
+		}
+	}
+	return n;
+}
+
 function computeRecentKeepWindow(
 	allMessages: TrainerMessage[],
 	targetContextTokens: number,
@@ -594,7 +664,7 @@ function computeRecentKeepWindow(
 ): { keepEndIds: Set<string>; cutoffIndex: number } {
 	const keepEndIds = new Set<string>();
 
-	// First pass: keep the most recent N per role, then check token budget.
+	// First pass: keep the most recent N per role.
 	let userCount = 0;
 	let assistantCount = 0;
 	for (let i = allMessages.length - 1; i >= 0; i--) {
@@ -624,24 +694,42 @@ function computeRecentKeepWindow(
 
 	// Shrink the kept tail if it alone is already over budget. This handles
 	// threads where even the last few messages are enormous (e.g. huge pasted
-	// FIT data). We drop oldest first, keeping at least 1 user + 1 assistant.
+	// FIT data). We drop oldest first, keeping at least 1 user + 1 assistant
+	// and never breaking the order required by the LLM APIs.
 	const budgetForTail = targetContextTokens - reserveTokens;
 	let tailTokens = 0;
+	const keptTail: TrainerMessage[] = [];
 	for (let i = cutoffIndex; i < allMessages.length; i++) {
-		tailTokens += estimateTokenLength(allMessages[i].content);
+		const m = allMessages[i];
+		if (!keepEndIds.has(m.id)) continue;
+		tailTokens += messageTokenLength(m);
+		keptTail.push(m);
 	}
-	while (tailTokens > budgetForTail && keepEndIds.size > 2) {
-		const oldestKeptIndex = allMessages.findIndex((m) => keepEndIds.has(m.id));
-		if (oldestKeptIndex === -1) break;
-		const removed = allMessages[oldestKeptIndex];
+	while (tailTokens > budgetForTail && keptTail.length > 2) {
+		const removed = keptTail.shift();
+		if (!removed) break;
 		keepEndIds.delete(removed.id);
-		tailTokens -= estimateTokenLength(removed.content);
-		// Recompute cutoff to the new oldest kept message.
-		const nextOldest = allMessages.findIndex((m) => keepEndIds.has(m.id));
-		cutoffIndex = nextOldest === -1 ? allMessages.length : nextOldest;
+		tailTokens -= messageTokenLength(removed);
 	}
+	cutoffIndex = allMessages.findIndex((m) => keepEndIds.has(m.id));
+	if (cutoffIndex === -1) cutoffIndex = allMessages.length;
 
 	return { keepEndIds, cutoffIndex };
+}
+
+function formatMessageForCompaction(m: TrainerMessage): string {
+	const roleLabel = m.role === "user" ? "Athlete" : "Coach";
+	let text = `**${roleLabel}:** ${m.content}`;
+	if (m.toolCalls && m.toolCalls.length > 0) {
+		text += "\n\n_tools used_";
+		for (const tc of m.toolCalls) {
+			text += `\n- **${tc.name}**: ${JSON.stringify(tc.arguments)}`;
+			if (tc.result) {
+				text += ` → ${JSON.stringify(tc.result).slice(0, 1_000)}`;
+			}
+		}
+	}
+	return text;
 }
 
 function buildCompactionPrompt(messagesText: string): string {
@@ -722,7 +810,7 @@ async function summarizeBatch(
 	model: string,
 ): Promise<string> {
 	const messagesText = toCompact
-		.map((m) => `**${m.role === "user" ? "Athlete" : "Coach"}:** ${m.content}`)
+		.map(formatMessageForCompaction)
 		.join("\n\n---\n\n");
 
 	const prompt = buildCompactionPrompt(messagesText);
@@ -739,9 +827,7 @@ async function summarizeBatch(
 	let currentChunk: TrainerMessage[] = [];
 	let currentChunkTokens = 0;
 	for (const msg of toCompact) {
-		const msgTokens = estimateTokenLength(
-			`**${msg.role === "user" ? "Athlete" : "Coach"}:** ${msg.content}`,
-		);
+		const msgTokens = estimateTokenLength(formatMessageForCompaction(msg));
 		if (
 			currentChunkTokens + msgTokens > chunkTextTokenBudget &&
 			currentChunk.length > 0
@@ -758,11 +844,7 @@ async function summarizeBatch(
 
 	const chunkSummaries: string[] = [];
 	for (const chunk of chunks) {
-		const chunkText = chunk
-			.map(
-				(m) => `**${m.role === "user" ? "Athlete" : "Coach"}:** ${m.content}`,
-			)
-			.join("\n\n---\n\n");
+		const chunkText = chunk.map(formatMessageForCompaction).join("\n\n---\n\n");
 		const chunkPrompt = buildCompactionPrompt(chunkText);
 		const summary = await fetchCompactionSummary(
 			providerConfig,
@@ -783,6 +865,17 @@ ${chunkSummaries.map((s, i) => `## Partial summary ${i + 1}\n\n${s}`).join("\n\n
 trainer.post("/compact/:threadId", async (c) => {
 	const userId = getUserId(c);
 	const { threadId } = c.req.param();
+
+	// Prevent duplicate concurrent compaction for the same user/thread.
+	const key = compactionKey(userId, threadId);
+	const existing = activeCompactions.get(key);
+	if (existing) {
+		try {
+			await existing;
+		} catch {
+			/* ignore previous errors */
+		}
+	}
 
 	const sourceThread = getThreadByIdStmt.get(threadId, userId) as
 		| {
@@ -823,72 +916,81 @@ trainer.post("/compact/:threadId", async (c) => {
 		);
 	}
 
-	let summary: string;
+	const compactionPromise = (async () => {
+		let summary: string;
+		try {
+			summary = await summarizeBatch(toCompact, providerConfig, model);
+		} catch (err) {
+			const details = err instanceof Error ? err.message : String(err);
+			throw new Error(`Compaction failed: ${details}`);
+		}
+
+		const firstKeptAt =
+			cutoffIndex < allMessages.length
+				? new Date(allMessages[cutoffIndex].createdAt).getTime()
+				: Date.now();
+		const summaryMessage: TrainerMessage = {
+			id: crypto.randomUUID(),
+			role: "assistant",
+			content: `## Context Summary\n\n*The following is a compressed summary of the earlier conversation to preserve context:*\n\n${summary}`,
+			createdAt: new Date(firstKeptAt - 1).toISOString(),
+		};
+
+		// Give every message a fresh ID — the originals still exist in the source thread
+		const newMessages: TrainerMessage[] = [
+			summaryMessage,
+			...allMessages.slice(cutoffIndex),
+		].map((m) => ({ ...m, id: crypto.randomUUID() }));
+
+		const forkId = crypto.randomUUID();
+		const forkName = `${sourceThread.name} · Compacted`;
+
+		db.transaction(() => {
+			createThreadStmt.run(
+				forkId,
+				sourceThread.activityId,
+				userId,
+				forkName,
+				sourceThread.coachModel,
+			);
+			for (const m of newMessages) {
+				insertMessageStmt.run(
+					m.id,
+					forkId,
+					m.role,
+					m.content,
+					m.createdAt,
+					serializeToolCalls(m.toolCalls),
+				);
+			}
+		})();
+
+		const forkThread = getThreadByIdStmt.get(forkId, userId) as {
+			id: string;
+			name: string;
+			activityId: string;
+			createdAt: string;
+			updatedAt: string;
+		};
+
+		return {
+			thread: { ...forkThread, messageCount: newMessages.length },
+			messages: newMessages,
+			compacted: true,
+			removed: toCompact.length,
+		};
+	})();
+
+	activeCompactions.set(key, compactionPromise);
 	try {
-		summary = await summarizeBatch(toCompact, providerConfig, model);
+		const result = await compactionPromise;
+		return c.json(result);
 	} catch (err) {
 		const details = err instanceof Error ? err.message : String(err);
 		return c.json({ error: "Compaction failed", details }, 500);
+	} finally {
+		activeCompactions.delete(key);
 	}
-
-	const firstKeptAt =
-		cutoffIndex < allMessages.length
-			? new Date(allMessages[cutoffIndex].createdAt).getTime()
-			: Date.now();
-	const summaryMessage: TrainerMessage = {
-		id: crypto.randomUUID(),
-		role: "assistant",
-		content: `## Context Summary
-
-*The following is a compressed summary of the earlier conversation to preserve context:*
-
-${summary}`,
-		createdAt: new Date(firstKeptAt - 1).toISOString(),
-	};
-
-	// Give every message a fresh ID — the originals still exist in the source thread
-	const newMessages: TrainerMessage[] = [
-		summaryMessage,
-		...allMessages.slice(cutoffIndex),
-	].map((m) => ({ ...m, id: crypto.randomUUID() }));
-
-	const forkId = crypto.randomUUID();
-	const forkName = `${sourceThread.name} · Compacted`;
-
-	db.transaction(() => {
-		createThreadStmt.run(
-			forkId,
-			sourceThread.activityId,
-			userId,
-			forkName,
-			sourceThread.coachModel,
-		);
-		for (const m of newMessages) {
-			insertMessageStmt.run(
-				m.id,
-				forkId,
-				m.role,
-				m.content,
-				m.createdAt,
-				serializeToolCalls(m.toolCalls),
-			);
-		}
-	})();
-
-	const forkThread = getThreadByIdStmt.get(forkId, userId) as {
-		id: string;
-		name: string;
-		activityId: string;
-		createdAt: string;
-		updatedAt: string;
-	};
-
-	return c.json({
-		thread: { ...forkThread, messageCount: newMessages.length },
-		messages: newMessages,
-		compacted: true,
-		removed: toCompact.length,
-	});
 });
 
 // ─── Fork ─────────────────────────────────────────────────────────────────────
