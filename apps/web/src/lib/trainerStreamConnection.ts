@@ -15,15 +15,18 @@ type Deferred = (chunk: TrainerChunk | null) => void;
 function createQueue() {
 	const buffer: TrainerChunk[] = [];
 	let waiters: Deferred[] = [];
+	let closed = false;
 
 	return {
 		push(chunk: TrainerChunk) {
+			if (closed) return;
 			const waiter = waiters.shift();
 			if (waiter) waiter(chunk);
 			else buffer.push(chunk);
 		},
 		close() {
-			buffer.length = 0;
+			if (closed) return;
+			closed = true;
 			const pending = waiters;
 			waiters = [];
 			for (const waiter of pending) waiter(null);
@@ -34,14 +37,18 @@ function createQueue() {
 				if (buffer.length > 0) {
 					chunk = buffer.shift() ?? null;
 				} else {
-					chunk = await new Promise<TrainerChunk | null>((resolve) => {
-						const onAbort = () => resolve(null);
-						waiters.push((nextChunk) => {
-							abortSignal?.removeEventListener("abort", onAbort);
-							resolve(nextChunk);
+					if (closed) {
+						chunk = null;
+					} else {
+						chunk = await new Promise<TrainerChunk | null>((resolve) => {
+							const onAbort = () => resolve(null);
+							waiters.push((nextChunk) => {
+								abortSignal?.removeEventListener("abort", onAbort);
+								resolve(nextChunk);
+							});
+							abortSignal?.addEventListener("abort", onAbort, { once: true });
 						});
-						abortSignal?.addEventListener("abort", onAbort, { once: true });
-					});
+					}
 				}
 				if (chunk === null) break;
 				yield chunk;

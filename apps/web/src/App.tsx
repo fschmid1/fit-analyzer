@@ -358,7 +358,7 @@ function App() {
 				/>
 				<Route path="/activity/:id" element={analysisContent} />
 				<Route
-					path="/trainer"
+					path="/trainer/:threadId?"
 					element={
 						<TrainerView
 							initialMessage={trainerInitialMessage}

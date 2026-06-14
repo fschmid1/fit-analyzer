@@ -28,7 +28,7 @@ export function Navbar({ onUploadNew, onOpenTrainer }: NavbarProps) {
 	const navigate = useNavigate();
 	const isHome = useMatch("/");
 	const isAnalysis = useMatch("/activity/:id");
-	const isTrainer = useMatch("/trainer");
+	const isTrainer = useMatch("/trainer/:threadId?");
 	const isStats = useMatch("/stats");
 	const isEvents = useMatch("/events");
 	const isSettings = useMatch("/settings");

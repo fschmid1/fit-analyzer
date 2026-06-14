@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import type { UIMessage } from "@tanstack/ai-react";
 import type { TrainerThread, UIToolCall } from "@fit-analyzer/shared";
 import { AVAILABLE_MODELS, type ModelEntry } from "@fit-analyzer/shared";
@@ -41,8 +42,14 @@ export function TrainerView({
 	activityId,
 	onBack,
 }: TrainerViewProps) {
+	const navigate = useNavigate();
+	const params = useParams<{ threadId?: string }>();
+	const urlThreadId = params.threadId ?? null;
+
 	const [threads, setThreads] = useState<TrainerThread[]>([]);
-	const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+	const [activeThreadId, setActiveThreadId] = useState<string | null>(
+		urlThreadId,
+	);
 	const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(
 		null,
 	);
@@ -89,11 +96,14 @@ export function TrainerView({
 			setThreads(list);
 			if (!initialized.current && list.length > 0) {
 				initialized.current = true;
-				// Auto-select the most recently updated thread
-				const latest = list.reduce((a, b) =>
-					a.updatedAt > b.updatedAt ? a : b,
-				);
-				setActiveThreadId(latest.id);
+				// Auto-select the most recently updated thread unless URL already has one
+				if (!urlThreadId) {
+					const latest = list.reduce((a, b) =>
+						a.updatedAt > b.updatedAt ? a : b,
+					);
+					setActiveThreadId(latest.id);
+					navigate(`/trainer/${latest.id}`, { replace: true });
+				}
 			}
 			setPinnedThreadIds((prev) => {
 				const validIds = list.map((t) => t.id);
@@ -210,8 +220,9 @@ export function TrainerView({
 			setActiveThreadId(id);
 			setShowOnboarding(false);
 			setCurrentInitialInput("");
+			navigate(`/trainer/${id}`, { replace: true });
 		},
-		[activeThreadId],
+		[activeThreadId, navigate],
 	);
 
 	const activeThread = threads.find((t) => t.id === activeThreadId);
@@ -260,7 +271,9 @@ export function TrainerView({
 			setThreads((prev) => {
 				const next = prev.filter((t) => t.id !== threadId);
 				if (activeThreadId === threadId) {
-					setActiveThreadId(next.length > 0 ? next[next.length - 1].id : null);
+					const fallbackId = next.length > 0 ? next[next.length - 1].id : null;
+					setActiveThreadId(fallbackId);
+					navigate(fallbackId ? `/trainer/${fallbackId}` : "/trainer", { replace: true });
 				}
 				return next;
 			});
@@ -273,7 +286,7 @@ export function TrainerView({
 				return nextPinned;
 			});
 		},
-		[activeThreadId],
+		[activeThreadId, navigate],
 	);
 
 	const handleTogglePin = useCallback((threadId: string) => {
@@ -302,7 +315,8 @@ export function TrainerView({
 		const newThread = await forkThread(threadId);
 		setThreads((prev) => [...prev, newThread]);
 		setActiveThreadId(newThread.id);
-	}, []);
+		navigate(`/trainer/${newThread.id}`, { replace: true });
+	}, [navigate]);
 
 	const handleImported = useCallback(() => {
 		if (!activeThreadId) return;
@@ -387,6 +401,7 @@ export function TrainerView({
 					setInitialToolCalls(toolCalls);
 					setActiveThreadId(result.thread.id);
 					setChatKey((k) => k + 1);
+					navigate(`/trainer/${result.thread.id}`, { replace: true });
 				}
 			} catch (err) {
 				if (err instanceof Error && err.name === "AbortError") return;
@@ -424,8 +439,9 @@ export function TrainerView({
 			setActiveThreadId(importedThreadId);
 			setShowOnboarding(false);
 			setChatKey((k) => k + 1);
+			navigate(`/trainer/${importedThreadId}`, { replace: true });
 		},
-		[activityId],
+		[activityId, navigate],
 	);
 
 	// ── render ──────────────────────────────────────────────────────────────────
@@ -480,6 +496,7 @@ export function TrainerView({
 						setAutoSend(true);
 						setShowOnboarding(false);
 						setChatKey((k) => k + 1);
+						navigate(`/trainer/${thread.id}`, { replace: true });
 					}}
 					onImport={handleOnboardingImport}
 					availableModels={availableModels}
