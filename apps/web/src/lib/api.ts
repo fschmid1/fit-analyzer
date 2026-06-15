@@ -456,6 +456,7 @@ export async function createThread(
 export async function appendAnalysisToThread(
 	threadId: string,
 	analysis: string,
+	toolCalls?: UIToolCall[],
 ): Promise<void> {
 	const history = await fetchTrainerHistory(threadId, undefined, { limit: 1 });
 	const now = new Date().toISOString();
@@ -472,6 +473,7 @@ export async function appendAnalysisToThread(
 			role: "assistant",
 			content: analysis,
 			createdAt: now,
+			...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
 		},
 	];
 	await saveTrainerHistory(threadId, [...history.messages, ...newMessages]);
@@ -480,11 +482,12 @@ export async function appendAnalysisToThread(
 export async function createThreadWithAnalysis(
 	activityId: string,
 	analysis: string,
+	toolCalls?: UIToolCall[],
 	name = "Analysis follow-up",
 	coachModel?: string,
 ): Promise<TrainerThread> {
 	const thread = await createThread(activityId, name, coachModel);
-	await appendAnalysisToThread(thread.id, analysis);
+	await appendAnalysisToThread(thread.id, analysis, toolCalls);
 	return thread;
 }
 

@@ -18,7 +18,7 @@ import { streamActivityAnalysis } from "../lib/api";
 interface ActivityAnalysisProps {
 	activityId: string;
 	initialAnalysis: string | null | undefined;
-	onSendToTrainer?: (text: string) => void;
+	onSendToTrainer?: (text: string, toolCalls?: UIToolCall[]) => void;
 	isSendingToTrainer?: boolean;
 }
 
@@ -171,7 +171,7 @@ export function ActivityAnalysis({
 						{onSendToTrainer && (
 							<button
 								type="button"
-								onClick={() => onSendToTrainer(analysis ?? "")}
+								onClick={() => onSendToTrainer(analysis ?? "", toolCalls)}
 								disabled={isStreaming || isSendingToTrainer || !analysis}
 								className="flex items-center gap-1.5 px-3 py-1.5 mr-1 text-xs font-medium rounded-lg transition-[background-color,border-color,color] duration-200 cursor-pointer bg-[#8b5cf6]/10 text-[#8b5cf6] hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 disabled:opacity-50 disabled:cursor-not-allowed"
 								title="Send analysis to trainer"

@@ -5,6 +5,7 @@ import type {
 	Interval,
 	ParsedActivity,
 } from "@fit-analyzer/shared";
+import type { UIToolCall } from "@fit-analyzer/shared";
 import { Header } from "./components/Header";
 import { FileDropZone } from "./components/FileDropZone";
 import { ActivityHistory } from "./components/ActivityHistory";
@@ -309,18 +310,19 @@ function App() {
 	}, [navigate]);
 
 	const handleSendAnalysisToTrainer = useCallback(
-		async (text: string) => {
+		async (text: string, toolCalls?: UIToolCall[]) => {
 			if (!activityId || !text.trim()) return;
 			setSendingToTrainer(true);
 			try {
 				const recent = await getMostRecentThread(activityId);
 				if (recent) {
-					await appendAnalysisToThread(recent.id, text);
+					await appendAnalysisToThread(recent.id, text, toolCalls);
 					navigate(`/trainer/${recent.id}`);
 				} else {
 					const thread = await createThreadWithAnalysis(
 						activityId,
 						text,
+						toolCalls,
 						"Analysis follow-up",
 					);
 					navigate(`/trainer/${thread.id}`);

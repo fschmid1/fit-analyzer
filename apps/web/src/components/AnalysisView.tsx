@@ -2,6 +2,7 @@ import type {
 	Interval,
 	ParsedActivity,
 	ChartHighlight,
+	UIToolCall,
 } from "@fit-analyzer/shared";
 import { ActivityChart } from "./ActivityChart";
 import { ActivityAnalysis } from "./ActivityAnalysis";
@@ -34,7 +35,7 @@ interface AnalysisViewProps {
 	onIntervalMinutesChange: (minutes: string) => void;
 	onAddInterval: (startSeconds: number, endSeconds: number) => void;
 	onRemoveCustomInterval: (index: number) => void;
-	onSendAnalysisToTrainer?: (text: string, threadId?: string) => void;
+	onSendAnalysisToTrainer?: (text: string, toolCalls?: UIToolCall[]) => void;
 }
 
 export function AnalysisView({
