@@ -10,6 +10,7 @@ import { Header } from "./components/Header";
 import { FileDropZone } from "./components/FileDropZone";
 import { ActivityHistory } from "./components/ActivityHistory";
 import { AnalysisView } from "./components/AnalysisView";
+import { BuildFooter } from "./components/BuildFooter";
 import { InstallPrompt } from "./components/InstallPrompt";
 import { TrainerView } from "./components/TrainerView";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -406,6 +407,7 @@ function App() {
 				/>
 			</Routes>
 			<InstallPrompt />
+			<BuildFooter />
 		</div>
 	);
 }

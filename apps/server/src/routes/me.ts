@@ -47,6 +47,26 @@ function getUserEstimates(userId: string) {
 	return { estimatedFtp, estimatedMaxHr: row?.maxHr ?? null };
 }
 
+// GET /me/athlete-estimates — heavy derived athlete data used by the settings page.
+// Kept separate from /me/settings so the settings page can load fast and only
+// request these estimates when the athlete profile card needs them.
+me.get("/athlete-estimates", (c) => {
+	let userId: string;
+	try {
+		userId = getUserId(c);
+	} catch {
+		return c.json({ error: "Not authenticated" }, 401);
+	}
+
+	const profile = getAthleteProfile(userId);
+	return c.json({
+		inferredLocation: profile.location
+			? null
+			: inferLocationFromActivities(userId),
+		...getUserEstimates(userId),
+	});
+});
+
 function getUserId(c: {
 	req: { header: (name: string) => string | undefined };
 }): string {
@@ -87,7 +107,6 @@ me.get("/settings", async (c) => {
 		.prepare("SELECT health_source FROM user_settings WHERE user_id = ?")
 		.get(userId) as { health_source: string } | undefined;
 
-	const estimates = getUserEstimates(userId);
 	const profile = getAthleteProfile(userId);
 
 	return c.json({
@@ -106,10 +125,6 @@ me.get("/settings", async (c) => {
 			lastSyncAt: haeLastSyncAt,
 		},
 		athleteProfile: profile,
-		inferredLocation: profile.location
-			? null
-			: inferLocationFromActivities(userId),
-		...estimates,
 	});
 });
 
@@ -251,7 +266,6 @@ me.patch("/settings", async (c) => {
 		.prepare("SELECT health_source FROM user_settings WHERE user_id = ?")
 		.get(userId) as { health_source: string } | undefined;
 
-	const patchEstimates = getUserEstimates(userId);
 	const patchProfile = getAthleteProfile(userId);
 
 	return c.json({
@@ -270,10 +284,6 @@ me.patch("/settings", async (c) => {
 			lastSyncAt: haeLastSyncAt,
 		},
 		athleteProfile: patchProfile,
-		inferredLocation: patchProfile.location
-			? null
-			: inferLocationFromActivities(userId),
-		...patchEstimates,
 	});
 });
 

@@ -11,8 +11,10 @@ import {
 	Loader2,
 	MapPin,
 } from "lucide-react";
-import { fetchUserSettings, updateAthleteProfile } from "../lib/api";
+import { fetchAthleteEstimates, updateAthleteProfile } from "../lib/api";
+import { useSettings } from "../lib/settingsContext";
 import { AnimatedButton } from "./AnimatedButton";
+import { SettingsCard } from "./SettingsCard";
 
 const FOCUS_OPTIONS = [
 	"endurance",
@@ -36,14 +38,17 @@ const DEFAULT_PROFILE: AthleteProfile = {
 };
 
 export function AthleteProfileSettings() {
-	const [profile, setProfile] = useState<AthleteProfile>(DEFAULT_PROFILE);
-	const [draft, setDraft] = useState<AthleteProfile>(DEFAULT_PROFILE);
+	const { data, loading, error } = useSettings();
 	const [estimates, setEstimates] = useState<{
 		ftp: number | null;
 		maxHr: number | null;
 	}>({ ftp: null, maxHr: null });
 	const [inferredLocation, setInferredLocation] = useState<string | null>(null);
-	const [loading, setLoading] = useState(true);
+	const [estimatesLoading, setEstimatesLoading] = useState(true);
+	const [estimatesError, setEstimatesError] = useState<Error | null>(null);
+
+	const [profile, setProfile] = useState<AthleteProfile>(DEFAULT_PROFILE);
+	const [draft, setDraft] = useState<AthleteProfile>(DEFAULT_PROFILE);
 	const [saving, setSaving] = useState(false);
 	const [notification, setNotification] = useState<{
 		type: "success" | "error";
@@ -51,31 +56,29 @@ export function AthleteProfileSettings() {
 	} | null>(null);
 
 	useEffect(() => {
-		fetchUserSettings()
-			.then((data) => {
-				const p = data.athleteProfile ?? DEFAULT_PROFILE;
-				setProfile(p);
-				const e = {
-					ftp: data.estimatedFtp ?? null,
-					maxHr: data.estimatedMaxHr ?? null,
-				};
-				setEstimates(e);
-				setInferredLocation(data.inferredLocation ?? null);
-				setDraft({
-					...p,
-					ftp: p.ftp ?? e.ftp,
-					maxHr: p.maxHr ?? e.maxHr,
-					location: p.location ?? data.inferredLocation ?? null,
+		fetchAthleteEstimates()
+			.then((e) => {
+				setEstimates({
+					ftp: e.estimatedFtp ?? null,
+					maxHr: e.estimatedMaxHr ?? null,
 				});
+				setInferredLocation(e.inferredLocation ?? null);
 			})
-			.catch(() => {
-				setNotification({
-					type: "error",
-					message: "Failed to load athlete profile",
-				});
-			})
-			.finally(() => setLoading(false));
+			.catch(setEstimatesError)
+			.finally(() => setEstimatesLoading(false));
 	}, []);
+
+	useEffect(() => {
+		if (!data) return;
+		const p = data.athleteProfile ?? DEFAULT_PROFILE;
+		setProfile(p);
+		setDraft({
+			...p,
+			ftp: p.ftp ?? estimates.ftp,
+			maxHr: p.maxHr ?? estimates.maxHr,
+			location: p.location ?? inferredLocation ?? null,
+		});
+	}, [data, estimates, inferredLocation]);
 
 	useEffect(() => {
 		if (!notification) return;
@@ -132,45 +135,41 @@ export function AthleteProfileSettings() {
 		}));
 	};
 
+	const cardError =
+		error ??
+		estimatesError ??
+		(notification?.type === "error" ? notification : null);
+
 	return (
 		<div className="flex flex-col gap-4">
-			{notification && (
+			{cardError && (
 				<div
 					className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium ${
-						notification.type === "success"
-							? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
+						"message" in cardError
+							? "bg-red-500/10 border border-red-500/20 text-red-400"
 							: "bg-red-500/10 border border-red-500/20 text-red-400"
 					}`}
 				>
-					{notification.type === "success" ? (
-						<CheckCircle2 className="w-4 h-4 shrink-0" />
-					) : (
-						<AlertCircle className="w-4 h-4 shrink-0" />
-					)}
+					<AlertCircle className="w-4 h-4 shrink-0" />
+					{"message" in cardError
+						? cardError.message
+						: "Failed to load profile"}
+				</div>
+			)}
+			{notification?.type === "success" && (
+				<div className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+					<CheckCircle2 className="w-4 h-4 shrink-0" />
 					{notification.message}
 				</div>
 			)}
 
-			<div className="p-5 bg-[#1a1533]/70 border border-[rgba(139,92,246,0.15)] rounded-xl flex flex-col gap-4">
-				<div className="flex items-center gap-3">
-					<div className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#8b5cf6]/10 shrink-0">
-						<Target className="w-5 h-5 text-[#a78bfa]" />
-					</div>
-					<div>
-						<p className="text-sm font-semibold text-[#f1f5f9]">
-							Athlete profile
-						</p>
-						<p className="text-xs text-[#94a3b8]">
-							Set your goals and metrics. The coach uses these to personalize
-							advice.
-						</p>
-					</div>
-					{loading && (
-						<Loader2 className="w-4 h-4 text-[#8b5cf6] animate-spin ml-auto" />
-					)}
-				</div>
-
-				{!loading && (
+			<SettingsCard
+				icon={<Target className="w-5 h-5 text-[#a78bfa]" />}
+				title="Athlete profile"
+				subtitle="Set your goals and metrics. The coach uses these to personalize advice."
+				loading={loading || estimatesLoading}
+			>
+				{!loading && !estimatesLoading && (
 					<>
 						<div className="grid grid-cols-2 gap-3">
 							<div className="flex flex-col gap-1.5">
@@ -391,7 +390,7 @@ export function AthleteProfileSettings() {
 						</div>
 					</>
 				)}
-			</div>
+			</SettingsCard>
 		</div>
 	);
 }

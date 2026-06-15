@@ -15,12 +15,13 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
+	clearHaeSettings,
 	fetchHaeStatus,
 	generateHaeKey,
-	clearHaeSettings,
 	updateHealthSource,
 } from "../lib/api";
 import { AnimatedButton } from "./AnimatedButton";
+import { SettingsCard } from "./SettingsCard";
 
 /** Parse an ISO or SQLite datetime string as UTC, then format to local locale. */
 function utcToLocaleString(dateStr: string): string {
@@ -171,25 +172,12 @@ export function HealthAutoExportSettings() {
 				</div>
 			)}
 
-			<div className="p-5 bg-[#1a1533]/70 border border-[rgba(139,92,246,0.15)] rounded-xl flex flex-col gap-4">
-				<div className="flex items-center gap-3">
-					<div className="flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-500/10 shrink-0">
-						<Heart className="w-5 h-5 text-emerald-300" />
-					</div>
-					<div className="min-w-0">
-						<p className="text-sm font-semibold text-[#f1f5f9]">
-							Health Auto Export
-						</p>
-						<p className="text-xs text-[#94a3b8]">
-							Sync Apple Health data via the Health Auto Export app. Provides
-							RHR, sleep, HRV, and more for smarter coaching.
-						</p>
-					</div>
-					{loading && (
-						<Loader2 className="w-4 h-4 text-[#8b5cf6] animate-spin ml-auto" />
-					)}
-				</div>
-
+			<SettingsCard
+				icon={<Heart className="w-5 h-5 text-emerald-300" />}
+				title="Health Auto Export"
+				subtitle="Sync Apple Health data via the Health Auto Export app. Provides RHR, sleep, HRV, and more for smarter coaching."
+				loading={loading}
+			>
 				{!loading && settings && (
 					<>
 						{/* Health Source Selector */}
@@ -366,7 +354,7 @@ export function HealthAutoExportSettings() {
 						</div>
 					</>
 				)}
-			</div>
+			</SettingsCard>
 		</div>
 	);
 }

@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import { AlertCircle, BellRing, CheckCircle2, Loader2 } from "lucide-react";
 import type { WaxedChainReminderSettings as WaxedChainReminderSettingsData } from "@fit-analyzer/shared";
 import {
-	fetchUserSettings,
 	resetWaxedChainReminderProgress,
 	sendWaxedChainReminderTest,
 	updateWaxedChainReminderSettings,
 } from "../lib/api";
+import { useSettings } from "../lib/settingsContext";
 import { AnimatedButton } from "./AnimatedButton";
+import { SettingsCard } from "./SettingsCard";
 
 function formatLastNotifiedAt(value: string | null): string {
 	if (!value) return "No reminder sent yet";
@@ -17,12 +18,12 @@ function formatLastNotifiedAt(value: string | null): string {
 }
 
 export function WaxedChainReminderSettings() {
+	const { data, loading, error } = useSettings();
 	const [settings, setSettings] =
 		useState<WaxedChainReminderSettingsData | null>(null);
 	const [enabled, setEnabled] = useState(false);
 	const [thresholdKm, setThresholdKm] = useState("300");
 	const [ntfyTopic, setNtfyTopic] = useState("");
-	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [resetting, setResetting] = useState(false);
 	const [sendingTest, setSendingTest] = useState(false);
@@ -32,22 +33,12 @@ export function WaxedChainReminderSettings() {
 	} | null>(null);
 
 	useEffect(() => {
-		fetchUserSettings()
-			.then((data) => {
-				setSettings(data.waxedChainReminder);
-				setEnabled(data.waxedChainReminder.enabled);
-				setThresholdKm(String(data.waxedChainReminder.thresholdKm));
-				setNtfyTopic(data.waxedChainReminder.ntfyTopic);
-			})
-			.catch((error) => {
-				setNotification({
-					type: "error",
-					message:
-						error instanceof Error ? error.message : "Failed to load settings",
-				});
-			})
-			.finally(() => setLoading(false));
-	}, []);
+		if (!data) return;
+		setSettings(data.waxedChainReminder);
+		setEnabled(data.waxedChainReminder.enabled);
+		setThresholdKm(String(data.waxedChainReminder.thresholdKm));
+		setNtfyTopic(data.waxedChainReminder.ntfyTopic);
+	}, [data]);
 
 	useEffect(() => {
 		if (!notification) return;
@@ -149,42 +140,31 @@ export function WaxedChainReminderSettings() {
 
 	return (
 		<div className="flex flex-col gap-4">
-			{notification && (
-				<div
-					className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium ${
-						notification.type === "success"
-							? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
-							: "bg-red-500/10 border border-red-500/20 text-red-400"
-					}`}
-				>
-					{notification.type === "success" ? (
-						<CheckCircle2 className="w-4 h-4 shrink-0" />
-					) : (
-						<AlertCircle className="w-4 h-4 shrink-0" />
-					)}
+			{error && (
+				<div className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium bg-red-500/10 border border-red-500/20 text-red-400">
+					<AlertCircle className="w-4 h-4 shrink-0" />
+					{error.message}
+				</div>
+			)}
+			{notification?.type === "success" && (
+				<div className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+					<CheckCircle2 className="w-4 h-4 shrink-0" />
+					{notification.message}
+				</div>
+			)}
+			{notification?.type === "error" && !error && (
+				<div className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium bg-red-500/10 border border-red-500/20 text-red-400">
+					<AlertCircle className="w-4 h-4 shrink-0" />
 					{notification.message}
 				</div>
 			)}
 
-			<div className="p-5 bg-[#1a1533]/70 border border-[rgba(139,92,246,0.15)] rounded-xl flex flex-col gap-4">
-				<div className="flex items-center gap-3">
-					<div className="flex items-center justify-center w-10 h-10 rounded-xl bg-amber-500/10 shrink-0">
-						<BellRing className="w-5 h-5 text-amber-300" />
-					</div>
-					<div>
-						<p className="text-sm font-semibold text-[#f1f5f9]">
-							Waxed chain reminders
-						</p>
-						<p className="text-xs text-[#94a3b8]">
-							Send an `ntfy` notification when newly added rides cross your
-							maintenance threshold.
-						</p>
-					</div>
-					{loading && (
-						<Loader2 className="w-4 h-4 text-[#8b5cf6] animate-spin ml-auto" />
-					)}
-				</div>
-
+			<SettingsCard
+				icon={<BellRing className="w-5 h-5 text-amber-300" />}
+				title="Waxed chain reminders"
+				subtitle="Send an `ntfy` notification when newly added rides cross your maintenance threshold."
+				loading={loading}
+			>
 				{!loading && (
 					<>
 						<div className="flex items-center justify-between gap-4 rounded-xl border border-[rgba(139,92,246,0.12)] bg-[#0f0b1a]/70 px-4 py-3">
@@ -304,7 +284,7 @@ export function WaxedChainReminderSettings() {
 						</div>
 					</>
 				)}
-			</div>
+			</SettingsCard>
 		</div>
 	);
 }

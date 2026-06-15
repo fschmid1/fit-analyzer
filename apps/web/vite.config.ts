@@ -1,6 +1,19 @@
+import { execSync } from "node:child_process";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+
+const BUILD_TIME = new Date().toISOString();
+let gitCommit = "unknown";
+try {
+	gitCommit = execSync("git rev-parse --short HEAD", {
+		encoding: "utf8",
+		cwd: process.cwd(),
+	}).trim();
+} catch {
+	// git not available — leave as "unknown"
+}
+const GIT_COMMIT = gitCommit;
 
 // Vite logs EPIPE / ECONNRESET proxy errors as [vite] http proxy error.
 // These are benign — they fire when the browser cancels an in-flight request
@@ -21,6 +34,10 @@ const silenceProxyEpipe: Plugin = {
 
 // https://vitejs.dev/config/
 export default defineConfig({
+	define: {
+		"import.meta.env.VITE_BUILD_TIME": JSON.stringify(BUILD_TIME),
+		"import.meta.env.VITE_GIT_COMMIT": JSON.stringify(GIT_COMMIT),
+	},
 	plugins: [react(), tailwindcss(), silenceProxyEpipe],
 	server: {
 		host: "0.0.0.0",

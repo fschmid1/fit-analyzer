@@ -41,6 +41,9 @@ export interface UserSettingsResponse {
 	compare: CompareSettings;
 	healthAutoExport: HealthAutoExportSettings;
 	athleteProfile: AthleteProfile;
+}
+
+export interface AthleteEstimatesResponse {
 	inferredLocation: string | null;
 	estimatedFtp: number | null;
 	estimatedMaxHr: number | null;
@@ -91,6 +94,12 @@ export async function fetchHeatmap(
 export async function fetchUserSettings(): Promise<UserSettingsResponse> {
 	const res = await fetch(`${API_BASE}/me/settings`);
 	if (!res.ok) throw new Error("Failed to fetch settings");
+	return res.json();
+}
+
+export async function fetchAthleteEstimates(): Promise<AthleteEstimatesResponse> {
+	const res = await fetch(`${API_BASE}/me/athlete-estimates`);
+	if (!res.ok) throw new Error("Failed to fetch athlete estimates");
 	return res.json();
 }
 

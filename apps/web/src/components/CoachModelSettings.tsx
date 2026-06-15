@@ -7,21 +7,22 @@ import { AlertCircle, Bot, CheckCircle2, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
 	fetchAvailableModels,
-	fetchUserSettings,
 	updateCoachModelSettings,
 	updateFavoriteModels,
 } from "../lib/api";
+import { useSettings } from "../lib/settingsContext";
 import { AnimatedButton } from "./AnimatedButton";
 import { ModelPicker } from "./trainer/ModelPicker";
+import { SettingsCard } from "./SettingsCard";
 
 export function CoachModelSettings() {
-	const [settings, setSettings] = useState<CoachModelSettingsData | null>(null);
+	const { data, loading, error } = useSettings();
 	const [selected, setSelected] = useState<string>(AVAILABLE_MODELS[0].id);
 	const [availableModels, setAvailableModels] = useState<ModelEntry[]>([
 		...AVAILABLE_MODELS,
 	]);
 	const [favorites, setFavorites] = useState<string[]>([]);
-	const [loading, setLoading] = useState(true);
+	const [modelsLoading, setModelsLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [notification, setNotification] = useState<{
 		type: "success" | "error";
@@ -29,26 +30,27 @@ export function CoachModelSettings() {
 	} | null>(null);
 
 	useEffect(() => {
-		Promise.all([fetchUserSettings(), fetchAvailableModels()])
-			.then(([settingsData, models]) => {
-				setSettings(settingsData.coachModel);
+		fetchAvailableModels()
+			.then((models) => {
 				setAvailableModels(models);
-				setFavorites(settingsData.favoriteModels);
-				setSelected(
-					models.find((m) => m.id === settingsData.coachModel.coachModel)?.id ??
-						models[0]?.id ??
-						AVAILABLE_MODELS[0].id,
-				);
+				if (data) {
+					setSelected(
+						models.find((m) => m.id === data.coachModel.coachModel)?.id ??
+							models[0]?.id ??
+							AVAILABLE_MODELS[0].id,
+					);
+					setFavorites(data.favoriteModels);
+				}
 			})
 			.catch((error) => {
 				setNotification({
 					type: "error",
 					message:
-						error instanceof Error ? error.message : "Failed to load settings",
+						error instanceof Error ? error.message : "Failed to load models",
 				});
 			})
-			.finally(() => setLoading(false));
-	}, []);
+			.finally(() => setModelsLoading(false));
+	}, [data]);
 
 	useEffect(() => {
 		if (!notification) return;
@@ -56,7 +58,8 @@ export function CoachModelSettings() {
 		return () => window.clearTimeout(timeoutId);
 	}, [notification]);
 
-	const isDirty = settings !== null && selected !== settings.coachModel;
+	const currentModelId = data?.coachModel.coachModel;
+	const isDirty = currentModelId !== undefined && selected !== currentModelId;
 
 	const handleSave = async () => {
 		setSaving(true);
@@ -65,7 +68,6 @@ export function CoachModelSettings() {
 			const next = await updateCoachModelSettings({
 				coachModel: selected,
 			});
-			setSettings(next);
 			setSelected(next.coachModel);
 			setNotification({
 				type: "success",
@@ -96,40 +98,32 @@ export function CoachModelSettings() {
 
 	return (
 		<div className="flex flex-col gap-4">
-			{notification && (
-				<div
-					className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium ${
-						notification.type === "success"
-							? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
-							: "bg-red-500/10 border border-red-500/20 text-red-400"
-					}`}
-				>
-					{notification.type === "success" ? (
-						<CheckCircle2 className="w-4 h-4 shrink-0" />
-					) : (
-						<AlertCircle className="w-4 h-4 shrink-0" />
-					)}
+			{error && (
+				<div className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium bg-red-500/10 border border-red-500/20 text-red-400">
+					<AlertCircle className="w-4 h-4 shrink-0" />
+					{error.message}
+				</div>
+			)}
+			{notification?.type === "success" && (
+				<div className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+					<CheckCircle2 className="w-4 h-4 shrink-0" />
+					{notification.message}
+				</div>
+			)}
+			{notification?.type === "error" && !error && (
+				<div className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium bg-red-500/10 border border-red-500/20 text-red-400">
+					<AlertCircle className="w-4 h-4 shrink-0" />
 					{notification.message}
 				</div>
 			)}
 
-			<div className="p-5 bg-[#1a1533]/70 border border-[rgba(139,92,246,0.15)] rounded-xl flex flex-col gap-4">
-				<div className="flex items-center gap-3">
-					<div className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#8b5cf6]/10 shrink-0">
-						<Bot className="w-5 h-5 text-[#a78bfa]" />
-					</div>
-					<div>
-						<p className="text-sm font-semibold text-[#f1f5f9]">Coach model</p>
-						<p className="text-xs text-[#94a3b8]">
-							Choose the AI model used by the cycling coach.
-						</p>
-					</div>
-					{loading && (
-						<Loader2 className="w-4 h-4 text-[#8b5cf6] animate-spin ml-auto" />
-					)}
-				</div>
-
-				{!loading && (
+			<SettingsCard
+				icon={<Bot className="w-5 h-5 text-[#a78bfa]" />}
+				title="Coach model"
+				subtitle="Choose the AI model used by the cycling coach."
+				loading={loading || modelsLoading}
+			>
+				{!loading && !modelsLoading && (
 					<>
 						<div className="flex flex-col gap-1.5">
 							<span className="text-xs font-medium text-[#cbd5e1]">Model</span>
@@ -161,7 +155,7 @@ export function CoachModelSettings() {
 						</div>
 					</>
 				)}
-			</div>
+			</SettingsCard>
 		</div>
 	);
 }
