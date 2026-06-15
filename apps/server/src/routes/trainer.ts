@@ -700,52 +700,6 @@ trainer.put("/history/:threadId", async (c) => {
 	return c.json({ ok: true });
 });
 
-trainer.post("/history/:threadId/strip-displays", async (c) => {
-	const userId = getUserId(c);
-	const { threadId } = c.req.param();
-	const thread = getThreadByIdStmt.get(threadId, userId);
-	if (!thread) return c.json({ error: "Thread not found" }, 404);
-
-	const rows = getMessagesStmt.all(threadId) as MessageRow[];
-	let changed = false;
-	const messages: TrainerMessage[] = [];
-
-	for (const row of rows) {
-		const msg = rowToTrainerMessage(row);
-		messages.push(msg);
-		if (!msg.toolCalls || msg.toolCalls.length === 0) continue;
-		let msgChanged = false;
-		for (const tc of msg.toolCalls) {
-			if (tc.result?.display !== undefined) {
-				const { display: _, ...resultWithoutDisplay } = tc.result;
-				tc.result = resultWithoutDisplay as typeof tc.result;
-				msgChanged = true;
-			}
-		}
-		if (msgChanged) changed = true;
-	}
-
-	if (changed) {
-		db.transaction(() => {
-			deleteMessagesStmt.run(threadId);
-			touchThreadStmt.run(threadId);
-			for (const m of messages) {
-				insertMessageStmt.run(
-					m.id,
-					threadId,
-					m.role,
-					m.content,
-					m.createdAt,
-					serializeToolCalls(m.toolCalls),
-				);
-			}
-		})();
-	}
-
-	const contextTokens = countThreadContextTokens(threadId, messages);
-	return c.json({ ok: true, changed, messages, contextTokens });
-});
-
 function messageTokenLength(m: TrainerMessage): number {
 	let n = Math.ceil(m.content.length / APPROX_CHARS_PER_TOKEN);
 	if (m.toolCalls && m.toolCalls.length > 0) {

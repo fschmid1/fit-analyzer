@@ -405,29 +405,6 @@ export async function saveTrainerHistory(
 	});
 }
 
-export async function stripDisplaysFromHistory(threadId: string): Promise<{
-	ok: boolean;
-	changed: boolean;
-	messages: TrainerMessage[];
-	contextTokens: number;
-}> {
-	const res = await fetch(
-		`${API_BASE}/trainer/history/${threadId}/strip-displays`,
-		{
-			method: "POST",
-		},
-	);
-	if (!res.ok) {
-		const err = await res
-			.json()
-			.catch(() => ({ error: "Failed to strip displays" }));
-		throw new Error(
-			(err as { error?: string }).error ?? "Failed to strip displays",
-		);
-	}
-	return res.json();
-}
-
 export async function compactTrainerHistory(
 	threadId: string,
 	signal?: AbortSignal,
