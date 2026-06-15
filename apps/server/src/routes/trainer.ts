@@ -1,34 +1,32 @@
 import type {
-    SaveTrainerHistoryBody,
-    TrainerMessage,
-    UIToolCall,
+	SaveTrainerHistoryBody,
+	TrainerMessage,
+	UIToolCall,
 } from "@fit-analyzer/shared";
-import
-    {
-        APPROX_CHARS_PER_TOKEN,
-        AVAILABLE_MODELS,
-        getModelProvider,
-    } from "@fit-analyzer/shared";
+import {
+	APPROX_CHARS_PER_TOKEN,
+	AVAILABLE_MODELS,
+	getModelProvider,
+} from "@fit-analyzer/shared";
 import { convertMessagesToModelMessages } from "@tanstack/ai";
+import type { ModelMessage, UIMessage } from "@tanstack/ai";
 import { Hono } from "hono";
 import { db } from "../db.js";
 import { env } from "../env.js";
 import { getCoachModelSettings } from "../lib/coachModelSettings.js";
 import { getOllamaModels } from "../lib/ollamaModelCache.js";
-import
-    {
-        parseCoachingMarkdown,
-        serializeCoachingMarkdown,
-    } from "../lib/parseCoachingMarkdown.js";
+import {
+	parseCoachingMarkdown,
+	serializeCoachingMarkdown,
+} from "../lib/parseCoachingMarkdown.js";
 import { getToolDefinitions } from "../lib/tools/registry.js";
-import
-    {
-        cancelTrainerStream,
-        createTrainerStreamConsumer,
-        hasActiveTrainerStream,
-        startTrainerStreamProducer,
-        verifyStreamOwner,
-    } from "../lib/trainerStreamRegistry.js";
+import {
+	cancelTrainerStream,
+	createTrainerStreamConsumer,
+	hasActiveTrainerStream,
+	startTrainerStreamProducer,
+	verifyStreamOwner,
+} from "../lib/trainerStreamRegistry.js";
 import { createTrainerToolLoop } from "../lib/trainerToolLoop.js";
 
 const BASE_SYSTEM_PROMPT =
@@ -57,6 +55,39 @@ async function buildSystemPrompt(
 	_activityId?: string,
 ): Promise<string> {
 	return BASE_SYSTEM_PROMPT;
+}
+
+/**
+ * Strip `display` fields from tool-call part outputs before converting to
+ * ModelMessages.  The `display` blob is purely for UI rendering and can
+ * contain thousands of per-second data points (records, lat/lng, etc.).
+ * Keeping it out of the LLM context prevents immediate context bloat.
+ */
+function sanitizeMessagesForModel(
+	messages: Array<UIMessage | ModelMessage>,
+): Array<UIMessage | ModelMessage> {
+	return messages.map((msg) => {
+		if ("parts" in msg && Array.isArray(msg.parts)) {
+			const parts = msg.parts.map((part) => {
+				if (
+					part.type === "tool-call" &&
+					part.output &&
+					typeof part.output === "object"
+				) {
+					const output = { ...part.output } as Record<string, unknown>;
+					if (output.result && typeof output.result === "object") {
+						const result = { ...output.result } as Record<string, unknown>;
+						const { display: _, ...resultWithoutDisplay } = result;
+						output.result = resultWithoutDisplay;
+					}
+					return { ...part, output };
+				}
+				return part;
+			});
+			return { ...msg, parts };
+		}
+		return msg;
+	});
 }
 
 const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 4;
@@ -323,7 +354,9 @@ trainer.post("/chat", async (c) => {
 	}
 	const body: TrainerChatRequestBody = await c.req.json();
 	const streamId = getStringBodyValue(body.streamId) ?? crypto.randomUUID();
-	const modelMessages = convertMessagesToModelMessages(body.messages ?? []);
+	const modelMessages = convertMessagesToModelMessages(
+		sanitizeMessagesForModel(body.messages ?? []),
+	);
 
 	const threadId = getStringBodyValue(body.threadId);
 	const thread = threadId
@@ -665,6 +698,52 @@ trainer.put("/history/:threadId", async (c) => {
 	})();
 
 	return c.json({ ok: true });
+});
+
+trainer.post("/history/:threadId/strip-displays", async (c) => {
+	const userId = getUserId(c);
+	const { threadId } = c.req.param();
+	const thread = getThreadByIdStmt.get(threadId, userId);
+	if (!thread) return c.json({ error: "Thread not found" }, 404);
+
+	const rows = getMessagesStmt.all(threadId) as MessageRow[];
+	let changed = false;
+	const messages: TrainerMessage[] = [];
+
+	for (const row of rows) {
+		const msg = rowToTrainerMessage(row);
+		messages.push(msg);
+		if (!msg.toolCalls || msg.toolCalls.length === 0) continue;
+		let msgChanged = false;
+		for (const tc of msg.toolCalls) {
+			if (tc.result?.display !== undefined) {
+				const { display: _, ...resultWithoutDisplay } = tc.result;
+				tc.result = resultWithoutDisplay as typeof tc.result;
+				msgChanged = true;
+			}
+		}
+		if (msgChanged) changed = true;
+	}
+
+	if (changed) {
+		db.transaction(() => {
+			deleteMessagesStmt.run(threadId);
+			touchThreadStmt.run(threadId);
+			for (const m of messages) {
+				insertMessageStmt.run(
+					m.id,
+					threadId,
+					m.role,
+					m.content,
+					m.createdAt,
+					serializeToolCalls(m.toolCalls),
+				);
+			}
+		})();
+	}
+
+	const contextTokens = countThreadContextTokens(threadId, messages);
+	return c.json({ ok: true, changed, messages, contextTokens });
 });
 
 function messageTokenLength(m: TrainerMessage): number {

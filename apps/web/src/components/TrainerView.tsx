@@ -16,6 +16,7 @@ import {
 	getCompactionStatus,
 	importTrainerChat,
 	renameThread,
+	stripDisplaysFromHistory,
 	updateCompareSettings,
 	updateFavoriteModels,
 	updateThreadModel,
@@ -69,6 +70,9 @@ export function TrainerView({
 	const [compareMode, setCompareMode] = useState(false);
 	const [pinnedThreadIds, setPinnedThreadIds] = useState<string[]>([]);
 	const [compactingThreadId, setCompactingThreadId] = useState<string | null>(
+		null,
+	);
+	const [strippingThreadId, setStrippingThreadId] = useState<string | null>(
 		null,
 	);
 	const compactionAbortRef = useRef<AbortController | null>(null);
@@ -419,6 +423,39 @@ export function TrainerView({
 		[compactingThreadId, loadThreads, pollCompactionStatus, navigate],
 	);
 
+	const handleStripDisplays = useCallback(
+		async (threadId: string) => {
+			if (strippingThreadId) return;
+			setStrippingThreadId(threadId);
+			try {
+				const result = await stripDisplaysFromHistory(threadId);
+				if (result.changed) {
+					void loadThreads();
+					const messages = result.messages.map(toUIMessage);
+					const toolCalls = reconstructToolCalls(result.messages);
+					threadCache.current[threadId] = {
+						messages,
+						nextCursor: null,
+						hasMore: false,
+						total: messages.length,
+						toolCalls,
+						stale: false,
+					};
+					setInitialMessages(messages);
+					setInitialToolCalls(toolCalls);
+					setActiveThreadId(threadId);
+					setChatKey((k) => k + 1);
+					navigate(`/trainer/${threadId}`, { replace: true });
+				}
+			} catch (err) {
+				console.error("Failed to strip displays:", err);
+			} finally {
+				setStrippingThreadId(null);
+			}
+		},
+		[strippingThreadId, loadThreads, navigate],
+	);
+
 	const handleExportThread = useCallback(async (threadId: string) => {
 		const { filename, markdown } = await exportTrainerThread(threadId);
 		const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
@@ -562,7 +599,9 @@ export function TrainerView({
 				onDelete={handleDeleteThread}
 				onFork={handleForkThread}
 				onCompact={handleCompactThread}
+				onStripDisplays={handleStripDisplays}
 				compactingThreadId={compactingThreadId}
+				strippingThreadId={strippingThreadId}
 				onExport={handleExportThread}
 				open={threadsOpen}
 				onClose={() => setThreadsOpen(false)}

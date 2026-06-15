@@ -6,6 +6,7 @@ import {
 	ChevronRight,
 	Columns,
 	Download,
+	Eraser,
 	GitFork,
 	Loader2,
 	Minimize2,
@@ -27,7 +28,9 @@ interface ThreadSidebarProps {
 	onDelete: (id: string) => void;
 	onFork: (id: string) => void;
 	onCompact: (id: string) => void;
+	onStripDisplays: (id: string) => void;
 	compactingThreadId: string | null;
+	strippingThreadId: string | null;
 	onExport: (id: string) => void;
 	open: boolean;
 	onClose: () => void;
@@ -81,7 +84,9 @@ export function ThreadSidebar({
 	onDelete,
 	onFork,
 	onCompact,
+	onStripDisplays,
 	compactingThreadId,
+	strippingThreadId,
 	onExport,
 	open,
 	onClose,
@@ -250,6 +255,14 @@ export function ThreadSidebar({
 			onCompact(threadId);
 		},
 		[onCompact],
+	);
+
+	const handleStripDisplays = useCallback(
+		(threadId: string) => {
+			setContextMenu(null);
+			onStripDisplays(threadId);
+		},
+		[onStripDisplays],
 	);
 
 	const handleExport = useCallback(
@@ -429,24 +442,33 @@ export function ThreadSidebar({
 								<button
 									type="button"
 									onClick={(e) => handleMenuButtonClick(thread, e)}
-									disabled={compactingThreadId === thread.id}
+									disabled={
+										compactingThreadId === thread.id ||
+										strippingThreadId === thread.id
+									}
 									className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors focus:opacity-100 focus:outline-none focus:ring-1 focus:ring-[#8b5cf6]/40 md:opacity-0 md:group-hover:opacity-100 ${
-										compactingThreadId === thread.id
+										compactingThreadId === thread.id ||
+										strippingThreadId === thread.id
 											? "text-[#8b5cf6] bg-[#8b5cf6]/15 animate-pulse"
 											: "text-[#7c6fa0] opacity-100 hover:bg-[#241e3d] hover:text-[#c4b5fd]"
 									}`}
 									title={
 										compactingThreadId === thread.id
 											? `Compacting ${thread.name}…`
-											: `Actions for ${thread.name}`
+											: strippingThreadId === thread.id
+												? `Stripping ${thread.name}…`
+												: `Actions for ${thread.name}`
 									}
 									aria-label={
 										compactingThreadId === thread.id
 											? `Compacting ${thread.name}`
-											: `Actions for ${thread.name}`
+											: strippingThreadId === thread.id
+												? `Stripping ${thread.name}`
+												: `Actions for ${thread.name}`
 									}
 								>
-									{compactingThreadId === thread.id ? (
+									{compactingThreadId === thread.id ||
+									strippingThreadId === thread.id ? (
 										<Loader2 className="h-3.5 w-3.5 animate-spin" />
 									) : (
 										<MoreVertical className="h-3.5 w-3.5" />
@@ -516,6 +538,23 @@ export function ThreadSidebar({
 							{exportingThreadId === contextMenu.threadId
 								? "Exporting…"
 								: "Export"}
+						</button>
+						<div className="my-1 border-t border-[rgba(139,92,246,0.1)]" />
+						<button
+							type="button"
+							onClick={() => handleStripDisplays(contextMenu.threadId)}
+							disabled={strippingThreadId === contextMenu.threadId}
+							className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-[#c4b5fd] hover:bg-[#8b5cf6]/15 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+							role="menuitem"
+						>
+							{strippingThreadId === contextMenu.threadId ? (
+								<Loader2 className="w-3.5 h-3.5 animate-spin" />
+							) : (
+								<Eraser className="w-3.5 h-3.5" />
+							)}
+							{strippingThreadId === contextMenu.threadId
+								? "Stripping…"
+								: "Strip displays"}
 						</button>
 						<div className="my-1 border-t border-[rgba(139,92,246,0.1)]" />
 						<button
