@@ -94,10 +94,14 @@ export function AnalysisView({
 				chartHighlights={chartHighlights}
 			/>
 
-			<AutoDetectIntervals
-				records={activity.records}
-				onAddInterval={onAddInterval}
-				customIntervals={customIntervals}
+			<SummaryCards summary={activity.summary} />
+
+			<ActivityAnalysis
+				activityId={activityId}
+				initialAnalysis={analysis}
+				initialToolCalls={analysisToolCalls}
+				onSendToTrainer={onSendAnalysisToTrainer}
+				isSendingToTrainer={isSendingToTrainer}
 			/>
 
 			<IntervalList
@@ -111,14 +115,10 @@ export function AnalysisView({
 				initialIntervalMinutes={savedIntervalMinutes}
 			/>
 
-			<SummaryCards summary={activity.summary} />
-
-			<ActivityAnalysis
-				activityId={activityId}
-				initialAnalysis={analysis}
-				initialToolCalls={analysisToolCalls}
-				onSendToTrainer={onSendAnalysisToTrainer}
-				isSendingToTrainer={isSendingToTrainer}
+			<AutoDetectIntervals
+				records={activity.records}
+				onAddInterval={onAddInterval}
+				customIntervals={customIntervals}
 			/>
 
 			<CopyBox summary={activity.summary} intervals={allIntervals} />

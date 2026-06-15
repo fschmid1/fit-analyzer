@@ -35,8 +35,7 @@ export function ActivityAnalysis({
 	onSendToTrainer,
 	isSendingToTrainer,
 }: ActivityAnalysisProps) {
-	const hasCached = Boolean(initialAnalysis);
-	const [expanded, setExpanded] = useState(!hasCached);
+	const [expanded, setExpanded] = useState(true);
 	const [analysis, setAnalysis] = useState(initialAnalysis ?? null);
 	const [state, setState] = useState<AnalysisState>({ status: "idle" });
 	const [toolCalls, setToolCalls] = useState<UIToolCall[]>(
@@ -164,7 +163,11 @@ export function ActivityAnalysis({
 	return (
 		<div className="mx-6 mb-6">
 			<div className="relative bg-[#0d0919] border border-[rgba(139,92,246,0.15)] rounded-2xl overflow-hidden">
-				<div className="flex items-center justify-between px-4 py-3 bg-[#1a1533]/50 border-b border-[rgba(139,92,246,0.1)]">
+				<button
+					type="button"
+					className="flex items-center justify-between px-4 py-3 w-full bg-[#1a1533]/50 border-b border-[rgba(139,92,246,0.1)] cursor-pointer"
+					onClick={() => setExpanded((prev) => !prev)}
+				>
 					<div className="flex items-center gap-2">
 						<p className="text-xs font-medium text-[#94a3b8] uppercase tracking-wider">
 							Analysis
@@ -180,7 +183,10 @@ export function ActivityAnalysis({
 						{onSendToTrainer && (
 							<button
 								type="button"
-								onClick={() => onSendToTrainer(analysis ?? "", toolCalls)}
+								onClick={(e) => {
+									e.stopPropagation();
+									onSendToTrainer(analysis ?? "", toolCalls);
+								}}
 								disabled={isStreaming || isSendingToTrainer || !analysis}
 								className="flex items-center gap-1.5 px-3 py-1.5 mr-1 text-xs font-medium rounded-lg transition-[background-color,border-color,color] duration-200 cursor-pointer bg-[#8b5cf6]/10 text-[#8b5cf6] hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 disabled:opacity-50 disabled:cursor-not-allowed"
 								title="Send analysis to trainer"
@@ -192,7 +198,10 @@ export function ActivityAnalysis({
 						)}
 						<button
 							type="button"
-							onClick={startStream}
+							onClick={(e) => {
+								e.stopPropagation();
+								startStream();
+							}}
 							disabled={isStreaming}
 							className="p-2 rounded-lg transition-colors text-[#8b5cf6] hover:bg-[#8b5cf6]/10 disabled:opacity-50 disabled:cursor-not-allowed"
 							title="Regenerate analysis"
@@ -204,7 +213,10 @@ export function ActivityAnalysis({
 						</button>
 						<button
 							type="button"
-							onClick={() => setExpanded((prev) => !prev)}
+							onClick={(e) => {
+								e.stopPropagation();
+								setExpanded((prev) => !prev);
+							}}
 							className="p-2 rounded-lg transition-colors text-[#94a3b8] hover:text-[#f1f5f9] hover:bg-[#8b5cf6]/10"
 							aria-label={expanded ? "Collapse analysis" : "Expand analysis"}
 						>
@@ -215,7 +227,7 @@ export function ActivityAnalysis({
 							)}
 						</button>
 					</div>
-				</div>
+				</button>
 
 				{expanded && (
 					<div className="p-4">
