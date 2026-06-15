@@ -40,6 +40,7 @@ export function ActivityAnalysis({
 	const [toolCalls, setToolCalls] = useState<UIToolCall[]>([]);
 	const abortRef = useRef<AbortController | null>(null);
 	const hasTriggeredRef = useRef(false);
+	const streamIdRef = useRef<string | null>(null);
 
 	const applyToolChunk = useCallback((chunk: ToolStreamChunk) => {
 		if (chunk.toolName === "highlight_chart" && chunk.display && !chunk.error) {
@@ -109,8 +110,12 @@ export function ActivityAnalysis({
 					);
 				},
 				onToolChunk: applyToolChunk,
+				onStreamId: (id) => {
+					streamIdRef.current = id;
+				},
 			},
 			controller.signal,
+			streamIdRef.current ?? undefined,
 		)
 			.then(({ text }) => {
 				setAnalysis(text);

@@ -273,20 +273,33 @@ export interface StreamActivityAnalysisCallbacks {
 	onText?: (text: string) => void;
 	onToolChunk?: (chunk: ToolStreamChunk) => void;
 	onError?: (error: { message: string }) => void;
+	/** Called with the server-assigned stream id when the request starts. */
+	onStreamId?: (streamId: string) => void;
 }
 
 export async function streamActivityAnalysis(
 	activityId: string,
 	callbacks: StreamActivityAnalysisCallbacks,
 	signal?: AbortSignal,
+	resumeStreamId?: string,
 ): Promise<{ text: string; toolCalls: UIToolCall[] }> {
+	const headers: Record<string, string> = {};
+	if (resumeStreamId) {
+		headers["x-stream-id"] = resumeStreamId;
+	}
 	const res = await fetch(`${API_BASE}/trainer/analyze/${activityId}`, {
 		method: "POST",
 		signal,
+		headers,
 	});
 	if (!res.ok) {
 		const data = await res.json().catch(() => ({ error: "Analysis failed" }));
 		throw new Error((data as { error?: string }).error ?? "Analysis failed");
+	}
+
+	const streamId = res.headers.get("x-stream-id") ?? undefined;
+	if (streamId) {
+		callbacks.onStreamId?.(streamId);
 	}
 
 	const reader = res.body?.getReader();

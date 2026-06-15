@@ -481,102 +481,90 @@ trainer.post("/analyze/:activityId", async (c) => {
 		{ role: "user", content: `Analyze this ride.\n\n${rideContext}` },
 	];
 
-	const stream = createTrainerToolLoop({
-		baseUrl: providerConfig.baseUrl,
-		apiKey: providerConfig.apiKey,
-		model,
-		systemPrompt,
-		messages,
-		provider: providerConfig.provider,
-		includeReasoning: providerConfig.includeReasoning,
-		threadId: undefined,
-		userId,
-		tools: getToolDefinitions(),
-		abortSignal: c.req.raw.signal,
-	});
+	const streamId =
+		c.req.header("x-stream-id") ??
+		c.req.query("streamId") ??
+		crypto.randomUUID();
+	const existingStreamId =
+		c.req.header("x-stream-id") || c.req.query("streamId");
 
-	let fullText = "";
-	const transformed = (async function* () {
-		try {
-			for await (const chunk of stream) {
-				if (chunk.type === "TEXT_MESSAGE_CONTENT") {
-					const delta =
-						"delta" in chunk && typeof chunk.delta === "string"
-							? chunk.delta
-							: "content" in chunk && typeof chunk.content === "string"
-								? chunk.content
-								: "";
-					fullText += delta;
-				}
-				yield chunk;
-			}
-		} catch (error) {
-			console.error(
-				`[analyze] Stream error for activity ${activityId}:`,
-				error,
-			);
-			yield {
-				type: "RUN_ERROR",
-				timestamp: Date.now(),
-				error: {
-					message: error instanceof Error ? error.message : "Analysis failed",
-				},
-			};
-		} finally {
-			if (fullText.trim()) {
-				try {
-					updateActivityAnalysisStmt.run(fullText.trim(), activityId, userId);
-				} catch (err) {
-					console.error(
-						`[analyze] Failed to persist analysis for activity ${activityId}:`,
-						err,
-					);
-				}
-			}
+	if (hasActiveTrainerStream(streamId)) {
+		if (!verifyStreamOwner(streamId, userId)) {
+			return c.json({ error: "Stream not found or already completed" }, 404);
 		}
-	})();
+	} else if (!existingStreamId) {
+		const stream = createTrainerToolLoop({
+			baseUrl: providerConfig.baseUrl,
+			apiKey: providerConfig.apiKey,
+			model,
+			systemPrompt,
+			messages,
+			provider: providerConfig.provider,
+			includeReasoning: providerConfig.includeReasoning,
+			threadId: undefined,
+			userId,
+			tools: getToolDefinitions(),
+			abortSignal: c.req.raw.signal,
+		});
 
-	return new Response(
-		new ReadableStream({
-			async start(controller) {
-				try {
-					for await (const chunk of transformed) {
-						controller.enqueue(`data: ${JSON.stringify(chunk)}\n\n`);
+		let fullText = "";
+		const wrappedStream = (async function* () {
+			try {
+				for await (const chunk of stream) {
+					if (chunk.type === "TEXT_MESSAGE_CONTENT") {
+						const delta =
+							"delta" in chunk && typeof chunk.delta === "string"
+								? chunk.delta
+								: "content" in chunk && typeof chunk.content === "string"
+									? chunk.content
+									: "";
+						fullText += delta;
 					}
-					controller.enqueue("data: [DONE]\n\n");
-					controller.close();
-				} catch (error) {
-					controller.enqueue(
-						`data: ${JSON.stringify({
-							type: "RUN_ERROR",
-							timestamp: Date.now(),
-							error: {
-								message:
-									error instanceof Error ? error.message : "Analysis failed",
-							},
-						})}\n\n`,
-					);
-					controller.enqueue("data: [DONE]\n\n");
-					controller.close();
+					yield chunk;
 				}
-			},
-			cancel() {
-				if (c.req.raw.signal) {
-					// Use the trainer tool loop's internal abort by tearing down
-					// the request signal. Hono/Bun surfaces this as aborted.
-					// We can't call .abort() on older AbortSignal types; rely on
-					// the stream generator observing signal.aborted instead.
+			} catch (error) {
+				console.error(
+					`[analyze] Stream error for activity ${activityId}:`,
+					error,
+				);
+				yield {
+					type: "RUN_ERROR" as const,
+					timestamp: Date.now(),
+					error: {
+						message: error instanceof Error ? error.message : "Analysis failed",
+					},
+				};
+			} finally {
+				if (fullText.trim()) {
+					try {
+						updateActivityAnalysisStmt.run(fullText.trim(), activityId, userId);
+					} catch (err) {
+						console.error(
+							`[analyze] Failed to persist analysis for activity ${activityId}:`,
+							err,
+						);
+					}
 				}
-			},
-		}),
-		{
-			headers: {
-				"Content-Type": "text/event-stream",
-				"Cache-Control": "no-cache",
-				Connection: "keep-alive",
-			},
+			}
+		})();
+
+		startTrainerStreamProducer(
+			streamId,
+			wrappedStream,
+			userId,
+			undefined,
+			c.req.raw.signal,
+		);
+	}
+
+	return new Response(createTrainerStreamConsumer(streamId), {
+		headers: {
+			"Content-Type": "text/event-stream",
+			"Cache-Control": "no-cache",
+			Connection: "keep-alive",
+			"X-Stream-Id": streamId,
 		},
-	);
+	});
 });
 
 // ─── Chat streaming ───────────────────────────────────────────────────────────
