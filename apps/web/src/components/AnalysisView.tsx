@@ -21,6 +21,7 @@ interface AnalysisViewProps {
 	activity: ParsedActivity;
 	activityId: string;
 	analysis?: string | null;
+	isSendingToTrainer?: boolean;
 	selectionRange: [number, number] | null;
 	chartZoom: [number, number] | null;
 	chartIntervalRanges: [number, number][];
@@ -33,12 +34,14 @@ interface AnalysisViewProps {
 	onIntervalMinutesChange: (minutes: string) => void;
 	onAddInterval: (startSeconds: number, endSeconds: number) => void;
 	onRemoveCustomInterval: (index: number) => void;
+	onSendAnalysisToTrainer?: (text: string, threadId?: string) => void;
 }
 
 export function AnalysisView({
 	activity,
 	activityId,
 	analysis,
+	isSendingToTrainer,
 	selectionRange,
 	chartZoom,
 	chartIntervalRanges,
@@ -51,6 +54,7 @@ export function AnalysisView({
 	onIntervalMinutesChange,
 	onAddInterval,
 	onRemoveCustomInterval,
+	onSendAnalysisToTrainer,
 }: AnalysisViewProps) {
 	const [allHighlights, setAllHighlights] =
 		useState<ChartHighlight[]>(getChartHighlights);
@@ -106,7 +110,12 @@ export function AnalysisView({
 
 			<SummaryCards summary={activity.summary} />
 
-			<ActivityAnalysis activityId={activityId} initialAnalysis={analysis} />
+			<ActivityAnalysis
+				activityId={activityId}
+				initialAnalysis={analysis}
+				onSendToTrainer={onSendAnalysisToTrainer}
+				isSendingToTrainer={isSendingToTrainer}
+			/>
 
 			<CopyBox summary={activity.summary} intervals={allIntervals} />
 		</div>

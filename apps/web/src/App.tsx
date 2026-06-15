@@ -29,6 +29,9 @@ import {
 	deleteActivity,
 	updateIntervals,
 	fetchCurrentUser,
+	appendAnalysisToThread,
+	createThreadWithAnalysis,
+	getMostRecentThread,
 } from "./lib/api";
 import type { UserInfo } from "./lib/api";
 
@@ -42,6 +45,7 @@ function App() {
 	const [activities, setActivities] = useState<ActivityListItem[]>([]);
 	const [historyLoading, setHistoryLoading] = useState(true);
 	const [user, setUser] = useState<UserInfo | null>(null);
+	const [analysis, setAnalysis] = useState<string | null>(null);
 
 	const [selectionRange, setSelectionRange] = useState<[number, number] | null>(
 		null,
@@ -54,6 +58,7 @@ function App() {
 	);
 	const [intervalMinutes, setIntervalMinutes] = useState<string>("");
 	const [savedIntervalMinutes, setSavedIntervalMinutes] = useState<string>("");
+	const [sendingToTrainer, setSendingToTrainer] = useState(false);
 
 	// Ref to prevent saving intervals back to DB right after loading them
 	const skipNextSave = useRef(false);
@@ -78,6 +83,7 @@ function App() {
 				.then((data) => {
 					setActivity(data);
 					setActivityId(data.id);
+					setAnalysis(data.analysis ?? null);
 
 					const mins = data.intervalMinutes || "";
 					setSavedIntervalMinutes(mins);
@@ -156,6 +162,7 @@ function App() {
 				const data = await fetchActivity(id);
 				setActivity(data);
 				setActivityId(data.id);
+				setAnalysis(data.analysis ?? null);
 				loadedActivityId.current = data.id;
 
 				setSelectionRange(null);
@@ -301,11 +308,38 @@ function App() {
 		navigate("/trainer");
 	}, [navigate]);
 
+	const handleSendAnalysisToTrainer = useCallback(
+		async (text: string) => {
+			if (!activityId || !text.trim()) return;
+			setSendingToTrainer(true);
+			try {
+				const recent = await getMostRecentThread(activityId);
+				if (recent) {
+					await appendAnalysisToThread(recent.id, text);
+					navigate(`/trainer/${recent.id}`);
+				} else {
+					const thread = await createThreadWithAnalysis(
+						activityId,
+						text,
+						"Analysis follow-up",
+					);
+					navigate(`/trainer/${thread.id}`);
+				}
+			} catch (err) {
+				console.error("Failed to send analysis to trainer:", err);
+			} finally {
+				setSendingToTrainer(false);
+			}
+		},
+		[activityId, navigate],
+	);
+
 	const analysisContent = activity ? (
 		<AnalysisView
 			activity={activity}
 			activityId={activityId ?? ""}
-			analysis={null}
+			analysis={analysis}
+			isSendingToTrainer={sendingToTrainer}
 			selectionRange={selectionRange}
 			chartZoom={chartZoom}
 			chartIntervalRanges={chartIntervalRanges}
@@ -318,6 +352,7 @@ function App() {
 			onIntervalMinutesChange={handleIntervalMinutesChange}
 			onAddInterval={handleAddInterval}
 			onRemoveCustomInterval={handleRemoveCustomInterval}
+			onSendAnalysisToTrainer={handleSendAnalysisToTrainer}
 		/>
 	) : null;
 

@@ -8,18 +8,20 @@ import {
 	type HealthData,
 	type HealthHistoryEntry,
 	type HeatmapResponse,
+	type HealthAutoExportSettings,
+	type HealthSource,
 	type Interval,
 	type ModelEntry,
 	type OpenwearablesSettings,
-	type HealthAutoExportSettings,
-	type HealthSource,
 	type ParsedActivity,
 	type StravaClubEvent,
 	type StoredRecord,
+	type ToolStreamChunk,
 	type TrainerChatHistory,
 	type TrainerMessage,
 	type TrainerThread,
 	type UpdateAthleteProfileBody,
+	type UIToolCall,
 	type WaxedChainReminderSettings,
 } from "@fit-analyzer/shared";
 
@@ -267,11 +269,17 @@ export async function fetchActivity(id: string): Promise<
 	};
 }
 
+export interface StreamActivityAnalysisCallbacks {
+	onText?: (text: string) => void;
+	onToolChunk?: (chunk: ToolStreamChunk) => void;
+	onError?: (error: { message: string }) => void;
+}
+
 export async function streamActivityAnalysis(
 	activityId: string,
-	onChunk: (text: string) => void,
+	callbacks: StreamActivityAnalysisCallbacks,
 	signal?: AbortSignal,
-): Promise<string> {
+): Promise<{ text: string; toolCalls: UIToolCall[] }> {
 	const res = await fetch(`${API_BASE}/trainer/analyze/${activityId}`, {
 		method: "POST",
 		signal,
@@ -287,6 +295,7 @@ export async function streamActivityAnalysis(
 	const decoder = new TextDecoder();
 	let buffer = "";
 	let accumulated = "";
+	const toolCalls: UIToolCall[] = [];
 
 	while (true) {
 		const { done, value } = await reader.read();
@@ -303,31 +312,63 @@ export async function streamActivityAnalysis(
 			if (!dataLine) continue;
 			const payload = dataLine.slice(6).trim();
 			if (payload === "[DONE]") {
-				onChunk(accumulated);
-				return accumulated;
+				callbacks.onText?.(accumulated);
+				return { text: accumulated, toolCalls };
 			}
 			if (!payload) continue;
 			try {
-				const chunk = JSON.parse(payload) as {
-					type: string;
-					delta?: string;
-					content?: string;
-					error?: { message?: string };
-				};
+				const chunk = JSON.parse(payload) as
+					| {
+							type: string;
+							delta?: string;
+							content?: string;
+							error?: { message?: string };
+					  }
+					| ToolStreamChunk;
+
 				if (chunk.type === "RUN_ERROR") {
-					throw new Error(
-						chunk.error?.message ?? "Analysis stream reported an error",
-					);
+					const message =
+						"error" in chunk && chunk.error?.message
+							? chunk.error.message
+							: "Analysis stream reported an error";
+					callbacks.onError?.({ message });
+					throw new Error(message);
 				}
+
 				if (chunk.type === "TEXT_MESSAGE_CONTENT") {
 					const delta =
-						typeof chunk.delta === "string"
-							? chunk.delta
-							: typeof chunk.content === "string"
-								? chunk.content
+						typeof (chunk as { delta?: string }).delta === "string"
+							? (chunk as { delta: string }).delta
+							: typeof (chunk as { content?: string }).content === "string"
+								? (chunk as { content: string }).content
 								: "";
 					accumulated += delta;
-					onChunk(accumulated);
+					callbacks.onText?.(accumulated);
+				}
+
+				if (chunk.type === "TOOL_RESULT") {
+					const toolChunk = chunk as ToolStreamChunk;
+					callbacks.onToolChunk?.(toolChunk);
+					const existing = toolCalls.find((t) => t.id === toolChunk.toolCallId);
+					const incoming: UIToolCall = {
+						id: toolChunk.toolCallId,
+						name: toolChunk.toolName,
+						arguments: existing?.arguments ?? {},
+						status: toolChunk.error ? "error" : "done",
+						result: {
+							id: toolChunk.toolCallId,
+							name: toolChunk.toolName,
+							content: toolChunk.content,
+							display: toolChunk.display,
+							error: toolChunk.error,
+						},
+					};
+					const idx = toolCalls.findIndex((t) => t.id === incoming.id);
+					if (idx === -1) {
+						toolCalls.push(incoming);
+					} else {
+						toolCalls[idx] = incoming;
+					}
 				}
 			} catch {
 				// Ignore malformed chunks so the stream stays resilient.
@@ -339,8 +380,8 @@ export async function streamActivityAnalysis(
 		throw new Error("Analysis aborted");
 	}
 
-	onChunk(accumulated);
-	return accumulated;
+	callbacks.onText?.(accumulated);
+	return { text: accumulated, toolCalls };
 }
 
 export async function saveActivityToServer(
@@ -384,6 +425,8 @@ export async function deleteActivity(id: string): Promise<void> {
 		throw new Error("Failed to delete activity");
 }
 
+import { randomUUID } from "./randomUUID";
+
 // ─── Threads ─────────────────────────────────────────────────────────────────
 
 export async function fetchThreads(
@@ -408,6 +451,41 @@ export async function createThread(
 	if (!res.ok) throw new Error("Failed to create thread");
 	const data = await res.json();
 	return data.thread;
+}
+
+export async function appendAnalysisToThread(
+	threadId: string,
+	analysis: string,
+): Promise<void> {
+	const history = await fetchTrainerHistory(threadId, undefined, { limit: 1 });
+	const now = new Date().toISOString();
+	const newMessages: TrainerMessage[] = [
+		{
+			id: randomUUID(),
+			role: "user",
+			content:
+				"Here is the generated analysis for this ride. Let's discuss it and dig deeper where useful.",
+			createdAt: now,
+		},
+		{
+			id: randomUUID(),
+			role: "assistant",
+			content: analysis,
+			createdAt: now,
+		},
+	];
+	await saveTrainerHistory(threadId, [...history.messages, ...newMessages]);
+}
+
+export async function createThreadWithAnalysis(
+	activityId: string,
+	analysis: string,
+	name = "Analysis follow-up",
+	coachModel?: string,
+): Promise<TrainerThread> {
+	const thread = await createThread(activityId, name, coachModel);
+	await appendAnalysisToThread(thread.id, analysis);
+	return thread;
 }
 
 export async function renameThread(
@@ -447,7 +525,15 @@ export async function deleteThread(threadId: string): Promise<void> {
 	await fetch(`${API_BASE}/trainer/threads/${threadId}`, { method: "DELETE" });
 }
 
-// ─── History ─────────────────────────────────────────────────────────────────
+export async function getMostRecentThread(
+	activityId: string,
+): Promise<TrainerThread | null> {
+	const threads = await fetchThreads(activityId);
+	if (threads.length === 0) return null;
+	return threads.reduce((latest, t) =>
+		new Date(t.updatedAt) > new Date(latest.updatedAt) ? t : latest,
+	);
+}
 
 export async function fetchTrainerHistory(
 	threadId: string,

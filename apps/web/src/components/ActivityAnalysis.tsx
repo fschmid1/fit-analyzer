@@ -1,14 +1,25 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChevronDown, ChevronUp, RefreshCw, AlertCircle } from "lucide-react";
+import {
+	ChevronDown,
+	ChevronUp,
+	RefreshCw,
+	AlertCircle,
+	BotMessageSquare,
+} from "lucide-react";
+import type { ToolStreamChunk, UIToolCall } from "@fit-analyzer/shared";
+import { addChartHighlight } from "../lib/chartHighlightStore";
 import { mdComponents } from "../components/trainer/markdownComponents";
 import { DotsLoader } from "../components/trainer/DotsLoader";
+import { ToolCallCard } from "../components/trainer/ToolCallCard";
 import { streamActivityAnalysis } from "../lib/api";
 
 interface ActivityAnalysisProps {
 	activityId: string;
 	initialAnalysis: string | null | undefined;
+	onSendToTrainer?: (text: string) => void;
+	isSendingToTrainer?: boolean;
 }
 
 type AnalysisState =
@@ -19,13 +30,62 @@ type AnalysisState =
 export function ActivityAnalysis({
 	activityId,
 	initialAnalysis,
+	onSendToTrainer,
+	isSendingToTrainer,
 }: ActivityAnalysisProps) {
 	const hasCached = Boolean(initialAnalysis);
 	const [expanded, setExpanded] = useState(!hasCached);
 	const [analysis, setAnalysis] = useState(initialAnalysis ?? null);
 	const [state, setState] = useState<AnalysisState>({ status: "idle" });
+	const [toolCalls, setToolCalls] = useState<UIToolCall[]>([]);
 	const abortRef = useRef<AbortController | null>(null);
 	const hasTriggeredRef = useRef(false);
+
+	const applyToolChunk = useCallback((chunk: ToolStreamChunk) => {
+		if (chunk.toolName === "highlight_chart" && chunk.display && !chunk.error) {
+			const d = chunk.display as {
+				activityId?: string;
+				startSeconds: number;
+				endSeconds: number;
+				label?: string;
+				color?: string;
+			};
+			if (
+				typeof d.startSeconds === "number" &&
+				typeof d.endSeconds === "number" &&
+				d.startSeconds >= 0 &&
+				d.endSeconds >= 0 &&
+				d.endSeconds >= d.startSeconds
+			) {
+				addChartHighlight({
+					activityId: d.activityId,
+					startSeconds: d.startSeconds,
+					endSeconds: d.endSeconds,
+					label: d.label,
+					color: d.color,
+				});
+			}
+		}
+
+		setToolCalls((prev) => {
+			const existing = prev.find((t) => t.id === chunk.toolCallId);
+			const incoming: UIToolCall = {
+				id: chunk.toolCallId,
+				name: chunk.toolName,
+				arguments: existing?.arguments ?? {},
+				status: chunk.error ? "error" : "done",
+				result: {
+					id: chunk.toolCallId,
+					name: chunk.toolName,
+					content: chunk.content,
+					display: chunk.display,
+					error: chunk.error,
+				},
+			};
+			const idx = prev.findIndex((t) => t.id === incoming.id);
+			return idx === -1 ? [...prev, incoming] : prev.with(idx, incoming);
+		});
+	}, []);
 
 	const stopStream = useCallback(() => {
 		abortRef.current?.abort();
@@ -37,19 +97,23 @@ export function ActivityAnalysis({
 		const controller = new AbortController();
 		abortRef.current = controller;
 		setState({ status: "streaming", text: "" });
+		setToolCalls([]);
 		setExpanded(true);
 
 		streamActivityAnalysis(
 			activityId,
-			(text) => {
-				setState((prev) =>
-					prev.status === "streaming" ? { status: "streaming", text } : prev,
-				);
+			{
+				onText: (text) => {
+					setState((prev) =>
+						prev.status === "streaming" ? { status: "streaming", text } : prev,
+					);
+				},
+				onToolChunk: applyToolChunk,
 			},
 			controller.signal,
 		)
-			.then((final) => {
-				setAnalysis(final);
+			.then(({ text }) => {
+				setAnalysis(text);
 				setState({ status: "idle" });
 			})
 			.catch((err) => {
@@ -67,7 +131,7 @@ export function ActivityAnalysis({
 					abortRef.current = null;
 				}
 			});
-	}, [activityId, stopStream]);
+	}, [activityId, stopStream, applyToolChunk]);
 
 	useEffect(() => {
 		if (!analysis && !hasTriggeredRef.current) {
@@ -104,6 +168,19 @@ export function ActivityAnalysis({
 						)}
 					</div>
 					<div className="flex items-center gap-1">
+						{onSendToTrainer && (
+							<button
+								type="button"
+								onClick={() => onSendToTrainer(analysis ?? "")}
+								disabled={isStreaming || isSendingToTrainer || !analysis}
+								className="flex items-center gap-1.5 px-3 py-1.5 mr-1 text-xs font-medium rounded-lg transition-[background-color,border-color,color] duration-200 cursor-pointer bg-[#8b5cf6]/10 text-[#8b5cf6] hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 disabled:opacity-50 disabled:cursor-not-allowed"
+								title="Send analysis to trainer"
+								aria-label="Send analysis to trainer"
+							>
+								<BotMessageSquare className="w-3.5 h-3.5" />
+								{isSendingToTrainer ? "Sending..." : "Send to Trainer"}
+							</button>
+						)}
 						<button
 							type="button"
 							onClick={startStream}
@@ -156,6 +233,14 @@ export function ActivityAnalysis({
 										Retry
 									</button>
 								</div>
+							</div>
+						)}
+
+						{toolCalls.length > 0 && (
+							<div className="flex flex-col gap-1.5 mb-3">
+								{toolCalls.map((tc) => (
+									<ToolCallCard key={tc.id} toolCall={tc} />
+								))}
 							</div>
 						)}
 
