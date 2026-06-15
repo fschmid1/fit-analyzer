@@ -107,6 +107,8 @@ export interface StoredActivity {
 	createdAt: string;
 	/** Server-persisted markdown ride analysis, if generated. */
 	analysis?: string | null;
+	/** Server-persisted tool calls that produced the analysis. */
+	analysisToolCalls?: UIToolCall[];
 }
 
 /** POST body for creating an activity */

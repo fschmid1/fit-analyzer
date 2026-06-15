@@ -249,6 +249,7 @@ export async function fetchActivity(id: string): Promise<
 		intervalMinutes: string;
 		customRanges: [number, number][];
 		analysis?: string | null;
+		analysisToolCalls?: UIToolCall[];
 	}
 > {
 	const res = await fetch(`${API_BASE}/activities/${id}`);
@@ -266,6 +267,7 @@ export async function fetchActivity(id: string): Promise<
 		intervalMinutes: data.intervalMinutes ?? "",
 		customRanges: data.customRanges ?? [],
 		analysis: data.analysis ?? null,
+		analysisToolCalls: data.analysisToolCalls ?? undefined,
 	};
 }
 

@@ -22,6 +22,7 @@ interface AnalysisViewProps {
 	activity: ParsedActivity;
 	activityId: string;
 	analysis?: string | null;
+	analysisToolCalls?: UIToolCall[];
 	isSendingToTrainer?: boolean;
 	selectionRange: [number, number] | null;
 	chartZoom: [number, number] | null;
@@ -42,6 +43,7 @@ export function AnalysisView({
 	activity,
 	activityId,
 	analysis,
+	analysisToolCalls,
 	isSendingToTrainer,
 	selectionRange,
 	chartZoom,
@@ -114,6 +116,7 @@ export function AnalysisView({
 			<ActivityAnalysis
 				activityId={activityId}
 				initialAnalysis={analysis}
+				initialToolCalls={analysisToolCalls}
 				onSendToTrainer={onSendAnalysisToTrainer}
 				isSendingToTrainer={isSendingToTrainer}
 			/>

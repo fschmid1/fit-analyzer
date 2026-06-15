@@ -345,11 +345,11 @@ async function resolveThreadModel(
 const trainer = new Hono();
 
 const updateActivityAnalysisStmt = db.prepare(
-	"UPDATE activities SET analysis = ? WHERE id = ? AND user_id = ?",
+	"UPDATE activities SET analysis = ?, analysis_tool_calls = ? WHERE id = ? AND user_id = ?",
 );
 
 const getActivityStmt = db.prepare(
-	`SELECT id, summary, records, laps, intervals, interval_minutes, custom_ranges, analysis
+	`SELECT id, summary, records, laps, intervals, interval_minutes, custom_ranges, analysis, analysis_tool_calls
    FROM activities WHERE id = ? AND user_id = ?`,
 );
 
@@ -463,7 +463,7 @@ trainer.post("/analyze/:activityId", async (c) => {
 		intervals: string;
 		interval_minutes: string;
 		custom_ranges: string;
-		analysis: string | null;
+		analysis_tool_calls: string | null;
 	} | null;
 
 	if (!row) {
@@ -523,6 +523,7 @@ trainer.post("/analyze/:activityId", async (c) => {
 		});
 
 		let fullText = "";
+		const analysisToolCalls: UIToolCall[] = [];
 		const wrappedStream = (async function* () {
 			try {
 				for await (const chunk of stream) {
@@ -534,6 +535,32 @@ trainer.post("/analyze/:activityId", async (c) => {
 									? chunk.content
 									: "";
 						fullText += delta;
+					} else if (chunk.type === "TOOL_RESULT") {
+						const toolChunk = chunk;
+						const existing = analysisToolCalls.find(
+							(t) => t.id === toolChunk.toolCallId,
+						);
+						const incoming: UIToolCall = {
+							id: toolChunk.toolCallId,
+							name: toolChunk.toolName,
+							arguments: existing?.arguments ?? {},
+							status: toolChunk.error ? "error" : "done",
+							result: {
+								id: toolChunk.toolCallId,
+								name: toolChunk.toolName,
+								content: toolChunk.content,
+								display: toolChunk.display,
+								error: toolChunk.error,
+							},
+						};
+						const idx = analysisToolCalls.findIndex(
+							(t) => t.id === incoming.id,
+						);
+						if (idx === -1) {
+							analysisToolCalls.push(incoming);
+						} else {
+							analysisToolCalls[idx] = incoming;
+						}
 					}
 					yield chunk;
 				}
@@ -552,7 +579,12 @@ trainer.post("/analyze/:activityId", async (c) => {
 			} finally {
 				if (fullText.trim()) {
 					try {
-						updateActivityAnalysisStmt.run(fullText.trim(), activityId, userId);
+						updateActivityAnalysisStmt.run(
+							fullText.trim(),
+							serializeToolCalls(analysisToolCalls),
+							activityId,
+							userId,
+						);
 					} catch (err) {
 						console.error(
 							`[analyze] Failed to persist analysis for activity ${activityId}:`,

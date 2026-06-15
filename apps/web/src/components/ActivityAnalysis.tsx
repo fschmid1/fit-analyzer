@@ -18,6 +18,7 @@ import { streamActivityAnalysis } from "../lib/api";
 interface ActivityAnalysisProps {
 	activityId: string;
 	initialAnalysis: string | null | undefined;
+	initialToolCalls?: UIToolCall[];
 	onSendToTrainer?: (text: string, toolCalls?: UIToolCall[]) => void;
 	isSendingToTrainer?: boolean;
 }
@@ -30,6 +31,7 @@ type AnalysisState =
 export function ActivityAnalysis({
 	activityId,
 	initialAnalysis,
+	initialToolCalls,
 	onSendToTrainer,
 	isSendingToTrainer,
 }: ActivityAnalysisProps) {
@@ -37,7 +39,9 @@ export function ActivityAnalysis({
 	const [expanded, setExpanded] = useState(!hasCached);
 	const [analysis, setAnalysis] = useState(initialAnalysis ?? null);
 	const [state, setState] = useState<AnalysisState>({ status: "idle" });
-	const [toolCalls, setToolCalls] = useState<UIToolCall[]>([]);
+	const [toolCalls, setToolCalls] = useState<UIToolCall[]>(
+		initialToolCalls ?? [],
+	);
 	const abortRef = useRef<AbortController | null>(null);
 	const hasTriggeredRef = useRef(false);
 	const streamIdRef = useRef<string | null>(null);

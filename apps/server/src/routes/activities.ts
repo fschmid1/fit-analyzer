@@ -7,6 +7,7 @@ import type {
 	StoredRecord,
 	CreateActivityBody,
 	UpdateIntervalsBody,
+	UIToolCall,
 } from "@fit-analyzer/shared";
 import {
 	computeDistanceKm,
@@ -35,7 +36,7 @@ const listStmt = db.prepare(
 );
 
 const getStmt = db.prepare(
-	`SELECT id, date, summary, records, laps, intervals, interval_minutes, custom_ranges, created_at as createdAt, analysis
+	`SELECT id, date, summary, records, laps, intervals, interval_minutes, custom_ranges, created_at as createdAt, analysis, analysis_tool_calls as analysisToolCalls
    FROM activities
    WHERE id = ? AND user_id = ?`,
 );
@@ -152,6 +153,7 @@ activities.get("/:id", (c) => {
 		custom_ranges: string;
 		createdAt: string;
 		analysis: string | null;
+		analysisToolCalls: string | null;
 	} | null;
 
 	if (!row) {
@@ -166,6 +168,18 @@ activities.get("/:id", (c) => {
 		updateSummaryStmt.run(JSON.stringify(summary), row.id, userId);
 	}
 
+	let analysisToolCalls: UIToolCall[] | undefined;
+	if (row.analysisToolCalls) {
+		try {
+			const parsed = JSON.parse(row.analysisToolCalls) as unknown;
+			if (Array.isArray(parsed)) {
+				analysisToolCalls = parsed as UIToolCall[];
+			}
+		} catch {
+			// Ignore malformed persisted tool calls.
+		}
+	}
+
 	const activity: StoredActivity = {
 		id: row.id,
 		date: row.date,
@@ -177,6 +191,7 @@ activities.get("/:id", (c) => {
 		customRanges: JSON.parse(row.custom_ranges || "[]"),
 		createdAt: row.createdAt,
 		analysis: row.analysis,
+		analysisToolCalls,
 	};
 
 	return c.json(activity);

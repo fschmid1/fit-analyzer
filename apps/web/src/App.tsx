@@ -47,6 +47,7 @@ function App() {
 	const [historyLoading, setHistoryLoading] = useState(true);
 	const [user, setUser] = useState<UserInfo | null>(null);
 	const [analysis, setAnalysis] = useState<string | null>(null);
+	const [analysisToolCalls, setAnalysisToolCalls] = useState<UIToolCall[]>([]);
 
 	const [selectionRange, setSelectionRange] = useState<[number, number] | null>(
 		null,
@@ -85,6 +86,7 @@ function App() {
 					setActivity(data);
 					setActivityId(data.id);
 					setAnalysis(data.analysis ?? null);
+					setAnalysisToolCalls(data.analysisToolCalls ?? []);
 
 					const mins = data.intervalMinutes || "";
 					setSavedIntervalMinutes(mins);
@@ -134,6 +136,8 @@ function App() {
 		setCustomIntervals([]);
 		setIntervalMinutes("");
 		setSavedIntervalMinutes("");
+		setAnalysis(null);
+		setAnalysisToolCalls([]);
 		clearCustomIntervals();
 		clearIntervalMinutes();
 	}, []);
@@ -164,6 +168,7 @@ function App() {
 				setActivity(data);
 				setActivityId(data.id);
 				setAnalysis(data.analysis ?? null);
+				setAnalysisToolCalls(data.analysisToolCalls ?? []);
 				loadedActivityId.current = data.id;
 
 				setSelectionRange(null);
@@ -341,6 +346,7 @@ function App() {
 			activity={activity}
 			activityId={activityId ?? ""}
 			analysis={analysis}
+			analysisToolCalls={analysisToolCalls}
 			isSendingToTrainer={sendingToTrainer}
 			selectionRange={selectionRange}
 			chartZoom={chartZoom}

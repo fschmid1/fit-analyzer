@@ -225,6 +225,14 @@ try {
 	/* column already exists */
 }
 
+// Migration: add analysis_tool_calls column to activities
+// (nullable TEXT, stores JSON array of UIToolCall for the generated analysis)
+try {
+	db.exec("ALTER TABLE activities ADD COLUMN analysis_tool_calls TEXT");
+} catch {
+	/* column already exists */
+}
+
 // Migration: add strava_activity_id to activities for duplicate prevention
 try {
 	db.exec("ALTER TABLE activities ADD COLUMN strava_activity_id TEXT");
