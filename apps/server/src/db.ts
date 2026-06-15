@@ -217,6 +217,14 @@ try {
 	/* column already exists */
 }
 
+// Migration: add analysis column to activities
+// (nullable TEXT, stores markdown ride report)
+try {
+	db.exec("ALTER TABLE activities ADD COLUMN analysis TEXT");
+} catch {
+	/* column already exists */
+}
+
 // Migration: add strava_activity_id to activities for duplicate prevention
 try {
 	db.exec("ALTER TABLE activities ADD COLUMN strava_activity_id TEXT");

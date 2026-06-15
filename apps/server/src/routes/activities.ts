@@ -35,7 +35,7 @@ const listStmt = db.prepare(
 );
 
 const getStmt = db.prepare(
-	`SELECT id, date, summary, records, laps, intervals, interval_minutes, custom_ranges, created_at as createdAt
+	`SELECT id, date, summary, records, laps, intervals, interval_minutes, custom_ranges, created_at as createdAt, analysis
    FROM activities
    WHERE id = ? AND user_id = ?`,
 );
@@ -151,6 +151,7 @@ activities.get("/:id", (c) => {
 		interval_minutes: string;
 		custom_ranges: string;
 		createdAt: string;
+		analysis: string | null;
 	} | null;
 
 	if (!row) {
@@ -175,6 +176,7 @@ activities.get("/:id", (c) => {
 		intervalMinutes: row.interval_minutes || "",
 		customRanges: JSON.parse(row.custom_ranges || "[]"),
 		createdAt: row.createdAt,
+		analysis: row.analysis,
 	};
 
 	return c.json(activity);

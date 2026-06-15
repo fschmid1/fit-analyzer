@@ -1,5 +1,9 @@
 import type {
+	ActivitySummary,
+	Interval,
+	LapMarker,
 	SaveTrainerHistoryBody,
+	StoredRecord,
 	TrainerMessage,
 	UIToolCall,
 } from "@fit-analyzer/shared";
@@ -339,6 +343,241 @@ async function resolveThreadModel(
 }
 
 const trainer = new Hono();
+
+const updateActivityAnalysisStmt = db.prepare(
+	"UPDATE activities SET analysis = ? WHERE id = ? AND user_id = ?",
+);
+
+const getActivityStmt = db.prepare(
+	`SELECT id, summary, records, laps, intervals, interval_minutes, custom_ranges, analysis
+   FROM activities WHERE id = ? AND user_id = ?`,
+);
+
+// ─── Inline activity analysis ───────────────────────────────────────────────
+
+const ANALYSIS_SYSTEM_PROMPT =
+	"You are an expert endurance sports coach specialising in cycling. " +
+	"Analyze the provided ride and produce a structured markdown report. " +
+	"Use exactly these sections in this order:\n\n" +
+	"## Overview\n" +
+	"Brief summary of the ride: duration, distance (if available), key metrics.\n\n" +
+	"## Intensity Distribution\n" +
+	"Describe how power/heart rate was distributed across the ride. Reference peak values where relevant.\n\n" +
+	"## Key Efforts\n" +
+	"Highlight the most notable intervals, climbs, sprints, or sustained efforts. Be specific with durations and watts/HR where available.\n\n" +
+	"## Highlights\n" +
+	"Mention anything that stands out positively: consistency, pacing, breakthroughs, strong finishes.\n\n" +
+	"## Suggestions\n" +
+	"Give 2-4 concise, actionable training suggestions based on the data.\n\n" +
+	"Keep the report factual, encouraging, and actionable. Use markdown formatting only.";
+
+function formatRideContext(activity: {
+	summary: ActivitySummary;
+	records: StoredRecord[];
+	laps: LapMarker[];
+	intervals: Interval[];
+}): string {
+	const { summary, records, laps, intervals } = activity;
+	const durationMin = Math.round(summary.totalTimerTime / 60);
+	let text = `Ride date: ${summary.date}\n`;
+	text += `Duration: ${durationMin} minutes\n`;
+	if (summary.totalDistanceKm != null)
+		text += `Distance: ${summary.totalDistanceKm.toFixed(1)} km\n`;
+	if (summary.avgPower != null)
+		text += `Average power: ${summary.avgPower} W\n`;
+	if (summary.normalizedPower != null)
+		text += `Normalized power: ${summary.normalizedPower} W\n`;
+	if (summary.maxPower != null) text += `Max power: ${summary.maxPower} W\n`;
+	if (summary.avgHeartRate != null)
+		text += `Average heart rate: ${summary.avgHeartRate} bpm\n`;
+	if (summary.maxHeartRate != null)
+		text += `Max heart rate: ${summary.maxHeartRate} bpm\n`;
+	if (summary.avgCadence != null)
+		text += `Average cadence: ${summary.avgCadence} rpm\n`;
+	if (summary.totalWork != null)
+		text += `Total work: ${summary.totalWork} kJ\n`;
+	if (summary.peak1minPower != null)
+		text += `Peak 1 min power: ${summary.peak1minPower} W\n`;
+	if (summary.peak5minPower != null)
+		text += `Peak 5 min power: ${summary.peak5minPower} W\n`;
+	if (summary.peak20minPower != null)
+		text += `Peak 20 min power: ${summary.peak20minPower} W\n`;
+
+	text += `\nRecords: ${records.length} data points.\n`;
+
+	if (laps.length > 0) {
+		text += `\nLaps (${laps.length}):\n`;
+		for (const [i, lap] of laps.entries()) {
+			const lapMin = Math.round((lap.endSeconds - lap.startSeconds) / 60);
+			text += `- Lap ${i + 1}: ${lapMin} min`;
+			if (lap.avgPower != null) text += `, avg ${lap.avgPower} W`;
+			if (lap.avgHeartRate != null) text += `, avg HR ${lap.avgHeartRate} bpm`;
+			text += "\n";
+		}
+	}
+
+	if (intervals.length > 0) {
+		text += `\nDetected intervals (${intervals.length}):\n`;
+		for (const [i, int] of intervals.entries()) {
+			const intMin = Math.round(int.duration / 60);
+			text += `- Interval ${i + 1}: ${intMin} min`;
+			if (int.avgPower != null) text += `, avg ${int.avgPower} W`;
+			if (int.normalizedPower != null) text += `, NP ${int.normalizedPower} W`;
+			if (int.avgHeartRate != null) text += `, avg HR ${int.avgHeartRate} bpm`;
+			text += "\n";
+		}
+	}
+
+	return text;
+}
+
+trainer.post("/analyze/:activityId", async (c) => {
+	let userId: string;
+	try {
+		userId = getUserId(c);
+	} catch {
+		return c.json(
+			{ error: "Unauthorized — missing x-authentik-username header" },
+			401,
+		);
+	}
+
+	const { activityId } = c.req.param();
+	const row = getActivityStmt.get(activityId, userId) as {
+		id: string;
+		summary: string;
+		records: string;
+		laps: string;
+		intervals: string;
+		interval_minutes: string;
+		custom_ranges: string;
+		analysis: string | null;
+	} | null;
+
+	if (!row) {
+		return c.json({ error: "Activity not found" }, 404);
+	}
+
+	const activity = {
+		summary: JSON.parse(row.summary) as ActivitySummary,
+		records: JSON.parse(row.records) as StoredRecord[],
+		laps: JSON.parse(row.laps),
+		intervals: JSON.parse(row.intervals || "[]") as Interval[],
+	};
+
+	const model = await getCoachModelSettings(userId).then((s) => s.coachModel);
+	const providerConfig = await getProviderConfig(model);
+
+	if (!providerConfig.apiKey) {
+		return c.json(
+			{ error: `${providerConfig.apiKeyEnvName} is not configured` },
+			500,
+		);
+	}
+
+	const systemPrompt = ANALYSIS_SYSTEM_PROMPT;
+	const rideContext = formatRideContext(activity);
+	const messages: ModelMessage[] = [
+		{ role: "user", content: `Analyze this ride.\n\n${rideContext}` },
+	];
+
+	const stream = createTrainerToolLoop({
+		baseUrl: providerConfig.baseUrl,
+		apiKey: providerConfig.apiKey,
+		model,
+		systemPrompt,
+		messages,
+		provider: providerConfig.provider,
+		includeReasoning: providerConfig.includeReasoning,
+		threadId: undefined,
+		userId,
+		tools: getToolDefinitions(),
+		abortSignal: c.req.raw.signal,
+	});
+
+	let fullText = "";
+	const transformed = (async function* () {
+		try {
+			for await (const chunk of stream) {
+				if (chunk.type === "TEXT_MESSAGE_CONTENT") {
+					const delta =
+						"delta" in chunk && typeof chunk.delta === "string"
+							? chunk.delta
+							: "content" in chunk && typeof chunk.content === "string"
+								? chunk.content
+								: "";
+					fullText += delta;
+				}
+				yield chunk;
+			}
+		} catch (error) {
+			console.error(
+				`[analyze] Stream error for activity ${activityId}:`,
+				error,
+			);
+			yield {
+				type: "RUN_ERROR",
+				timestamp: Date.now(),
+				error: {
+					message: error instanceof Error ? error.message : "Analysis failed",
+				},
+			};
+		} finally {
+			if (fullText.trim()) {
+				try {
+					updateActivityAnalysisStmt.run(fullText.trim(), activityId, userId);
+				} catch (err) {
+					console.error(
+						`[analyze] Failed to persist analysis for activity ${activityId}:`,
+						err,
+					);
+				}
+			}
+		}
+	})();
+
+	return new Response(
+		new ReadableStream({
+			async start(controller) {
+				try {
+					for await (const chunk of transformed) {
+						controller.enqueue(`data: ${JSON.stringify(chunk)}\n\n`);
+					}
+					controller.enqueue("data: [DONE]\n\n");
+					controller.close();
+				} catch (error) {
+					controller.enqueue(
+						`data: ${JSON.stringify({
+							type: "RUN_ERROR",
+							timestamp: Date.now(),
+							error: {
+								message:
+									error instanceof Error ? error.message : "Analysis failed",
+							},
+						})}\n\n`,
+					);
+					controller.enqueue("data: [DONE]\n\n");
+					controller.close();
+				}
+			},
+			cancel() {
+				if (c.req.raw.signal) {
+					// Use the trainer tool loop's internal abort by tearing down
+					// the request signal. Hono/Bun surfaces this as aborted.
+					// We can't call .abort() on older AbortSignal types; rely on
+					// the stream generator observing signal.aborted instead.
+				}
+			},
+		}),
+		{
+			headers: {
+				"Content-Type": "text/event-stream",
+				"Cache-Control": "no-cache",
+				Connection: "keep-alive",
+			},
+		},
+	);
+});
 
 // ─── Chat streaming ───────────────────────────────────────────────────────────
 

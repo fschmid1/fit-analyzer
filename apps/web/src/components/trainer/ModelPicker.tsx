@@ -1,12 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { ChevronDown, Search, Star } from "lucide-react";
 import {
 	AVAILABLE_MODELS,
 	getCoachModelDisplayName,
 	getModelProvider,
 	type ModelEntry,
 } from "@fit-analyzer/shared";
+import { ChevronDown, Search, Star } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 interface ModelPickerProps {
 	currentModel: string | null;

@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useSpring, animated } from "@react-spring/web";
-import { Clipboard, Check, BotMessageSquare } from "lucide-react";
+import { Clipboard, Check } from "lucide-react";
 import type { ActivitySummary, Interval } from "@fit-analyzer/shared";
 import { formatCopyBoxText } from "../lib/formatters";
 
@@ -32,10 +32,9 @@ function AnimatedButton({
 interface CopyBoxProps {
 	summary: ActivitySummary;
 	intervals: Interval[];
-	onSendToTrainer: (text: string) => void;
 }
 
-export function CopyBox({ summary, intervals, onSendToTrainer }: CopyBoxProps) {
+export function CopyBox({ summary, intervals }: CopyBoxProps) {
 	const [copied, setCopied] = useState(false);
 
 	const text = useMemo(
@@ -68,13 +67,6 @@ export function CopyBox({ summary, intervals, onSendToTrainer }: CopyBoxProps) {
 						Activity Summary
 					</p>
 					<div className="flex items-center gap-2">
-						<AnimatedButton
-							onClick={() => onSendToTrainer(text)}
-							className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-[background-color,border-color,color] duration-200 cursor-pointer bg-[#8b5cf6]/10 text-[#8b5cf6] hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
-						>
-							<BotMessageSquare className="w-3.5 h-3.5" />
-							Send to Trainer
-						</AnimatedButton>
 						<AnimatedButton
 							onClick={handleCopy}
 							className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-[background-color,border-color,color] duration-200 cursor-pointer ${

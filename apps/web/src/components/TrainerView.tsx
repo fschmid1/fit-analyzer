@@ -32,13 +32,13 @@ import { TrainerCompareView, MAX_COMPARE_THREADS } from "./TrainerCompareView";
 import { toUIMessage, reconstructToolCalls } from "./trainer/trainerHelpers";
 
 interface TrainerViewProps {
-	initialMessage: string;
+	initialMessage?: string;
 	activityId: string;
 	onBack: () => void;
 }
 
 export function TrainerView({
-	initialMessage,
+	initialMessage = "",
 	activityId,
 	onBack,
 }: TrainerViewProps) {

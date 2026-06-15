@@ -42,7 +42,6 @@ function App() {
 	const [activities, setActivities] = useState<ActivityListItem[]>([]);
 	const [historyLoading, setHistoryLoading] = useState(true);
 	const [user, setUser] = useState<UserInfo | null>(null);
-	const [trainerInitialMessage, setTrainerInitialMessage] = useState("");
 
 	const [selectionRange, setSelectionRange] = useState<[number, number] | null>(
 		null,
@@ -298,16 +297,7 @@ function App() {
 		[],
 	);
 
-	const handleSendToTrainer = useCallback(
-		(text: string) => {
-			setTrainerInitialMessage(text);
-			navigate("/trainer");
-		},
-		[navigate],
-	);
-
 	const handleOpenTrainer = useCallback(() => {
-		setTrainerInitialMessage("");
 		navigate("/trainer");
 	}, [navigate]);
 
@@ -315,6 +305,7 @@ function App() {
 		<AnalysisView
 			activity={activity}
 			activityId={activityId ?? ""}
+			analysis={null}
 			selectionRange={selectionRange}
 			chartZoom={chartZoom}
 			chartIntervalRanges={chartIntervalRanges}
@@ -327,7 +318,6 @@ function App() {
 			onIntervalMinutesChange={handleIntervalMinutesChange}
 			onAddInterval={handleAddInterval}
 			onRemoveCustomInterval={handleRemoveCustomInterval}
-			onSendToTrainer={handleSendToTrainer}
 		/>
 	) : null;
 
@@ -360,11 +350,7 @@ function App() {
 				<Route
 					path="/trainer/:threadId?"
 					element={
-						<TrainerView
-							initialMessage={trainerInitialMessage}
-							activityId="general"
-							onBack={() => navigate(-1)}
-						/>
+						<TrainerView activityId="general" onBack={() => navigate(-1)} />
 					}
 				/>
 				<Route path="/stats" element={<StatsPage />} />

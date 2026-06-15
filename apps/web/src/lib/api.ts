@@ -246,6 +246,7 @@ export async function fetchActivity(id: string): Promise<
 		intervals: Interval[];
 		intervalMinutes: string;
 		customRanges: [number, number][];
+		analysis?: string | null;
 	}
 > {
 	const res = await fetch(`${API_BASE}/activities/${id}`);
@@ -262,7 +263,84 @@ export async function fetchActivity(id: string): Promise<
 		intervals: data.intervals ?? [],
 		intervalMinutes: data.intervalMinutes ?? "",
 		customRanges: data.customRanges ?? [],
+		analysis: data.analysis ?? null,
 	};
+}
+
+export async function streamActivityAnalysis(
+	activityId: string,
+	onChunk: (text: string) => void,
+	signal?: AbortSignal,
+): Promise<string> {
+	const res = await fetch(`${API_BASE}/trainer/analyze/${activityId}`, {
+		method: "POST",
+		signal,
+	});
+	if (!res.ok) {
+		const data = await res.json().catch(() => ({ error: "Analysis failed" }));
+		throw new Error((data as { error?: string }).error ?? "Analysis failed");
+	}
+
+	const reader = res.body?.getReader();
+	if (!reader) throw new Error("Analysis response body is not readable");
+
+	const decoder = new TextDecoder();
+	let buffer = "";
+	let accumulated = "";
+
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+
+		buffer += decoder.decode(value, { stream: true });
+		const events = buffer.split("\n\n");
+		buffer = events.pop() ?? "";
+
+		for (const event of events) {
+			const dataLine = event
+				.split("\n")
+				.find((line) => line.startsWith("data: "));
+			if (!dataLine) continue;
+			const payload = dataLine.slice(6).trim();
+			if (payload === "[DONE]") {
+				onChunk(accumulated);
+				return accumulated;
+			}
+			if (!payload) continue;
+			try {
+				const chunk = JSON.parse(payload) as {
+					type: string;
+					delta?: string;
+					content?: string;
+					error?: { message?: string };
+				};
+				if (chunk.type === "RUN_ERROR") {
+					throw new Error(
+						chunk.error?.message ?? "Analysis stream reported an error",
+					);
+				}
+				if (chunk.type === "TEXT_MESSAGE_CONTENT") {
+					const delta =
+						typeof chunk.delta === "string"
+							? chunk.delta
+							: typeof chunk.content === "string"
+								? chunk.content
+								: "";
+					accumulated += delta;
+					onChunk(accumulated);
+				}
+			} catch {
+				// Ignore malformed chunks so the stream stays resilient.
+			}
+		}
+	}
+
+	if (signal?.aborted) {
+		throw new Error("Analysis aborted");
+	}
+
+	onChunk(accumulated);
+	return accumulated;
 }
 
 export async function saveActivityToServer(

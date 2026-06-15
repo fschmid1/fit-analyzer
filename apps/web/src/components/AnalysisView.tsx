@@ -4,6 +4,7 @@ import type {
 	ChartHighlight,
 } from "@fit-analyzer/shared";
 import { ActivityChart } from "./ActivityChart";
+import { ActivityAnalysis } from "./ActivityAnalysis";
 import { CopyBox } from "./CopyBox";
 import { IntervalList } from "./IntervalList";
 import { RouteMap } from "./RouteMap";
@@ -19,6 +20,7 @@ import {
 interface AnalysisViewProps {
 	activity: ParsedActivity;
 	activityId: string;
+	analysis?: string | null;
 	selectionRange: [number, number] | null;
 	chartZoom: [number, number] | null;
 	chartIntervalRanges: [number, number][];
@@ -31,12 +33,12 @@ interface AnalysisViewProps {
 	onIntervalMinutesChange: (minutes: string) => void;
 	onAddInterval: (startSeconds: number, endSeconds: number) => void;
 	onRemoveCustomInterval: (index: number) => void;
-	onSendToTrainer: (text: string) => void;
 }
 
 export function AnalysisView({
 	activity,
 	activityId,
+	analysis,
 	selectionRange,
 	chartZoom,
 	chartIntervalRanges,
@@ -49,7 +51,6 @@ export function AnalysisView({
 	onIntervalMinutesChange,
 	onAddInterval,
 	onRemoveCustomInterval,
-	onSendToTrainer,
 }: AnalysisViewProps) {
 	const [allHighlights, setAllHighlights] =
 		useState<ChartHighlight[]>(getChartHighlights);
@@ -105,11 +106,9 @@ export function AnalysisView({
 
 			<SummaryCards summary={activity.summary} />
 
-			<CopyBox
-				summary={activity.summary}
-				intervals={allIntervals}
-				onSendToTrainer={onSendToTrainer}
-			/>
+			<ActivityAnalysis activityId={activityId} initialAnalysis={analysis} />
+
+			<CopyBox summary={activity.summary} intervals={allIntervals} />
 		</div>
 	);
 }

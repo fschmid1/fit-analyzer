@@ -105,6 +105,8 @@ export interface StoredActivity {
 	intervalMinutes: string;
 	customRanges: [number, number][];
 	createdAt: string;
+	/** Server-persisted markdown ride analysis, if generated. */
+	analysis?: string | null;
 }
 
 /** POST body for creating an activity */
