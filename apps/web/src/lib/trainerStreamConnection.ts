@@ -33,9 +33,10 @@ function createQueue() {
 		},
 		reset() {
 			buffer.length = 0;
-			const pending = waiters;
-			waiters = [];
-			for (const waiter of pending) waiter(null);
+			// Do NOT resolve waiters here: they belong to the current consumer
+			// that is already subscribed and waiting for chunks from the new stream.
+			// Resolving them with null would kill the subscription before the first
+			// chunk ever arrives, causing "first never renders".
 			closed = false;
 		},
 		async *subscribe(abortSignal?: AbortSignal): AsyncIterable<TrainerChunk> {
