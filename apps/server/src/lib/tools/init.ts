@@ -1,3 +1,4 @@
+import { healthDataDefinition, healthDataHandler } from "./healthData.js";
 import {
 	activityLookupDefinition,
 	activityLookupHandler,
@@ -72,4 +73,5 @@ export function initTools(): void {
 	registerTool(rideRecommendationDefinition, rideRecommendationHandler);
 	registerTool(highlightChartDefinition, highlightChartHandler);
 	registerTool(updateProfileDefinition, updateProfileHandler);
+	registerTool(healthDataDefinition, healthDataHandler);
 }

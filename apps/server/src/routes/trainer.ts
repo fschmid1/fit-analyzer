@@ -1,34 +1,35 @@
 import type {
-	SaveTrainerHistoryBody,
-	TrainerMessage,
-	UIToolCall,
+    SaveTrainerHistoryBody,
+    TrainerMessage,
+    UIToolCall,
 } from "@fit-analyzer/shared";
-import {
-	APPROX_CHARS_PER_TOKEN,
-	AVAILABLE_MODELS,
-	getModelProvider,
-} from "@fit-analyzer/shared";
+import
+    {
+        APPROX_CHARS_PER_TOKEN,
+        AVAILABLE_MODELS,
+        getModelProvider,
+    } from "@fit-analyzer/shared";
 import { convertMessagesToModelMessages } from "@tanstack/ai";
 import { Hono } from "hono";
 import { db } from "../db.js";
 import { env } from "../env.js";
 import { getCoachModelSettings } from "../lib/coachModelSettings.js";
 import { getOllamaModels } from "../lib/ollamaModelCache.js";
-import {
-	parseCoachingMarkdown,
-	serializeCoachingMarkdown,
-} from "../lib/parseCoachingMarkdown.js";
+import
+    {
+        parseCoachingMarkdown,
+        serializeCoachingMarkdown,
+    } from "../lib/parseCoachingMarkdown.js";
 import { getToolDefinitions } from "../lib/tools/registry.js";
+import
+    {
+        cancelTrainerStream,
+        createTrainerStreamConsumer,
+        hasActiveTrainerStream,
+        startTrainerStreamProducer,
+        verifyStreamOwner,
+    } from "../lib/trainerStreamRegistry.js";
 import { createTrainerToolLoop } from "../lib/trainerToolLoop.js";
-import {
-	createTrainerStreamConsumer,
-	hasActiveTrainerStream,
-	startTrainerStreamProducer,
-	verifyStreamOwner,
-	cancelTrainerStream,
-} from "../lib/trainerStreamRegistry.js";
-import { buildTrainerAthleteContext } from "../lib/trainerSystemPrompt.js";
-import { formatCurrentActivity } from "../lib/trainerSystemPrompt.js";
 
 const BASE_SYSTEM_PROMPT =
 	"You are an expert endurance sports coach specialising in cycling and triathlon. " +
@@ -38,6 +39,8 @@ const BASE_SYSTEM_PROMPT =
 	"If a thread is linked to an activity, activity-specific tools (highlight_chart, analyze_intervals, zone_analysis, etc.) " +
 	"automatically use that activity. In general chat, you MUST provide an explicit activityId parameter to any activity-specific tool. " +
 	"If you do not know the activityId, ask the user for it rather than guessing.\n\n" +
+	"When you need athlete context (health metrics, profile, training history, sleep, recovery), call the health_data tool. " +
+	"Do not assume you already know the athlete's FTP, goals, or recovery status — fetch it via health_data.\n\n" +
 	"When the user refers to a date or time (e.g. yesterday, last week, a specific day), you MUST call the current_time tool FIRST " +
 	"before any other tool, then compute the absolute YYYY-MM-DD date from the current time before calling date-based tools. " +
 	"Never guess the current date.\n\n" +
@@ -50,14 +53,10 @@ const BASE_SYSTEM_PROMPT =
 	"Avoid redundant lookups — if you already retrieved activity data, do not fetch it again.";
 
 async function buildSystemPrompt(
-	userId: string,
-	activityId?: string,
+	_userId: string,
+	_activityId?: string,
 ): Promise<string> {
-	const athleteContext = await buildTrainerAthleteContext(userId);
-	const activityContext = activityId
-		? await formatCurrentActivity(activityId, userId)
-		: "";
-	return `${BASE_SYSTEM_PROMPT}${athleteContext}${activityContext}`;
+	return BASE_SYSTEM_PROMPT;
 }
 
 const COMPACTION_KEEP_RECENT_MESSAGES_PER_ROLE = 4;
