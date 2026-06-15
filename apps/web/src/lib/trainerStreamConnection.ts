@@ -3,7 +3,6 @@ import type { ConnectionAdapter } from "@tanstack/ai-client";
 import type { ToolStreamChunk } from "@fit-analyzer/shared";
 import {
 	clearActiveTrainerStream,
-	loadActiveTrainerStream,
 	saveActiveTrainerStream,
 } from "./trainerStreamState";
 import { randomUUID } from "./randomUUID";
@@ -119,15 +118,12 @@ function getThreadIdFromData(data?: Record<string, unknown>): string {
 	return threadId;
 }
 
-export type TrainerStreamConnection = ConnectionAdapter & {
-	resumeActiveStream: (abortSignal?: AbortSignal) => boolean;
-};
+export type TrainerStreamConnection = ConnectionAdapter;
 
 export function createTrainerStreamConnection(
-	threadId: string,
+	_threadId: string,
 ): TrainerStreamConnection {
 	const queue = createQueue();
-	let resumeStarted = false;
 
 	const runStream = async (
 		request: Promise<Response>,
@@ -167,19 +163,7 @@ export function createTrainerStreamConnection(
 
 	return {
 		subscribe(abortSignal?: AbortSignal) {
-			const activeStream = loadActiveTrainerStream(threadId);
-			if (activeStream && !resumeStarted) {
-				resumeStarted = true;
-				void runStream(
-					fetch(`/api/trainer/chat/${activeStream.streamId}`, {
-						method: "GET",
-						credentials: "same-origin",
-						signal: abortSignal,
-					}),
-					threadId,
-					activeStream.streamId,
-				);
-			}
+			queue.reset();
 			return queue.subscribe(abortSignal) as AsyncIterable<StreamChunk>;
 		},
 		async send(messages, data, abortSignal) {
@@ -204,21 +188,6 @@ export function createTrainerStreamConnection(
 				activeThreadId,
 				streamId,
 			);
-		},
-		resumeActiveStream(abortSignal?: AbortSignal) {
-			const activeStream = loadActiveTrainerStream(threadId);
-			if (!activeStream || resumeStarted) return false;
-			resumeStarted = true;
-			void runStream(
-				fetch(`/api/trainer/chat/${activeStream.streamId}`, {
-					method: "GET",
-					credentials: "same-origin",
-					signal: abortSignal,
-				}),
-				threadId,
-				activeStream.streamId,
-			);
-			return true;
 		},
 	};
 }
