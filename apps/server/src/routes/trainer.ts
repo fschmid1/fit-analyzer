@@ -364,6 +364,7 @@ const ANALYSIS_SYSTEM_PROMPT =
 	"cardiac_drift for aerobic-decoupling trends, " +
 	"training_load for recent training context, " +
 	"and activity_lookup to compare with similar past rides. " +
+	"For any activity-specific tool call, pass the exact activityId provided by the user. " +
 	"Call the tools that are relevant to this ride, then base your report on their combined output. " +
 	"Use exactly these sections in this order:\n\n" +
 	"## Overview\n" +
@@ -378,15 +379,19 @@ const ANALYSIS_SYSTEM_PROMPT =
 	"Give 2-4 concise, actionable training suggestions based on the data, including recovery and next-workout ideas.\n\n" +
 	"Keep the report factual, encouraging, and actionable. Use markdown formatting only.";
 
-function formatRideContext(activity: {
-	summary: ActivitySummary;
-	records: StoredRecord[];
-	laps: LapMarker[];
-	intervals: Interval[];
-}): string {
+function formatRideContext(
+	activityId: string,
+	activity: {
+		summary: ActivitySummary;
+		records: StoredRecord[];
+		laps: LapMarker[];
+		intervals: Interval[];
+	},
+): string {
 	const { summary, records, laps, intervals } = activity;
 	const durationMin = Math.round(summary.totalTimerTime / 60);
-	let text = `Ride date: ${summary.date}\n`;
+	let text = `Activity ID: ${activityId}\n`;
+	text += `Ride date: ${summary.date}\n`;
 	text += `Duration: ${durationMin} minutes\n`;
 	if (summary.totalDistanceKm != null)
 		text += `Distance: ${summary.totalDistanceKm.toFixed(1)} km\n`;
@@ -483,9 +488,12 @@ trainer.post("/analyze/:activityId", async (c) => {
 	}
 
 	const systemPrompt = ANALYSIS_SYSTEM_PROMPT;
-	const rideContext = formatRideContext(activity);
+	const rideContext = formatRideContext(activityId, activity);
 	const messages: ModelMessage[] = [
-		{ role: "user", content: `Analyze this ride.\n\n${rideContext}` },
+		{
+			role: "user",
+			content: `Analyze this ride (activityId: ${activityId}).\n\n${rideContext}`,
+		},
 	];
 
 	const streamId =
