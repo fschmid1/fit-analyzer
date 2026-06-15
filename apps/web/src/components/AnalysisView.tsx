@@ -85,14 +85,16 @@ export function AnalysisView({
 
 			<StatsBar records={activity.records} selectionRange={selectionRange} />
 
-			<ActivityChart
-				records={activity.records}
-				onSelectionChange={onSelectionChange}
-				externalZoom={chartZoom}
-				intervalRanges={chartIntervalRanges}
-				onAddInterval={onAddInterval}
-				chartHighlights={chartHighlights}
-			/>
+			<div className="hidden md:block">
+				<ActivityChart
+					records={activity.records}
+					onSelectionChange={onSelectionChange}
+					externalZoom={chartZoom}
+					intervalRanges={chartIntervalRanges}
+					onAddInterval={onAddInterval}
+					chartHighlights={chartHighlights}
+				/>
+			</div>
 
 			<SummaryCards summary={activity.summary} />
 
