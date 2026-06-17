@@ -3,6 +3,7 @@
 	"tasks": {
 		"build": {
 			"dependsOn": ["^build"],
+			"env": ["GIT_COMMIT"],
 			"outputs": ["dist/**"]
 		},
 		"@fit-analyzer/server#build": {
