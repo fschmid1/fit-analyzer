@@ -1,6 +1,9 @@
 # Stage 1: Install dependencies and build
 FROM oven/bun:1-debian AS build
 
+ARG GIT_COMMIT
+ENV GIT_COMMIT=${GIT_COMMIT}
+
 WORKDIR /app
 
 # Copy workspace config files first for better layer caching

@@ -4,14 +4,19 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 
 const BUILD_TIME = new Date().toISOString();
-let gitCommit = "unknown";
-try {
-	gitCommit = execSync("git rev-parse --short HEAD", {
-		encoding: "utf8",
-		cwd: process.cwd(),
-	}).trim();
-} catch {
-	// git not available — leave as "unknown"
+let gitCommit = process.env.GIT_COMMIT?.trim();
+if (!gitCommit) {
+	try {
+		gitCommit = execSync("git rev-parse --short HEAD", {
+			encoding: "utf8",
+			cwd: process.cwd(),
+		}).trim();
+	} catch {
+		// git not available — leave as "unknown"
+	}
+}
+if (!gitCommit) {
+	gitCommit = "unknown";
 }
 const GIT_COMMIT = gitCommit;
 
