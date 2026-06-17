@@ -9,19 +9,21 @@ import type {
 
 interface HaeQuantityData {
 	date: string;
-	qty: number;
-	units: string;
+	qty?: number;
+	units?: string;
 	source?: string;
 }
 
 interface HaeHeartRateData extends HaeQuantityData {
-	Min: number;
-	Avg: number;
-	Max: number;
+	Min?: number;
+	Avg?: number;
+	Max?: number;
 }
 
 interface HaeSleepEntry {
 	date: string;
+	qty?: number;
+	units?: string;
 	totalSleep?: number;
 	asleep?: number;
 	core?: number;
@@ -36,7 +38,7 @@ interface HaeSleepEntry {
 
 interface HaeMetric {
 	name: string;
-	units: string;
+	units?: string;
 	data: Array<HaeQuantityData | HaeHeartRateData | HaeSleepEntry>;
 }
 
@@ -240,13 +242,13 @@ function ensureBodyComposition(
 	return snap.bodyComposition;
 }
 
-function convertWeightToKg(qty: number, units: string): number {
+function convertWeightToKg(qty: number, units: string | undefined): number {
 	if (units === "lb") return qty * 0.45359237;
 	if (units === "g") return qty / 1000;
 	return qty; // assume kg
 }
 
-function convertHeightToCm(qty: number, units: string): number {
+function convertHeightToCm(qty: number, units: string | undefined): number {
 	if (units === "in") return qty * 2.54;
 	if (units === "m") return qty * 100;
 	if (units === "ft") return qty * 30.48;
@@ -401,8 +403,11 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 				}
 				case "sleep_analysis": {
 					const entry = raw as HaeSleepEntry;
-					if (entry.totalSleep != null || entry.asleep != null) {
-						const totalHours = entry.totalSleep ?? entry.asleep ?? 0;
+					// HAE exports the total sleep value under the generic `qty` field
+					// when no dedicated `totalSleep`/`asleep` keys are present.
+					const totalHours =
+						entry.totalSleep ?? entry.asleep ?? entry.qty ?? null;
+					if (totalHours != null && totalHours > 0) {
 						const durationMinutes = Math.round(totalHours * 60);
 
 						// Compute efficiency if possible
