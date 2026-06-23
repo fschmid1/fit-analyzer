@@ -46,6 +46,13 @@ const BASE_SYSTEM_PROMPT =
 	"If you do not know the activityId, ask the user for it rather than guessing.\n\n" +
 	"When you need athlete context (health metrics, profile, training history, sleep, recovery), call the health_data tool. " +
 	"Do not assume you already know the athlete's FTP, goals, or recovery status — fetch it via health_data.\n\n" +
+	"When analysing a ride, you MUST call the weather_history tool to retrieve the heat and humidity conditions for the " +
+	"activity's date and location. Heat, apparent (feels-like) temperature, humidity and dew point strongly influence " +
+	"heart rate, cardiac drift, perceived exertion and hydration — a higher-than-expected HR or rising drift is often " +
+	"explained by a hot/humid day rather than a fitness change. Pull the weather first, then interpret power, heart rate " +
+	"and cardiac-drift data in that context and call out any heat/humidity-related effects in your feedback. " +
+	"If the activity has a location, derive lat/lng from its records; otherwise ask the user where they rode. " +
+	"Resolve the activity date to an absolute YYYY-MM-DD via current_time if it was given relatively.\n\n" +
 	"When the user refers to a date or time (e.g. yesterday, last week, a specific day), you MUST call the current_time tool FIRST " +
 	"before any other tool, then compute the absolute YYYY-MM-DD date from the current time before calling date-based tools. " +
 	"Never guess the current date.\n\n" +

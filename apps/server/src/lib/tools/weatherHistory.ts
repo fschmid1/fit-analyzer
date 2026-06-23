@@ -5,6 +5,11 @@ interface OpenMeteoDaily {
 	time?: string[];
 	temperature_2m_max?: number[];
 	temperature_2m_min?: number[];
+	apparent_temperature_max?: number[];
+	apparent_temperature_min?: number[];
+	relative_humidity_2m_max?: number[];
+	relative_humidity_2m_min?: number[];
+	dew_point_2m_max?: number[];
 	precipitation_sum?: number[];
 	wind_speed_10m_max?: number[];
 	wind_direction_10m_dominant?: number[];
@@ -35,7 +40,7 @@ function isValidLng(v: unknown): v is number {
 export const weatherHistoryDefinition: ToolDefinition = {
 	name: "weather_history",
 	description:
-		"Look up weather conditions (temperature, precipitation, wind) for a specific date and location. Works for both past dates (historical archive) and future dates up to 16 days ahead (forecast). Useful for contextualizing ride performance and planning upcoming rides. If the user mentions a relative date, call current_time first to resolve the absolute date.",
+		"Look up weather conditions (temperature, apparent temperature, humidity, dew point, precipitation, wind) for a specific date and location. Works for both past dates (historical archive) and future dates up to 16 days ahead (forecast). Useful for contextualizing ride performance — heat and humidity strongly affect cardiac drift, perceived exertion and hydration — and for planning upcoming rides. If the user mentions a relative date, call current_time first to resolve the absolute date.",
 	parameters: {
 		type: "object",
 		properties: {
@@ -84,6 +89,11 @@ async function fetchWeatherData(
 		[
 			"temperature_2m_max",
 			"temperature_2m_min",
+			"apparent_temperature_max",
+			"apparent_temperature_min",
+			"relative_humidity_2m_max",
+			"relative_humidity_2m_min",
+			"dew_point_2m_max",
 			"precipitation_sum",
 			"wind_speed_10m_max",
 			"wind_direction_10m_dominant",
@@ -147,6 +157,11 @@ export const weatherHistoryHandler: ToolHandler = async (args) => {
 	const idx = 0;
 	const tempMax = daily.temperature_2m_max?.[idx] ?? null;
 	const tempMin = daily.temperature_2m_min?.[idx] ?? null;
+	const feelsLikeMax = daily.apparent_temperature_max?.[idx] ?? null;
+	const feelsLikeMin = daily.apparent_temperature_min?.[idx] ?? null;
+	const humidityMax = daily.relative_humidity_2m_max?.[idx] ?? null;
+	const humidityMin = daily.relative_humidity_2m_min?.[idx] ?? null;
+	const dewPoint = daily.dew_point_2m_max?.[idx] ?? null;
 	const precip = daily.precipitation_sum?.[idx] ?? null;
 	const windMax = daily.wind_speed_10m_max?.[idx] ?? null;
 	const windDir = daily.wind_direction_10m_dominant?.[idx] ?? null;
@@ -159,6 +174,11 @@ export const weatherHistoryHandler: ToolHandler = async (args) => {
 		`${label} on ${date} at (${lat}, ${lng}):`,
 		`- High temperature: ${fmt(tempMax, "°C")}`,
 		`- Low temperature: ${fmt(tempMin, "°C")}`,
+		`- Feels-like high: ${fmt(feelsLikeMax, "°C")}`,
+		`- Feels-like low: ${fmt(feelsLikeMin, "°C")}`,
+		`- Max humidity: ${fmt(humidityMax, "%")}`,
+		`- Min humidity: ${fmt(humidityMin, "%")}`,
+		`- Dew point: ${fmt(dewPoint, "°C")}`,
 		`- Precipitation: ${fmt(precip, " mm")}`,
 		`- Max wind: ${fmt(windMax, " km/h")}`,
 		`- Dominant wind direction: ${fmt(windDir, "°")}`,
@@ -173,6 +193,11 @@ export const weatherHistoryHandler: ToolHandler = async (args) => {
 			location: { lat, lng },
 			tempMax,
 			tempMin,
+			feelsLikeMax,
+			feelsLikeMin,
+			humidityMax,
+			humidityMin,
+			dewPoint,
 			precip,
 			windMax,
 			windDir,

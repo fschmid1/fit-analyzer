@@ -17,6 +17,8 @@ const summaryStmt = db.prepare(
 interface WeatherResult {
 	tempMax: number | null;
 	tempMin: number | null;
+	feelsLikeMax: number | null;
+	humidityMax: number | null;
 	precip: number | null;
 	windMax: number | null;
 }
@@ -34,7 +36,7 @@ async function fetchWeather(
 	url.searchParams.set("end_date", today);
 	url.searchParams.set(
 		"daily",
-		"temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max",
+		"temperature_2m_max,temperature_2m_min,apparent_temperature_max,relative_humidity_2m_max,precipitation_sum,wind_speed_10m_max",
 	);
 	url.searchParams.set("timezone", "auto");
 
@@ -49,6 +51,8 @@ async function fetchWeather(
 				time?: string[];
 				temperature_2m_max?: number[];
 				temperature_2m_min?: number[];
+				apparent_temperature_max?: number[];
+				relative_humidity_2m_max?: number[];
 				precipitation_sum?: number[];
 				wind_speed_10m_max?: number[];
 			};
@@ -58,6 +62,8 @@ async function fetchWeather(
 		return {
 			tempMax: daily.temperature_2m_max?.[0] ?? null,
 			tempMin: daily.temperature_2m_min?.[0] ?? null,
+			feelsLikeMax: daily.apparent_temperature_max?.[0] ?? null,
+			humidityMax: daily.relative_humidity_2m_max?.[0] ?? null,
 			precip: daily.precipitation_sum?.[0] ?? null,
 			windMax: daily.wind_speed_10m_max?.[0] ?? null,
 		};
@@ -84,7 +90,6 @@ interface Recommendation {
 	duration: number;
 	rationale: string;
 }
-
 function computeRecommendation(
 	tsb: number,
 	phase: string | null,
@@ -95,6 +100,20 @@ function computeRecommendation(
 		weather != null &&
 		((weather.precip != null && weather.precip > 5) ||
 			(weather.windMax != null && weather.windMax > 40));
+
+	const heatStress =
+		weather != null &&
+		weather.tempMax != null &&
+		(weather.tempMax >= 28 ||
+			(weather.feelsLikeMax != null && weather.feelsLikeMax >= 30));
+	const humidStress =
+		weather != null &&
+		weather.humidityMax != null &&
+		weather.humidityMax >= 80;
+	const hydrationNote =
+		heatStress || humidStress
+			? " Prioritise hydration and consider riding in cooler hours."
+			: "";
 
 	if (tsb < -25 && badWeather) {
 		return {
@@ -111,8 +130,7 @@ function computeRecommendation(
 			type: "Recovery ride",
 			intensity: "Z1",
 			duration: Math.min(availableMinutes, 45),
-			rationale:
-				"TSB is very negative — prioritise recovery with easy spinning.",
+			rationale: `TSB is very negative — prioritise recovery with easy spinning.${hydrationNote}`,
 		};
 	}
 
@@ -121,8 +139,7 @@ function computeRecommendation(
 			type: "Indoor trainer or easy ride",
 			intensity: "Z1-Z2",
 			duration: Math.min(availableMinutes, 60),
-			rationale:
-				"Fatigued and weather isn't great — keep it easy or ride indoors.",
+			rationale: `Fatigued and weather isn't great — keep it easy or ride indoors.${hydrationNote}`,
 		};
 	}
 
@@ -131,7 +148,7 @@ function computeRecommendation(
 			type: "Endurance ride",
 			intensity: "Z2",
 			duration: Math.min(availableMinutes, 90),
-			rationale: "Moderate fatigue — stick to Zone 2 endurance.",
+			rationale: `Moderate fatigue — stick to Zone 2 endurance.${hydrationNote}`,
 		};
 	}
 
@@ -140,7 +157,7 @@ function computeRecommendation(
 			type: "VO2max or race-pace intervals",
 			intensity: "Z5",
 			duration: Math.min(availableMinutes, 75),
-			rationale: `${phase} phase — sharpen with high-intensity, low-volume work.`,
+			rationale: `${phase} phase — sharpen with high-intensity, low-volume work.${hydrationNote}`,
 		};
 	}
 
@@ -149,8 +166,7 @@ function computeRecommendation(
 			type: "Sweet spot or threshold intervals",
 			intensity: "Z3-Z4",
 			duration: Math.min(availableMinutes, 90),
-			rationale:
-				"Productive fatigue — threshold or sweet spot work is appropriate.",
+			rationale: `Productive fatigue — threshold or sweet spot work is appropriate.${hydrationNote}`,
 		};
 	}
 
@@ -159,7 +175,7 @@ function computeRecommendation(
 			type: "Hard workout or long ride",
 			intensity: "Z3-Z5",
 			duration: Math.min(availableMinutes, 120),
-			rationale: "Well-rested — good day for a demanding session.",
+			rationale: `Well-rested — good day for a demanding session.${hydrationNote}`,
 		};
 	}
 
@@ -168,7 +184,7 @@ function computeRecommendation(
 			type: "VO2max or long endurance",
 			intensity: "Z2-Z5",
 			duration: Math.min(availableMinutes, 90),
-			rationale: "Rested — consider intensity or extended endurance.",
+			rationale: `Rested — consider intensity or extended endurance.${hydrationNote}`,
 		};
 	}
 
@@ -176,10 +192,9 @@ function computeRecommendation(
 		type: "Moderate ride",
 		intensity: "Z2-Z3",
 		duration: Math.min(availableMinutes, 75),
-		rationale: "Balanced training stress — a moderate session fits.",
+		rationale: `Balanced training stress — a moderate session fits.${hydrationNote}`,
 	};
 }
-
 export const rideRecommendationDefinition: ToolDefinition = {
 	name: "ride_recommendation",
 	description:
