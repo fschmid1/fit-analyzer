@@ -10,6 +10,9 @@ import type {
 interface HaeQuantityData {
 	date: string;
 	qty?: number;
+	avg?: number;
+	min?: number;
+	max?: number;
 	units?: string;
 	source?: string;
 }
@@ -321,11 +324,13 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 				case "skin_temperature":
 				case "skinTemperature":
 				case "SkinTemperature": {
-					const qty = (raw as HaeQuantityData).qty;
+					// With aggregation ON, HAE sends avg/min/max instead of qty.
+					const d = raw as HaeQuantityData;
+					const qty = d.qty ?? d.avg ?? d.min ?? d.max;
 					if (typeof qty === "number") {
 						// HAE may export in degF or degC; units can live on the metric
 						// or on each individual data record.
-						const units = metric.units ?? (raw as HaeQuantityData).units;
+						const units = metric.units ?? d.units;
 						snap.temperature =
 							units === "degF" || units === "°F" || units === "F"
 								? (qty - 32) * (5 / 9)
