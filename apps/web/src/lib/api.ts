@@ -23,6 +23,7 @@ import {
 	type UpdateAthleteProfileBody,
 	type UIToolCall,
 	type WaxedChainReminderSettings,
+	type ZonesResponse,
 } from "@fit-analyzer/shared";
 
 const API_BASE = "/api";
@@ -100,6 +101,12 @@ export async function fetchUserSettings(): Promise<UserSettingsResponse> {
 export async function fetchAthleteEstimates(): Promise<AthleteEstimatesResponse> {
 	const res = await fetch(`${API_BASE}/me/athlete-estimates`);
 	if (!res.ok) throw new Error("Failed to fetch athlete estimates");
+	return res.json();
+}
+
+export async function fetchZones(): Promise<ZonesResponse> {
+	const res = await fetch(`${API_BASE}/me/zones`);
+	if (!res.ok) throw new Error("Failed to fetch zones");
 	return res.json();
 }
 

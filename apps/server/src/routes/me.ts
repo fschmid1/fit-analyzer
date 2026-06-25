@@ -2,6 +2,12 @@ import { Hono } from "hono";
 import type {
 	UpdateWaxedChainReminderSettingsBody,
 	UpdateAthleteProfileBody,
+	ZonesResponse,
+} from "@fit-analyzer/shared";
+import {
+	POWER_ZONE_BANDS,
+	HR_ZONE_BANDS,
+	resolveZones,
 } from "@fit-analyzer/shared";
 import {
 	getCoachModelSettings,
@@ -47,6 +53,35 @@ function getUserEstimates(userId: string) {
 	return { estimatedFtp, estimatedMaxHr: row?.maxHr ?? null };
 }
 
+function buildZonesResponse(
+	profile: { ftp: number | null; maxHr: number | null },
+	estimates: { estimatedFtp: number | null; estimatedMaxHr: number | null },
+): ZonesResponse {
+	const ftp = profile.ftp ?? estimates.estimatedFtp;
+	const maxHr = profile.maxHr ?? estimates.estimatedMaxHr;
+
+	if (ftp == null && maxHr == null) {
+		return {
+			ftp: null,
+			maxHr: null,
+			source: "none",
+			powerZones: [],
+			hrZones: [],
+		};
+	}
+
+	const source: ZonesResponse["source"] =
+		profile.ftp != null || profile.maxHr != null ? "profile" : "estimated";
+
+	return {
+		ftp,
+		maxHr,
+		source,
+		powerZones: ftp != null ? resolveZones(POWER_ZONE_BANDS, ftp) : [],
+		hrZones: maxHr != null ? resolveZones(HR_ZONE_BANDS, maxHr) : [],
+	};
+}
+
 // GET /me/athlete-estimates — heavy derived athlete data used by the settings page.
 // Kept separate from /me/settings so the settings page can load fast and only
 // request these estimates when the athlete profile card needs them.
@@ -65,6 +100,20 @@ me.get("/athlete-estimates", (c) => {
 			: inferLocationFromActivities(userId),
 		...getUserEstimates(userId),
 	});
+});
+
+// GET /me/zones — resolved power and heart-rate zones for the current athlete.
+me.get("/zones", (c) => {
+	let userId: string;
+	try {
+		userId = getUserId(c);
+	} catch {
+		return c.json({ error: "Not authenticated" }, 401);
+	}
+
+	const profile = getAthleteProfile(userId);
+	const estimates = getUserEstimates(userId);
+	return c.json(buildZonesResponse(profile, estimates));
 });
 
 function getUserId(c: {

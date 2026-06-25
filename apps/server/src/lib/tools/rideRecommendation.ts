@@ -107,9 +107,7 @@ function computeRecommendation(
 		(weather.tempMax >= 28 ||
 			(weather.feelsLikeMax != null && weather.feelsLikeMax >= 30));
 	const humidStress =
-		weather != null &&
-		weather.humidityMax != null &&
-		weather.humidityMax >= 80;
+		weather != null && weather.humidityMax != null && weather.humidityMax >= 80;
 	const hydrationNote =
 		heatStress || humidStress
 			? " Prioritise hydration and consider riding in cooler hours."

@@ -15,14 +15,26 @@ import {
 	Droplets,
 	Thermometer,
 	Moon,
-	Sunrise,
 	Brain,
 } from "lucide-react";
 import type { HealthHistoryEntry } from "@fit-analyzer/shared";
 import type { LucideIcon } from "lucide-react";
 
+type ChartData = {
+	date: string;
+	rhr: number | null;
+	hrv: number | null;
+	respiratoryRate: number | null;
+	spo2: number | null;
+	temperature: number | null;
+	sleepDurationMinutes: number | null;
+	sleepEfficiencyPercent: number | null;
+	deepMinutes: number | null;
+	remMinutes: number | null;
+};
+
 interface MetricConfig {
-	key: keyof Omit<HealthHistoryEntry, "date">;
+	key: keyof Omit<ChartData, "date">;
 	label: string;
 	unit: string;
 	color: string;
@@ -47,13 +59,6 @@ const METRICS: MetricConfig[] = [
 		unit: "°C",
 		color: "#f59e0b",
 		icon: Thermometer,
-	},
-	{
-		key: "morningHeartRate",
-		label: "Morning HR",
-		unit: "bpm",
-		color: "#f97316",
-		icon: Sunrise,
 	},
 	{
 		key: "sleepDurationMinutes",
@@ -162,7 +167,7 @@ interface HealthHistoryChartsProps {
 export function HealthHistoryCharts({ history }: HealthHistoryChartsProps) {
 	const [selectedKey, setSelectedKey] = useState<MetricConfig["key"]>("rhr");
 
-	const chartData = useMemo(() => {
+	const chartData = useMemo((): ChartData[] => {
 		return history.map((h) => ({
 			date: h.date,
 			rhr: h.rhr,
@@ -170,7 +175,6 @@ export function HealthHistoryCharts({ history }: HealthHistoryChartsProps) {
 			respiratoryRate: h.respiratoryRate,
 			spo2: h.spo2,
 			temperature: h.temperature,
-			morningHeartRate: h.morningHeartRate,
 			sleepDurationMinutes: h.sleepDurationMinutes,
 			sleepEfficiencyPercent: h.sleepEfficiencyPercent,
 			deepMinutes: h.deepMinutes,

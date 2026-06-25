@@ -310,13 +310,26 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 					break;
 				}
 				case "body_temperature":
-				case "wrist_temperature": {
+				case "bodyTemperature":
+				case "BodyTemperature":
+				case "wrist_temperature":
+				case "wristTemperature":
+				case "WristTemperature":
+				case "basal_body_temperature":
+				case "basalBodyTemperature":
+				case "BasalBodyTemperature":
+				case "skin_temperature":
+				case "skinTemperature":
+				case "SkinTemperature": {
 					const qty = (raw as HaeQuantityData).qty;
 					if (typeof qty === "number") {
-						// HAE may export in degF or degC
-						const units = metric.units;
+						// HAE may export in degF or degC; units can live on the metric
+						// or on each individual data record.
+						const units = metric.units ?? (raw as HaeQuantityData).units;
 						snap.temperature =
-							units === "degF" || units === "°F" ? (qty - 32) * (5 / 9) : qty;
+							units === "degF" || units === "°F" || units === "F"
+								? (qty - 32) * (5 / 9)
+								: qty;
 						console.log(
 							`[hae] Parsed temperature for ${date}: ${snap.temperature}°C (raw: ${qty}, units: ${units}, metric: ${metric.name})`,
 						);

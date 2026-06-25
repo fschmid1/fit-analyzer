@@ -1,26 +1,11 @@
-import type { ToolDefinition } from "@fit-analyzer/shared";
+import {
+	POWER_ZONE_BANDS,
+	HR_ZONE_BANDS,
+	type ToolDefinition,
+} from "@fit-analyzer/shared";
 import type { ToolHandler } from "./registry.js";
 import { computeAllTimeEstimates } from "../athleteStats.js";
 import { getActivityById, resolveActivityId } from "./activityUtils.js";
-
-const POWER_ZONES = [
-	{ name: "Z1 Recovery", minFtp: 0, maxFtp: 0.55 },
-	{ name: "Z2 Endurance", minFtp: 0.55, maxFtp: 0.75 },
-	{ name: "Z3 Tempo", minFtp: 0.75, maxFtp: 0.9 },
-	{ name: "Z4 Threshold", minFtp: 0.9, maxFtp: 1.05 },
-	{ name: "Z5 VO2max", minFtp: 1.05, maxFtp: 1.2 },
-	{ name: "Z6 Anaerobic", minFtp: 1.2, maxFtp: 1.5 },
-	{ name: "Z7 Sprint", minFtp: 1.5, maxFtp: Number.POSITIVE_INFINITY },
-];
-
-const HR_ZONES = [
-	{ name: "Z1 Recovery", minMaxHr: 0, maxMaxHr: 0.6 },
-	{ name: "Z2 Endurance", minMaxHr: 0.6, maxMaxHr: 0.7 },
-	{ name: "Z3 Tempo", minMaxHr: 0.7, maxMaxHr: 0.8 },
-	{ name: "Z4 Threshold", minMaxHr: 0.8, maxMaxHr: 0.9 },
-	{ name: "Z5 VO2max", minMaxHr: 0.9, maxMaxHr: 1.0 },
-	{ name: "Z6 Anaerobic", minMaxHr: 1.0, maxMaxHr: Number.POSITIVE_INFINITY },
-];
 
 export const zoneAnalysisDefinition: ToolDefinition = {
 	name: "zone_analysis",
@@ -103,9 +88,9 @@ export const zoneAnalysisHandler: ToolHandler = async (args, context) => {
 	const totalSeconds =
 		records.length > 0 ? records[records.length - 1].elapsedSeconds : 0;
 
-	const powerZoneSeconds = new Array(POWER_ZONES.length).fill(0);
+	const powerZoneSeconds = new Array(POWER_ZONE_BANDS.length).fill(0);
 	let powerZeroCount = 0;
-	const hrZoneSeconds = new Array(HR_ZONES.length).fill(0);
+	const hrZoneSeconds = new Array(HR_ZONE_BANDS.length).fill(0);
 	let hrNullCount = 0;
 
 	let prevElapsedSeconds = records.length > 0 ? records[0].elapsedSeconds : 0;
@@ -117,8 +102,11 @@ export const zoneAnalysisHandler: ToolHandler = async (args, context) => {
 
 		if (r.power != null && r.power > 0) {
 			const ratio = r.power / ftp;
-			for (let i = 0; i < POWER_ZONES.length; i++) {
-				if (ratio >= POWER_ZONES[i].minFtp && ratio < POWER_ZONES[i].maxFtp) {
+			for (let i = 0; i < POWER_ZONE_BANDS.length; i++) {
+				if (
+					ratio >= POWER_ZONE_BANDS[i].min &&
+					ratio < POWER_ZONE_BANDS[i].max
+				) {
 					powerZoneSeconds[i] += delta;
 					break;
 				}
@@ -129,8 +117,8 @@ export const zoneAnalysisHandler: ToolHandler = async (args, context) => {
 
 		if (r.heartRate != null && r.heartRate > 0) {
 			const ratio = r.heartRate / maxHr;
-			for (let i = 0; i < HR_ZONES.length; i++) {
-				if (ratio >= HR_ZONES[i].minMaxHr && ratio < HR_ZONES[i].maxMaxHr) {
+			for (let i = 0; i < HR_ZONE_BANDS.length; i++) {
+				if (ratio >= HR_ZONE_BANDS[i].min && ratio < HR_ZONE_BANDS[i].max) {
 					hrZoneSeconds[i] += delta;
 					break;
 				}
@@ -146,7 +134,7 @@ export const zoneAnalysisHandler: ToolHandler = async (args, context) => {
 		return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
 	};
 
-	const powerZoneData = POWER_ZONES.map((z, i) => ({
+	const powerZoneData = POWER_ZONE_BANDS.map((z, i) => ({
 		zone: z.name,
 		seconds: powerZoneSeconds[i],
 		percent:
@@ -155,7 +143,7 @@ export const zoneAnalysisHandler: ToolHandler = async (args, context) => {
 				: 0,
 	}));
 
-	const hrZoneData = HR_ZONES.map((z, i) => ({
+	const hrZoneData = HR_ZONE_BANDS.map((z, i) => ({
 		zone: z.name,
 		seconds: hrZoneSeconds[i],
 		percent:

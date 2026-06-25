@@ -72,3 +72,6 @@ export {
 	normalizedCadenceFromSeconds,
 	peakPowerFromSeconds,
 } from "./power.js";
+
+export type { ZoneBand, ZoneRange, ZonesResponse } from "./zones.js";
+export { POWER_ZONE_BANDS, HR_ZONE_BANDS, resolveZones } from "./zones.js";

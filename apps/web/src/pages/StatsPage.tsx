@@ -27,6 +27,7 @@ import { HealthMonitorCard } from "../components/HealthMonitorCard";
 import { HealthHistoryCharts } from "../components/HealthHistoryCharts";
 import { HeatmapMap } from "../components/HeatmapMap";
 import { MetricCard } from "../components/MetricCard";
+import { ZonesCard } from "../components/ZonesCard";
 import { fetchHeatmap, fetchStats, type StatsResponse } from "../lib/api";
 
 type Preset = "7d" | "30d" | "90d" | "year" | "custom";
@@ -336,6 +337,7 @@ export function StatsPage() {
 								</p>
 
 								<div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
+									<ZonesCard />
 									<MetricCard
 										icon={Clock}
 										label="Total Duration"
