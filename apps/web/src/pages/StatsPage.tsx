@@ -336,8 +336,11 @@ export function StatsPage() {
 									{data.activityStats.count !== 1 ? "s" : ""}
 								</p>
 
-								<div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
+								<div className="mb-3">
 									<ZonesCard />
+								</div>
+
+								<div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
 									<MetricCard
 										icon={Clock}
 										label="Total Duration"
