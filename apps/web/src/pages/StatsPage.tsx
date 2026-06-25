@@ -270,11 +270,9 @@ export function StatsPage() {
 									<HealthMonitorCard
 										icon={Heart}
 										label="RHR"
-										value={data.health.morningHeartRate?.current ?? "—"}
-										unit={
-											data.health.morningHeartRate?.current != null ? "bpm" : ""
-										}
-										status={data.health.morningHeartRate?.status ?? "normal"}
+										value={data.health.rhr?.current ?? "—"}
+										unit={data.health.rhr?.current != null ? "bpm" : ""}
+										status={data.health.rhr?.status ?? "normal"}
 									/>
 									<HealthMonitorCard
 										icon={Activity}

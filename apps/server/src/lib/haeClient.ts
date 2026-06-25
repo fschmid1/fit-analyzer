@@ -57,6 +57,7 @@ interface HaeSleepData {
 		deepMinutes: number;
 		remMinutes: number;
 	} | null;
+	sleepStart: string | null;
 	sleepEnd: string | null;
 }
 
@@ -272,13 +273,19 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 		return snap;
 	}
 
+	const unrecognized = new Set<string>();
+
 	for (const metric of metrics) {
 		for (const raw of metric.data) {
 			const date = parseHaeDate(raw.date);
 			const snap = ensureDate(date);
 
 			switch (metric.name) {
-				case "resting_heart_rate": {
+				case "resting_heart_rate":
+				case "restingHeartRate":
+				case "RestingHeartRate":
+				case "resting_hr":
+				case "RHR": {
 					const qty = (raw as HaeQuantityData).qty;
 					if (typeof qty === "number") snap.rhr = qty;
 					break;
@@ -433,13 +440,22 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 							durationMinutes,
 							efficiencyPercent,
 							stages,
+							sleepStart: entry.sleepStart ?? null,
 							sleepEnd: entry.sleepEnd ?? null,
 						};
 					}
 					break;
 				}
+				default:
+					unrecognized.add(metric.name);
 			}
 		}
+	}
+
+	if (unrecognized.size > 0) {
+		console.warn(
+			`[hae] Unrecognized metric names (no parser): ${Array.from(unrecognized).join(", ")}`,
+		);
 	}
 
 	// Normalize: ensure every date has all fields
@@ -551,6 +567,56 @@ function computeMorningHeartRateByDate(
 			if (lowest == null || hr.avg < lowest) lowest = hr.avg;
 		}
 		if (lowest != null) result.set(row.date, lowest);
+	}
+	return result;
+}
+
+/**
+ * Resolve the sleep window start. HAE often omits `sleepStart`; fall back to
+ * `sleepEnd - durationMinutes` so we can still bound the sleep window.
+ */
+function resolveSleepStart(snap: HaeDailySnapshot): number | null {
+	const sleepStartStr = snap.sleep?.sleepStart;
+	if (sleepStartStr) {
+		const t = parseHaeDateTime(sleepStartStr).getTime();
+		if (!Number.isNaN(t)) return t;
+	}
+	const sleepEndStr = snap.sleep?.sleepEnd;
+	const durationMin = snap.sleep?.durationMinutes;
+	if (sleepEndStr && durationMin && durationMin > 0) {
+		const end = parseHaeDateTime(sleepEndStr).getTime();
+		if (!Number.isNaN(end)) return end - durationMin * 60 * 1000;
+	}
+	return null;
+}
+
+/**
+ * Compute the average HR during sleep for each dated snapshot (Bevel-style RHR).
+ * Uses heart_rate readings that fall within [sleepStart, sleepEnd].
+ */
+function computeSleepAverageHrByDate(
+	rows: Array<{ date: string } & HaeDailySnapshot>,
+): Map<string, number> {
+	const result = new Map<string, number>();
+	for (const row of rows) {
+		if (!row.heartRateReadings?.length) continue;
+		const sleepEndStr = row.sleep?.sleepEnd;
+		if (!sleepEndStr) continue;
+		const sleepEnd = parseHaeDateTime(sleepEndStr).getTime();
+		if (Number.isNaN(sleepEnd)) continue;
+		const sleepStart = resolveSleepStart(row);
+		if (sleepStart == null) continue;
+
+		const inSleep: number[] = [];
+		for (const hr of row.heartRateReadings) {
+			const t = parseHaeDateTime(hr.date).getTime();
+			if (Number.isNaN(t)) continue;
+			if (t < sleepStart || t > sleepEnd) continue;
+			if (typeof hr.avg === "number" && hr.avg > 0) inSleep.push(hr.avg);
+		}
+		if (inSleep.length > 0) {
+			result.set(row.date, inSleep.reduce((a, b) => a + b, 0) / inSleep.length);
+		}
 	}
 	return result;
 }
@@ -697,13 +763,18 @@ function computeHaeHealthContext(
 		};
 	}
 
-	// ── RHR ───────────────────────────────────────────────────────────────────
-	const rhrValues = rows
-		.map((r) => r.rhr)
-		.filter((v): v is number => typeof v === "number" && v > 0);
+	// ── RHR (average HR during sleep — Bevel-style) ───────────────────────────
+	// Apple's `resting_heart_rate` metric is recomputed throughout the day and
+	// drifts upward; the average HR during the sleep window is a stable,
+	// morning-grounded RHR that matches what apps like Bevel report.
+	const sleepAvgHrByDate = computeSleepAverageHrByDate(rows);
+	const rhrValues = Array.from(sleepAvgHrByDate, ([date, value]) => ({
+		date,
+		value,
+	})).sort((a, b) => b.date.localeCompare(a.date));
 	if (rhrValues.length > 0) {
-		const latest = rhrValues[0]; // rows are date-desc → most recent first
-		const avg = rhrValues.reduce((a, b) => a + b, 0) / rhrValues.length;
+		const latest = rhrValues[0].value; // rows are date-desc → most recent first
+		const avg = rhrValues.reduce((a, b) => a + b.value, 0) / rhrValues.length;
 		rhr = {
 			current: Math.round(latest),
 			trend7d: Math.round(avg),
@@ -819,9 +890,9 @@ export async function getHaeHistory(
 		date: row.date,
 		snap: JSON.parse(row.data) as HaeDailySnapshot,
 	}));
-	const morningHrByDate = computeMorningHeartRateByDate(
-		parsed.map(({ date, snap }) => ({ date, ...snap })),
-	);
+	const datedSnaps = parsed.map(({ date, snap }) => ({ date, ...snap }));
+	const morningHrByDate = computeMorningHeartRateByDate(datedSnaps);
+	const sleepAvgHrByDate = computeSleepAverageHrByDate(datedSnaps);
 
 	return parsed.map(({ date, snap }) => {
 		let sleepDurationMinutes: number | null = null;
@@ -839,9 +910,10 @@ export async function getHaeHistory(
 		}
 
 		const morningHr = morningHrByDate.get(date);
+		const sleepAvgHr = sleepAvgHrByDate.get(date);
 		return {
 			date,
-			rhr: snap.rhr ?? null,
+			rhr: sleepAvgHr != null ? Math.round(sleepAvgHr) : null,
 			hrv: snap.hrv ?? null,
 			respiratoryRate: snap.respiratoryRate ?? null,
 			spo2: snap.spo2 ?? null,
