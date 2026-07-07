@@ -129,6 +129,10 @@ Copy `.env.example` to `.env` and configure:
 | `STRAVA_CLIENT_SECRET` | Strava sync | Strava API client secret |
 | `STRAVA_REDIRECT_URI` | Strava OAuth | Callback URL (e.g. `https://your-domain.com/api/strava/callback`) |
 | `STRAVA_WEBHOOK_VERIFY_TOKEN` | Strava webhooks | Random token for webhook verification |
+| `WAHOO_CLIENT_ID` | Wahoo sync | Wahoo API client ID |
+| `WAHOO_CLIENT_SECRET` | Wahoo sync | Wahoo API client secret |
+| `WAHOO_REDIRECT_URI` | Wahoo OAuth | Callback URL (e.g. `https://your-domain.com/api/wahoo/callback`) |
+| `WAHOO_WEBHOOK_TOKEN` | Wahoo webhooks | Random token for webhook authentication |
 | `OPENROUTER_KEY` | AI trainer (OpenRouter) | OpenRouter API key |
 | `OLLAMA_CLOUD_KEY` | AI trainer (Ollama Cloud) | Ollama Cloud API key |
 | `OLLAMA_BASE_URL` | AI trainer (local Ollama) | Local Ollama instance URL |

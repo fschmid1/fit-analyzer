@@ -185,6 +185,20 @@ db.exec(`
   )
 `);
 
+// Wahoo OAuth token storage
+db.exec(`
+  CREATE TABLE IF NOT EXISTS wahoo_tokens (
+    user_id        TEXT PRIMARY KEY,
+    access_token   TEXT NOT NULL,
+    refresh_token  TEXT NOT NULL,
+    expires_at     INTEGER NOT NULL,
+    wahoo_user_id  INTEGER,
+    scope          TEXT NOT NULL DEFAULT '',
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
 // User settings
 db.exec(`
   CREATE TABLE IF NOT EXISTS user_settings (
@@ -243,6 +257,18 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_activities_strava_id
     ON activities(user_id, strava_activity_id)
     WHERE strava_activity_id IS NOT NULL
+`);
+
+// Migration: add wahoo_activity_id to activities for duplicate prevention
+try {
+	db.exec("ALTER TABLE activities ADD COLUMN wahoo_activity_id TEXT");
+} catch {
+	/* column already exists */
+}
+db.exec(`
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_activities_wahoo_id
+    ON activities(user_id, wahoo_activity_id)
+    WHERE wahoo_activity_id IS NOT NULL
 `);
 
 // Migration: add ow_user_id to user_settings

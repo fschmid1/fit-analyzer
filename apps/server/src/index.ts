@@ -9,6 +9,7 @@ import { heatmap } from "./routes/heatmap.js";
 import { me } from "./routes/me.js";
 import { strava } from "./routes/strava.js";
 import { trainer } from "./routes/trainer.js";
+import { wahoo } from "./routes/wahoo.js";
 import { initTools } from "./lib/tools/init.js";
 
 initTools();
@@ -26,6 +27,7 @@ app.route("/api/heatmap", heatmap);
 app.route("/api/me", me);
 app.route("/api/strava", strava);
 app.route("/api/trainer", trainer);
+app.route("/api/wahoo", wahoo);
 
 // Serve the built frontend static files (in production, ./public contains the web build)
 app.use("/*", serveStatic({ root: "./public" }));
