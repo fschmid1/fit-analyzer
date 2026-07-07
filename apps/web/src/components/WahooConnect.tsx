@@ -65,7 +65,10 @@ export function WahooConnect({ onSynced }: WahooConnectProps) {
 		}
 
 		fetchWahooStatus()
-			.then(setStatus)
+			.then((s) => {
+				setStatus(s);
+				if (s.connected) setWebhookRegistered(s.webhookEnabled === true);
+			})
 			.finally(() => setLoading(false));
 	}, []);
 

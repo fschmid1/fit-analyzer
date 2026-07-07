@@ -26,6 +26,8 @@ interface WahooUser {
 	first: string;
 	last: string;
 	email?: string;
+	webhook_enabled?: boolean;
+	webhook_url?: string | null;
 }
 
 interface WahooWorkoutSummary {
@@ -242,6 +244,37 @@ async function getValidToken(userId: string): Promise<string> {
 const BIKING_WORKOUT_TYPE_FAMILY_ID = 0;
 
 /**
+ * Wahoo workout_type_id values whose family is BIKING (id 0).
+ * The /workouts endpoints return workout_type_id but not workout_type_family_id,
+ * so we map the id → family ourselves. Source: Wahoo API "Workout Types" table.
+ */
+const BIKING_WORKOUT_TYPE_IDS = new Set<number>([
+	0, // BIKING
+	11, // BIKING_CYCLECROSS
+	12, // BIKING_INDOOR
+	13, // BIKING_MOUNTAIN
+	14, // BIKING_RECUMBENT
+	15, // BIKING_ROAD
+	16, // BIKING_TRACK
+	17, // BIKING_MOTOCYCLING
+	49, // BIKING_INDOOR_CYCLING_CLASS
+	61, // BIKING_INDOOR_TRAINER
+	64, // EBIKING
+	68, // BIKING_INDOOR_VIRTUAL
+	70, // HANDCYCLING
+]);
+
+/** Returns true if the workout belongs to the BIKING family. */
+function isBikingWorkout(workout: WahooWorkout): boolean {
+	// Prefer the family id when present (some responses include it)…
+	if (workout.workout_type_family_id != null) {
+		return workout.workout_type_family_id === BIKING_WORKOUT_TYPE_FAMILY_ID;
+	}
+	// …otherwise infer it from workout_type_id.
+	return BIKING_WORKOUT_TYPE_IDS.has(workout.workout_type_id);
+}
+
+/**
  * Fetch a workout's FIT file, parse it, and insert it into the activities table.
  * Returns "imported" | "updated" if imported, null if skipped (not biking, or no
  * FIT file available yet).
@@ -251,7 +284,7 @@ async function importWorkout(
 	workout: WahooWorkout,
 ): Promise<"imported" | "updated" | null> {
 	// Only import biking workouts
-	if (workout.workout_type_family_id !== BIKING_WORKOUT_TYPE_FAMILY_ID) {
+	if (!isBikingWorkout(workout)) {
 		return null;
 	}
 
@@ -471,7 +504,7 @@ wahoo.get("/callback", async (c) => {
 });
 
 /** GET /api/wahoo/status — check connection status */
-wahoo.get("/status", (c) => {
+wahoo.get("/status", async (c) => {
 	let userId: string;
 	try {
 		userId = getUserId(c);
@@ -482,10 +515,27 @@ wahoo.get("/status", (c) => {
 	const token = getTokenStmt.get(userId);
 	if (!token) return c.json({ connected: false });
 
+	// Fetch the live Wahoo user record to reflect current webhook state.
+	// Falls back to "unknown" (null) if the API call fails so the UI still works.
+	let webhookEnabled: boolean | null = null;
+	try {
+		const accessToken = await getValidToken(userId);
+		const userRes = await fetch("https://api.wahooligan.com/v1/user", {
+			headers: { Authorization: `Bearer ${accessToken}` },
+		});
+		if (userRes.ok) {
+			const wahooUser = (await userRes.json()) as WahooUser;
+			webhookEnabled = wahooUser.webhook_enabled === true;
+		}
+	} catch {
+		// leave webhookEnabled as null — UI will treat it as not registered
+	}
+
 	return c.json({
 		connected: true,
 		wahooUserId: token.wahoo_user_id,
 		scope: token.scope,
+		webhookEnabled,
 	});
 });
 

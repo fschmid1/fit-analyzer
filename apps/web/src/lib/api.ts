@@ -743,6 +743,7 @@ export interface WahooStatus {
 	connected: boolean;
 	wahooUserId?: number | null;
 	scope?: string;
+	webhookEnabled?: boolean | null;
 }
 
 export async function fetchWahooStatus(): Promise<WahooStatus> {
