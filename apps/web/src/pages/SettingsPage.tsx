@@ -3,6 +3,7 @@ import { CoachModelSettings } from "../components/CoachModelSettings";
 import { HealthAutoExportSettings } from "../components/HealthAutoExportSettings";
 import { OpenwearablesSettings } from "../components/OpenwearablesSettings";
 import { StravaConnect } from "../components/StravaConnect";
+import { WahooConnect } from "../components/WahooConnect";
 import { WaxedChainReminderSettings } from "../components/WaxedChainReminderSettings";
 import { SettingsProvider } from "../lib/settingsContext";
 import type { UserInfo } from "../lib/api";
@@ -28,6 +29,7 @@ export function SettingsPage({ onActivitiesChanged }: SettingsPageProps) {
 								Integrations
 							</h3>
 							<StravaConnect onSynced={onActivitiesChanged} />
+							<WahooConnect onSynced={onActivitiesChanged} />
 							<OpenwearablesSettings />
 							<HealthAutoExportSettings />
 						</section>

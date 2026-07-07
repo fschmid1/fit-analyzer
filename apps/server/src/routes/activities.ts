@@ -29,7 +29,7 @@ function getUserId(c: {
 
 // Prepared statements for performance — now scoped by user_id
 const listStmt = db.prepare(
-	`SELECT id, date, summary, records, strava_activity_id as stravaActivityId, created_at as createdAt
+	`SELECT id, date, summary, records, strava_activity_id as stravaActivityId, wahoo_activity_id as wahooActivityId, created_at as createdAt
    FROM activities
    WHERE user_id = ?
    ORDER BY date DESC, created_at DESC`,
@@ -104,6 +104,7 @@ activities.get("/", (c) => {
 		summary: string;
 		records: string;
 		stravaActivityId: string | null;
+		wahooActivityId: string | null;
 		createdAt: string;
 	}[];
 
@@ -122,6 +123,7 @@ activities.get("/", (c) => {
 			summary,
 			createdAt: row.createdAt,
 			stravaActivityId: row.stravaActivityId ?? null,
+			wahooActivityId: row.wahooActivityId ?? null,
 		};
 	});
 

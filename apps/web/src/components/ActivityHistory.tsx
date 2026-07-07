@@ -111,6 +111,18 @@ function SwipeableRow({
 									</svg>
 								</span>
 							)}
+							{activity.wahooActivityId && (
+								<span title="Imported from Wahoo" className="shrink-0">
+									<svg
+										viewBox="0 0 24 24"
+										className="w-3.5 h-3.5 fill-[#1ba9d5]"
+										aria-hidden="true"
+									>
+										<title>Imported from Wahoo</title>
+										<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-3-11.5l-2 5.5-2-5.5h-2l3 7h2l3-7h-2zm8 0h-4v7h2v-2.5h2c1.1 0 2-.9 2-2v-.5c0-1.1-.9-2-2-2zm0 2.5h-2v-1h2v1z" />
+									</svg>
+								</span>
+							)}
 						</div>
 						<div className="flex items-center gap-4 mt-1.5">
 							<span className="flex items-center gap-1 text-xs text-[#94a3b8]">

@@ -92,6 +92,7 @@ export interface ActivityListItem {
 	summary: ActivitySummary;
 	createdAt: string;
 	stravaActivityId?: string | null;
+	wahooActivityId?: string | null;
 }
 
 /** Full activity returned by GET /api/activities/:id */

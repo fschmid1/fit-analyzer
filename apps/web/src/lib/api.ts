@@ -737,6 +737,65 @@ export async function fetchRouteGpx(routeId: string): Promise<{
 	};
 }
 
+// ─── Wahoo ────────────────────────────────────────────────────────────────────
+
+export interface WahooStatus {
+	connected: boolean;
+	wahooUserId?: number | null;
+	scope?: string;
+}
+
+export async function fetchWahooStatus(): Promise<WahooStatus> {
+	const res = await fetch(`${API_BASE}/wahoo/status`);
+	if (!res.ok) return { connected: false };
+	return res.json();
+}
+
+export async function syncWahooActivities(
+	daysBack: number | "all" = 30,
+): Promise<{ imported: number; updated: number; skipped: number }> {
+	const res = await fetch(`${API_BASE}/wahoo/sync?daysBack=${daysBack}`, {
+		method: "POST",
+	});
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({ error: "Sync failed" }));
+		throw new Error((err as { error?: string }).error ?? "Sync failed");
+	}
+	return res.json();
+}
+
+export async function disconnectWahoo(): Promise<void> {
+	await fetch(`${API_BASE}/wahoo/disconnect`, { method: "DELETE" });
+}
+
+export function connectWahoo(): void {
+	window.location.href = `${API_BASE}/wahoo/connect`;
+}
+
+export async function registerWahooWebhook(): Promise<void> {
+	const res = await fetch(`${API_BASE}/wahoo/webhook/register`, {
+		method: "POST",
+	});
+	if (!res.ok) {
+		const data = await res.json().catch(() => ({ error: "Failed" }));
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to register webhook",
+		);
+	}
+}
+
+export async function unregisterWahooWebhook(): Promise<void> {
+	const res = await fetch(`${API_BASE}/wahoo/webhook/register`, {
+		method: "DELETE",
+	});
+	if (!res.ok) {
+		const data = await res.json().catch(() => ({ error: "Failed" }));
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to unregister webhook",
+		);
+	}
+}
+
 // ─── Trainer ─────────────────────────────────────────────────────────────────
 
 export async function fetchAvailableModels(): Promise<ModelEntry[]> {
