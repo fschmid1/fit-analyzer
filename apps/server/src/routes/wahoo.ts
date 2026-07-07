@@ -558,6 +558,22 @@ wahoo.post("/sync", async (c) => {
 	let page = 1;
 	const perPage = 100;
 
+	// Process a single list workout item. The list endpoint omits
+	// workout_type_family_id (and may return workout_summary as null), so we
+	// always fetch the full workout and let importWorkout decide whether to
+	// skip (non-biking family or no FIT file yet).
+	const processListed = async (workout: WahooWorkout) => {
+		try {
+			const full = await fetchWorkout(workout.id, accessToken);
+			const result = await importWorkout(userId, full);
+			if (result === "imported") imported++;
+			else if (result === "updated") updated++;
+			else skipped++;
+		} catch (err) {
+			console.error(`[wahoo] Failed to import workout ${workout.id}:`, err);
+		}
+	};
+
 	// Wahoo's /workouts is sorted by `starts` descending and has no date filter
 	// param, so we paginate and stop once we cross the cutoff.
 	// eslint-disable-next-line no-constant-condition
@@ -586,45 +602,14 @@ wahoo.post("/sync", async (c) => {
 				// Still process the in-range workouts on this page before breaking.
 				for (const workout of data.workouts) {
 					if (new Date(workout.starts).getTime() < cutoffMs) break;
-					if (
-						workout.workout_type_family_id !== BIKING_WORKOUT_TYPE_FAMILY_ID
-					) {
-						skipped++;
-						continue;
-					}
-					try {
-						// Fetch the full workout to get the embedded workout_summary (the
-						// list endpoint returns summary as null until populated).
-						const full = await fetchWorkout(workout.id, accessToken);
-						const result = await importWorkout(userId, full);
-						if (result === "imported") imported++;
-						else if (result === "updated") updated++;
-						else skipped++;
-					} catch (err) {
-						console.error(
-							`[wahoo] Failed to import workout ${workout.id}:`,
-							err,
-						);
-					}
+					await processListed(workout);
 				}
 				break;
 			}
 		}
 
 		for (const workout of data.workouts) {
-			if (workout.workout_type_family_id !== BIKING_WORKOUT_TYPE_FAMILY_ID) {
-				skipped++;
-				continue;
-			}
-			try {
-				const full = await fetchWorkout(workout.id, accessToken);
-				const result = await importWorkout(userId, full);
-				if (result === "imported") imported++;
-				else if (result === "updated") updated++;
-				else skipped++;
-			} catch (err) {
-				console.error(`[wahoo] Failed to import workout ${workout.id}:`, err);
-			}
+			await processListed(workout);
 		}
 
 		if (data.workouts.length < perPage) break;
