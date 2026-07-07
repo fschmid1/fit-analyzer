@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import { useDrag } from "@use-gesture/react";
 import { useSpring, animated } from "@react-spring/web";
 import { Upload, FileWarning, Loader2 } from "lucide-react";
-import { parseFit } from "../lib/parseFit";
+import { parseFit } from "@fit-analyzer/shared";
 import type { ParsedActivity } from "@fit-analyzer/shared";
 
 interface FileDropZoneProps {

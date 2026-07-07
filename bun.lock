@@ -34,7 +34,6 @@
       "version": "0.0.0",
       "dependencies": {
         "@fit-analyzer/shared": "workspace:*",
-        "@garmin/fitsdk": "^21.195.0",
         "@mapbox/polyline": "^1.2.1",
         "@react-spring/web": "^10.0.3",
         "@tailwindcss/vite": "^4.2.2",
@@ -67,6 +66,9 @@
     "packages/shared": {
       "name": "@fit-analyzer/shared",
       "version": "0.0.0",
+      "dependencies": {
+        "@garmin/fitsdk": "^21.195.0",
+      },
       "devDependencies": {
         "typescript": "^5.0.0",
       },

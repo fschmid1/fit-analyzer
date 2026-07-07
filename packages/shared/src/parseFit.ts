@@ -4,12 +4,13 @@ import type {
 	ActivitySummary,
 	LapMarker,
 	ParsedActivity,
-} from "@fit-analyzer/shared";
+} from "./types.js";
 import {
-	computeNormalizedPower,
+	buildPowerBySecond,
 	computeNormalizedCadence,
-} from "@fit-analyzer/shared";
-import { computePeakPower } from "./stats";
+	computeNormalizedPower,
+	peakPowerFromSeconds,
+} from "./power.js";
 
 type FitMessage = Record<string, unknown>;
 
@@ -113,9 +114,10 @@ export function parseFit(arrayBuffer: ArrayBuffer): ParsedActivity {
 
 	const dateStr = startTime.toISOString().split("T")[0];
 
-	const peak1min = computePeakPower(records, 60);
-	const peak5min = computePeakPower(records, 300);
-	const peak20min = computePeakPower(records, 1200);
+	const powerBySecond = buildPowerBySecond(records);
+	const peak1min = peakPowerFromSeconds(powerBySecond, 60);
+	const peak5min = peakPowerFromSeconds(powerBySecond, 300);
+	const peak20min = peakPowerFromSeconds(powerBySecond, 1200);
 	const normalizedPower = computeNormalizedPower(records);
 	const normalizedCadence = computeNormalizedCadence(records);
 	const totalTimerTime = asFiniteNumber(session?.totalTimerTime);

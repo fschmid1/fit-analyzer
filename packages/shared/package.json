@@ -16,6 +16,9 @@
 		"dev": "tsc --watch",
 		"typecheck": "tsc --noEmit"
 	},
+	"dependencies": {
+		"@garmin/fitsdk": "^21.195.0"
+	},
 	"devDependencies": {
 		"typescript": "^5.0.0"
 	}
