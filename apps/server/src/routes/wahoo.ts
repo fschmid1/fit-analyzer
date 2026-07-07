@@ -372,7 +372,7 @@ wahoo.get("/connect", (c) => {
 		client_id: env.WAHOO_CLIENT_ID,
 		redirect_uri: env.WAHOO_REDIRECT_URI,
 		response_type: "code",
-		scope: "user_read workouts_read offline_access",
+		scope: "user_read user_write workouts_read offline_access",
 		state,
 	});
 
@@ -457,7 +457,7 @@ wahoo.get("/callback", async (c) => {
 			data.refresh_token,
 			expiresAt,
 			wahooUser.id,
-			"user_read workouts_read offline_access",
+			"user_read user_write workouts_read offline_access",
 		);
 
 		console.log(
