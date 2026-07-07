@@ -271,6 +271,17 @@ db.exec(`
     WHERE wahoo_activity_id IS NOT NULL
 `);
 
+// Migration: add webhook_enabled to wahoo_tokens so the UI can show the
+// current webhook registration state without a live Wahoo API call (the
+// GET /v1/user response does not include webhook_* fields).
+try {
+	db.exec(
+		"ALTER TABLE wahoo_tokens ADD COLUMN webhook_enabled INTEGER NOT NULL DEFAULT 0",
+	);
+} catch {
+	/* column already exists */
+}
+
 // Migration: add ow_user_id to user_settings
 try {
 	db.exec("ALTER TABLE user_settings ADD COLUMN ow_user_id TEXT");

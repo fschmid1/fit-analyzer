@@ -26,8 +26,6 @@ interface WahooUser {
 	first: string;
 	last: string;
 	email?: string;
-	webhook_enabled?: boolean;
-	webhook_url?: string | null;
 }
 
 interface WahooWorkoutSummary {
@@ -97,6 +95,7 @@ interface StoredWahooToken {
 	expires_at: number;
 	wahoo_user_id: number | null;
 	scope: string;
+	webhook_enabled: number;
 }
 
 // ─── CSRF State Store ─────────────────────────────────────────────────────────
@@ -149,25 +148,29 @@ function getUserId(c: {
 }
 
 const getTokenStmt = db.prepare<StoredWahooToken, [string]>(
-	`SELECT user_id, access_token, refresh_token, expires_at, wahoo_user_id, scope
+	`SELECT user_id, access_token, refresh_token, expires_at, wahoo_user_id, scope, webhook_enabled
    FROM wahoo_tokens WHERE user_id = ?`,
 );
 
 const getTokenByWahooUserStmt = db.prepare<StoredWahooToken, [number]>(
-	`SELECT user_id, access_token, refresh_token, expires_at, wahoo_user_id, scope
+	`SELECT user_id, access_token, refresh_token, expires_at, wahoo_user_id, scope, webhook_enabled
    FROM wahoo_tokens WHERE wahoo_user_id = ?`,
 );
 
 const upsertTokenStmt = db.prepare(
 	`INSERT OR REPLACE INTO wahoo_tokens
-     (user_id, access_token, refresh_token, expires_at, wahoo_user_id, scope, updated_at)
-   VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+     (user_id, access_token, refresh_token, expires_at, wahoo_user_id, scope, webhook_enabled, updated_at)
+   VALUES (?, ?, ?, ?, ?, ?, COALESCE((SELECT webhook_enabled FROM wahoo_tokens WHERE user_id = ?), 0), datetime('now'))`,
 );
 
 const updateTokenStmt = db.prepare(
 	`UPDATE wahoo_tokens
    SET access_token = ?, refresh_token = ?, expires_at = ?, updated_at = datetime('now')
    WHERE user_id = ?`,
+);
+
+const setWebhookEnabledStmt = db.prepare(
+	`UPDATE wahoo_tokens SET webhook_enabled = ?, updated_at = datetime('now') WHERE user_id = ?`,
 );
 
 const checkWahooActivityStmt = db.prepare<{ id: string }, [string, string]>(
@@ -491,6 +494,7 @@ wahoo.get("/callback", async (c) => {
 			expiresAt,
 			wahooUser.id,
 			"user_read user_write workouts_read offline_data",
+			userId,
 		);
 
 		console.log(
@@ -504,7 +508,7 @@ wahoo.get("/callback", async (c) => {
 });
 
 /** GET /api/wahoo/status — check connection status */
-wahoo.get("/status", async (c) => {
+wahoo.get("/status", (c) => {
 	let userId: string;
 	try {
 		userId = getUserId(c);
@@ -515,27 +519,11 @@ wahoo.get("/status", async (c) => {
 	const token = getTokenStmt.get(userId);
 	if (!token) return c.json({ connected: false });
 
-	// Fetch the live Wahoo user record to reflect current webhook state.
-	// Falls back to "unknown" (null) if the API call fails so the UI still works.
-	let webhookEnabled: boolean | null = null;
-	try {
-		const accessToken = await getValidToken(userId);
-		const userRes = await fetch("https://api.wahooligan.com/v1/user", {
-			headers: { Authorization: `Bearer ${accessToken}` },
-		});
-		if (userRes.ok) {
-			const wahooUser = (await userRes.json()) as WahooUser;
-			webhookEnabled = wahooUser.webhook_enabled === true;
-		}
-	} catch {
-		// leave webhookEnabled as null — UI will treat it as not registered
-	}
-
 	return c.json({
 		connected: true,
 		wahooUserId: token.wahoo_user_id,
 		scope: token.scope,
-		webhookEnabled,
+		webhookEnabled: token.webhook_enabled === 1,
 	});
 });
 
@@ -780,6 +768,7 @@ wahoo.post("/webhook/register", async (c) => {
 		return c.json({ error: `Wahoo API error: ${res.status}` }, 502);
 	}
 
+	setWebhookEnabledStmt.run(1, userId);
 	console.log(`[wahoo] Registered webhook ${webhookUrl} for user ${userId}`);
 	return c.json({ ok: true, webhookUrl });
 });
@@ -818,6 +807,7 @@ wahoo.delete("/webhook/register", async (c) => {
 		return c.json({ error: `Wahoo API error: ${res.status}` }, 502);
 	}
 
+	setWebhookEnabledStmt.run(0, userId);
 	console.log(`[wahoo] Unregistered webhook for user ${userId}`);
 	return c.json({ ok: true });
 });
