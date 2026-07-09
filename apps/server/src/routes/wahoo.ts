@@ -279,16 +279,20 @@ function isBikingWorkout(workout: WahooWorkout): boolean {
 
 /**
  * Fetch a workout's FIT file, parse it, and insert it into the activities table.
- * Returns "imported" | "updated" if imported, null if skipped (not biking, or no
- * FIT file available yet).
+ * - "imported" / "updated": workout was imported (newly or as a replacement)
+ * - "skipped": workout is not a biking workout — do not retry
+ * - "pending": workout is biking but has no downloadable FIT file yet — the
+ *   caller may want to retry later (Wahoo uploads the FIT file to its CDN
+ *   asynchronously, and does NOT re-fire the workout_summary webhook when it
+ *   becomes available, so the webhook handler polls for it).
  */
 async function importWorkout(
 	userId: string,
 	workout: WahooWorkout,
-): Promise<"imported" | "updated" | null> {
+): Promise<"imported" | "updated" | "skipped" | "pending"> {
 	// Only import biking workouts
 	if (!isBikingWorkout(workout)) {
-		return null;
+		return "skipped";
 	}
 
 	const wahooId = String(workout.id);
@@ -297,9 +301,9 @@ async function importWorkout(
 	const fitUrl = workout.workout_summary?.file?.url;
 	if (!fitUrl) {
 		console.log(
-			`[wahoo] Workout ${wahooId} has no FIT file yet — skipping (webhook will fire later)`,
+			`[wahoo] Workout ${wahooId} has no FIT file yet — deferring (caller may retry)`,
 		);
-		return null;
+		return "pending";
 	}
 
 	const alreadyExists = checkWahooActivityStmt.get(userId, wahooId);
@@ -663,6 +667,13 @@ wahoo.post("/sync", async (c) => {
  * POST /api/wahoo/webhook — receive workout_summary events from Wahoo.
  * Wahoo POSTs here when a workout summary is created/updated. We validate the
  * webhook_token, ack 200 immediately, then process in the background.
+ *
+ * Wahoo fires this webhook the moment a workout_summary is created, but the
+ * downloadable FIT file is uploaded to Wahoo's CDN asynchronously and may not
+ * be available yet — and Wahoo does NOT re-fire the webhook when the file
+ * becomes available. So when importWorkout reports "pending" (no FIT file yet),
+ * we poll Wahoo's /workouts/:id endpoint with increasing backoff until the FIT
+ * file shows up (or we exhaust the retry schedule).
  */
 wahoo.post("/webhook", async (c) => {
 	if (!env.WAHOO_WEBHOOK_TOKEN) {
@@ -699,13 +710,42 @@ wahoo.post("/webhook", async (c) => {
 				return;
 			}
 
-			const accessToken = await getValidToken(tokenRow.user_id);
+			const userId = tokenRow.user_id;
 			const workoutId = event.workout_summary.workout.id;
-			const full = await fetchWorkout(workoutId, accessToken);
-			const result = await importWorkout(tokenRow.user_id, full);
-			console.log(
-				`[wahoo] Webhook import result for workout ${workoutId}: ${result ?? "skipped"}`,
-			);
+
+			// Backoff schedule (ms) for re-fetching the workout while the FIT
+			// file is still uploading to Wahoo's CDN. Wahoo doesn't re-fire the
+			// webhook when the file lands, so we poll until it's available.
+			// Total worst-case wait ≈ 6 minutes.
+			const backoffScheduleMs = [
+				15_000, 30_000, 60_000, 120_000, 120_000, 60_000,
+			];
+
+			let result: "imported" | "updated" | "skipped" | "pending" = "pending";
+			for (let attempt = 0; attempt < backoffScheduleMs.length; attempt++) {
+				// Re-resolve the access token each iteration — it may expire
+				// during the long backoff window.
+				const accessToken = await getValidToken(userId);
+				const full = await fetchWorkout(workoutId, accessToken);
+				result = await importWorkout(userId, full);
+				if (result !== "pending") break;
+
+				const delayMs = backoffScheduleMs[attempt];
+				console.log(
+					`[wahoo] Workout ${workoutId} FIT file not ready — retry ${attempt + 1}/${backoffScheduleMs.length} in ${delayMs / 1000}s`,
+				);
+				await Bun.sleep(delayMs);
+			}
+
+			if (result === "pending") {
+				console.warn(
+					`[wahoo] Workout ${workoutId} FIT file never became available after ${backoffScheduleMs.length} retries — giving up`,
+				);
+			} else {
+				console.log(
+					`[wahoo] Webhook import result for workout ${workoutId}: ${result}`,
+				);
+			}
 		} catch (err) {
 			console.error("[wahoo] Webhook background processing failed:", err);
 		}
