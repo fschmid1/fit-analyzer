@@ -9,14 +9,37 @@ import {
 } from "lucide-react";
 import { MetricCard } from "./MetricCard";
 import { formatElapsedTime } from "../lib/formatters";
-import type { ActivitySummary } from "@fit-analyzer/shared";
+import { findPeakPowerWindow } from "../lib/stats";
+import type { ActivityRecord, ActivitySummary } from "@fit-analyzer/shared";
 
 interface SummaryCardsProps {
 	summary: ActivitySummary;
+	records: ActivityRecord[];
+	onPeakClick?: (windowSeconds: number) => void;
 }
 
-export function SummaryCards({ summary }: SummaryCardsProps) {
-	const cards = [
+interface CardConfig {
+	icon: typeof TrendingUp;
+	label: string;
+	value: string | number;
+	unit: string;
+	subValue?: string;
+	color: string;
+	onClick?: () => void;
+}
+
+export function SummaryCards({
+	summary,
+	records,
+	onPeakClick,
+}: SummaryCardsProps) {
+	const peak1minWindow = onPeakClick ? findPeakPowerWindow(records, 60) : null;
+	const peak5minWindow = onPeakClick ? findPeakPowerWindow(records, 300) : null;
+	const peak20minWindow = onPeakClick
+		? findPeakPowerWindow(records, 1200)
+		: null;
+
+	const cards: CardConfig[] = [
 		{
 			icon: Clock,
 			label: "Duration",
@@ -77,14 +100,33 @@ export function SummaryCards({ summary }: SummaryCardsProps) {
 			label: "Peak 1min Power",
 			value: summary.peak1minPower ?? "N/A",
 			unit: summary.peak1minPower !== null ? "W" : "",
+			subValue: peak1minWindow
+				? `${formatElapsedTime(peak1minWindow.startSeconds)}–${formatElapsedTime(peak1minWindow.endSeconds)}`
+				: undefined,
 			color: "#f59e0b",
+			onClick: peak1minWindow ? () => onPeakClick?.(60) : undefined,
 		},
 		{
 			icon: TrendingUp,
 			label: "Peak 5min Power",
 			value: summary.peak5minPower ?? "N/A",
 			unit: summary.peak5minPower !== null ? "W" : "",
+			subValue: peak5minWindow
+				? `${formatElapsedTime(peak5minWindow.startSeconds)}–${formatElapsedTime(peak5minWindow.endSeconds)}`
+				: undefined,
 			color: "#f97316",
+			onClick: peak5minWindow ? () => onPeakClick?.(300) : undefined,
+		},
+		{
+			icon: TrendingUp,
+			label: "Peak 20min Power",
+			value: summary.peak20minPower ?? "N/A",
+			unit: summary.peak20minPower !== null ? "W" : "",
+			subValue: peak20minWindow
+				? `${formatElapsedTime(peak20minWindow.startSeconds)}–${formatElapsedTime(peak20minWindow.endSeconds)}`
+				: undefined,
+			color: "#ea580c",
+			onClick: peak20minWindow ? () => onPeakClick?.(1200) : undefined,
 		},
 		{
 			icon: Flame,

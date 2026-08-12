@@ -16,7 +16,7 @@ import { TrainerView } from "./components/TrainerView";
 import { SettingsPage } from "./pages/SettingsPage";
 import { StatsPage } from "./pages/StatsPage";
 import { EventsPage } from "./pages/EventsPage";
-import { computeAverages } from "./lib/stats";
+import { computeAverages, findPeakPowerWindow } from "./lib/stats";
 import {
 	saveCustomIntervals,
 	loadCustomIntervals,
@@ -54,6 +54,9 @@ function App() {
 		null,
 	);
 	const [chartZoom, setChartZoom] = useState<[number, number] | null>(null);
+	const [peakHighlight, setPeakHighlight] = useState<[number, number] | null>(
+		null,
+	);
 	const [intervalRanges, setIntervalRanges] = useState<[number, number][]>([]);
 	const [lapIntervalObjects, setLapIntervalObjects] = useState<Interval[]>([]);
 	const [customIntervals, setCustomIntervals] = useState<[number, number][]>(
@@ -132,6 +135,7 @@ function App() {
 	const resetAnalysisState = useCallback(() => {
 		setSelectionRange(null);
 		setChartZoom(null);
+		setPeakHighlight(null);
 		setIntervalRanges([]);
 		setLapIntervalObjects([]);
 		setCustomIntervals([]);
@@ -174,6 +178,7 @@ function App() {
 
 				setSelectionRange(null);
 				setChartZoom(null);
+				setPeakHighlight(null);
 
 				const mins = data.intervalMinutes || "";
 				setSavedIntervalMinutes(mins);
@@ -218,8 +223,20 @@ function App() {
 	const handleIntervalClick = useCallback(
 		(startSeconds: number, endSeconds: number) => {
 			setChartZoom([startSeconds, endSeconds]);
+			setPeakHighlight(null);
 		},
 		[],
+	);
+
+	const handlePeakClick = useCallback(
+		(windowSeconds: number) => {
+			if (!activity) return;
+			const win = findPeakPowerWindow(activity.records, windowSeconds);
+			if (!win) return;
+			setChartZoom([win.startSeconds, win.endSeconds]);
+			setPeakHighlight([win.startSeconds, win.endSeconds]);
+		},
+		[activity],
 	);
 
 	const handleIntervalsChange = useCallback((intervals: Interval[]) => {
@@ -355,6 +372,7 @@ function App() {
 			allIntervals={allIntervals}
 			customIntervals={customIntervals}
 			savedIntervalMinutes={savedIntervalMinutes}
+			highlightRange={peakHighlight}
 			onSelectionChange={handleSelectionChange}
 			onIntervalClick={handleIntervalClick}
 			onIntervalsChange={handleIntervalsChange}
@@ -362,6 +380,7 @@ function App() {
 			onAddInterval={handleAddInterval}
 			onRemoveCustomInterval={handleRemoveCustomInterval}
 			onSendAnalysisToTrainer={handleSendAnalysisToTrainer}
+			onPeakClick={handlePeakClick}
 		/>
 	) : null;
 

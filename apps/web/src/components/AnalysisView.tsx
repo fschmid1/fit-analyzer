@@ -30,6 +30,7 @@ interface AnalysisViewProps {
 	allIntervals: Interval[];
 	customIntervals: [number, number][];
 	savedIntervalMinutes: string;
+	highlightRange?: [number, number] | null;
 	onSelectionChange: (range: [number, number] | null) => void;
 	onIntervalClick: (startSeconds: number, endSeconds: number) => void;
 	onIntervalsChange: (intervals: Interval[]) => void;
@@ -37,6 +38,7 @@ interface AnalysisViewProps {
 	onAddInterval: (startSeconds: number, endSeconds: number) => void;
 	onRemoveCustomInterval: (index: number) => void;
 	onSendAnalysisToTrainer?: (text: string, toolCalls?: UIToolCall[]) => void;
+	onPeakClick?: (windowSeconds: number) => void;
 }
 
 export function AnalysisView({
@@ -51,6 +53,7 @@ export function AnalysisView({
 	allIntervals,
 	customIntervals,
 	savedIntervalMinutes,
+	highlightRange,
 	onSelectionChange,
 	onIntervalClick,
 	onIntervalsChange,
@@ -58,6 +61,7 @@ export function AnalysisView({
 	onAddInterval,
 	onRemoveCustomInterval,
 	onSendAnalysisToTrainer,
+	onPeakClick,
 }: AnalysisViewProps) {
 	const [allHighlights, setAllHighlights] =
 		useState<ChartHighlight[]>(getChartHighlights);
@@ -93,10 +97,15 @@ export function AnalysisView({
 					intervalRanges={chartIntervalRanges}
 					onAddInterval={onAddInterval}
 					chartHighlights={chartHighlights}
+					highlightRange={highlightRange}
 				/>
 			</div>
 
-			<SummaryCards summary={activity.summary} />
+			<SummaryCards
+				summary={activity.summary}
+				records={activity.records}
+				onPeakClick={onPeakClick}
+			/>
 
 			<ActivityAnalysis
 				activityId={activityId}

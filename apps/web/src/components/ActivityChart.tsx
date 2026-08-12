@@ -55,6 +55,8 @@ interface ActivityChartProps {
 	onAddInterval?: (startSeconds: number, endSeconds: number) => void;
 	/** External highlights from the coach (e.g. highlight_chart tool results) */
 	chartHighlights?: ChartHighlight[];
+	/** Range to highlight distinctly (e.g. a clicked peak power window) */
+	highlightRange?: [number, number] | null;
 }
 
 interface ChartPointerEvent {
@@ -68,6 +70,7 @@ export const ActivityChart = memo(function ActivityChart({
 	intervalRanges,
 	onAddInterval,
 	chartHighlights,
+	highlightRange,
 }: ActivityChartProps) {
 	const {
 		data,
@@ -938,6 +941,22 @@ export const ActivityChart = memo(function ActivityChart({
 									strokeDasharray="4 3"
 								/>
 							))}
+
+							{/* Peak power window highlight (e.g. from clicking a peak card) */}
+							{highlightRange && (
+								<ReferenceArea
+									key={`peak-hl-${highlightRange[0]}-${highlightRange[1]}`}
+									yAxisId={overlayAxisId ?? undefined}
+									x1={highlightRange[0]}
+									x2={highlightRange[1]}
+									fill="#f59e0b"
+									fillOpacity={0.22}
+									stroke="#f59e0b"
+									strokeOpacity={0.8}
+									strokeWidth={1.5}
+									strokeDasharray="5 3"
+								/>
+							)}
 
 							{/* Rubber-band selection overlay */}
 							{refAreaLeft !== null && refAreaRight !== null && (

@@ -431,6 +431,17 @@ export function StatsPage() {
 										color="#f97316"
 									/>
 									<MetricCard
+										icon={TrendingUp}
+										label="Peak 20min Power"
+										value={
+											data.activityStats.peak20minPower != null
+												? data.activityStats.peak20minPower
+												: "N/A"
+										}
+										unit={data.activityStats.peak20minPower != null ? "W" : ""}
+										color="#ea580c"
+									/>
+									<MetricCard
 										icon={Flame}
 										label="Total Work"
 										value={

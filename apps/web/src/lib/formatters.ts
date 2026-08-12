@@ -24,6 +24,7 @@ export function formatCopyBoxText(
 	lines.push(`- Date: ${summary.date} (${weekday})`);
 	lines.push(`- Peak 1min Power: ${summary.peak1minPower ?? "N/A"}`);
 	lines.push(`- Peak 5min Power: ${summary.peak5minPower ?? "N/A"}`);
+	lines.push(`- Peak 20min Power: ${summary.peak20minPower ?? "N/A"}`);
 	lines.push("");
 	lines.push(
 		`- total_timer_time: ${summary.totalTimerTime ? Math.round(summary.totalTimerTime) : "N/A"}`,

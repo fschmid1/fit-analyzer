@@ -68,13 +68,38 @@ export function computePeakPower(
 	records: ActivityRecord[],
 	windowSeconds: number,
 ): number | null {
+	const win = findPeakPowerWindow(records, windowSeconds);
+	return win ? Math.round(win.avgPower) : null;
+}
+
+export interface PeakPowerWindow {
+	/** Start second of the best window (relative to activity start). */
+	startSeconds: number;
+	/** End second of the best window (relative to activity start). */
+	endSeconds: number;
+	/** Best average power over the window (watts). */
+	avgPower: number;
+}
+
+/**
+ * Find the time window with the highest average power over `windowSeconds`.
+ * Returns null if there aren't enough data points.
+ * Zero-power seconds (coasting / sensor dropouts) are ignored in the
+ * average but still count towards the window length.
+ */
+export function findPeakPowerWindow(
+	records: ActivityRecord[],
+	windowSeconds: number,
+): PeakPowerWindow | null {
 	const powerRecords = records.filter((r) => r.power != null && r.power > 0);
 	if (powerRecords.length === 0) return null;
 
 	const powerBySecond = buildPowerBySecond(records);
 	if (powerBySecond.length - 1 < windowSeconds) return null;
 
-	let best = 0;
+	let bestAvg = 0;
+	let bestStartIdx = 0;
+
 	let windowSum = 0;
 	let windowCount = 0;
 
@@ -88,7 +113,8 @@ export function computePeakPower(
 	}
 
 	if (windowCount > 0) {
-		best = windowSum / windowCount;
+		bestAvg = windowSum / windowCount;
+		bestStartIdx = 0;
 	}
 
 	// Slide the window
@@ -107,11 +133,24 @@ export function computePeakPower(
 
 		if (windowCount > 0) {
 			const avg = windowSum / windowCount;
-			if (avg > best) best = avg;
+			if (avg > bestAvg) {
+				bestAvg = avg;
+				bestStartIdx = i - windowSeconds + 1;
+			}
 		}
 	}
 
-	return best > 0 ? Math.round(best) : null;
+	if (bestAvg <= 0) return null;
+
+	// Map the per-second array index back to an absolute elapsed second.
+	// buildPowerBySecond rebases to the first record's elapsedSeconds, so
+	// index 0 corresponds to records[0].elapsedSeconds.
+	const baseSeconds = records[0]?.elapsedSeconds ?? 0;
+	return {
+		startSeconds: baseSeconds + bestStartIdx,
+		endSeconds: baseSeconds + bestStartIdx + windowSeconds,
+		avgPower: bestAvg,
+	};
 }
 
 /**

@@ -9,6 +9,7 @@ interface MetricCardProps {
 	unit: string;
 	subValue?: string;
 	color: string;
+	onClick?: () => void;
 }
 
 export function MetricCard({
@@ -18,13 +19,28 @@ export function MetricCard({
 	unit,
 	subValue,
 	color,
+	onClick,
 }: MetricCardProps) {
 	const pressGesture = useSpringScale({ scaleDown: 0.97 });
+	const clickable = onClick != null;
 
 	return (
 		<animated.div
 			{...pressGesture}
-			className="flex min-w-0 items-center gap-4 p-4 bg-[#1a1533]/70 backdrop-blur-md border border-[rgba(139,92,246,0.1)] rounded-2xl hover:border-[rgba(139,92,246,0.2)] transition-[border-color] duration-200 cursor-default"
+			onClick={onClick}
+			role={clickable ? "button" : undefined}
+			tabIndex={clickable ? 0 : undefined}
+			onKeyDown={
+				clickable
+					? (e) => {
+							if (e.key === "Enter" || e.key === " ") {
+								e.preventDefault();
+								onClick?.();
+							}
+						}
+					: undefined
+			}
+			className={`flex min-w-0 items-center gap-4 p-4 bg-[#1a1533]/70 backdrop-blur-md border border-[rgba(139,92,246,0.1)] rounded-2xl transition-[border-color,background-color] duration-200 ${clickable ? "hover:border-[rgba(139,92,246,0.45)] hover:bg-[#1a1533]/90 cursor-pointer" : "cursor-default"}`}
 		>
 			<div
 				className="flex items-center justify-center w-11 h-11 rounded-xl shrink-0"
