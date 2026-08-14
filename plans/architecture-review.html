@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Architecture review — fit-analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+    </script>
+    <style>
+      .seam { stroke-dasharray: 4 4; }
+      .leak { stroke: #dc2626; }
+      .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+      .module-box { border: 1px solid #475569; border-radius: 6px; padding: 8px 12px; text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; background: #f8fafc; }
+      .module-box.dark { background: #1e293b; color: #e2e8f0; border-color: #334155; }
+      .module-box.leak { border-color: #dc2626; }
+      .arrow { stroke: #64748b; stroke-width: 1.5; fill: none; marker-end: url(#arrowhead); }
+      .arrow.red { stroke: #dc2626; }
+      .interface-bar { height: 8px; border-radius: 4px; }
+      .impl-bar { border-radius: 4px; }
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-900 font-sans">
+    <main class="max-w-5xl mx-auto px-6 py-12 space-y-12">
+
+      <!-- Legend -->
+      <header class="space-y-3">
+        <div class="flex items-baseline justify-between">
+          <h1 class="text-2xl font-serif text-slate-800">Architecture review — fit-analyzer</h1>
+          <span class="text-sm text-slate-500">Aug 14, 2026</span>
+        </div>
+        <div class="flex flex-wrap gap-4 text-xs text-slate-500 border-b border-slate-200 pb-3">
+          <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-3 border border-slate-400 rounded-sm bg-slate-50"></span> module</span>
+          <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-3 border border-slate-700 rounded-sm bg-slate-800"></span> deep module</span>
+          <span class="flex items-center gap-1.5"><svg width="20" height="8"><line x1="0" y1="4" x2="20" y2="4" stroke="#64748b" stroke-width="1.5" stroke-dasharray="4 4"/></svg> seam</span>
+          <span class="flex items-center gap-1.5"><svg width="20" height="8"><line x1="0" y1="4" x2="20" y2="4" stroke="#dc2626" stroke-width="1.5"/></svg> leakage</span>
+        </div>
+      </header>
+
+      <section id="candidates" class="space-y-10">
+
+        <!-- ================================================================ -->
+        <!-- CANDIDATE 1: Collapse the trainer god-module -->
+        <!-- ================================================================ -->
+        <article class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="p-6 space-y-4">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+              <h2 class="text-xl font-serif text-slate-800">Collapse the trainer god-module</h2>
+              <div class="flex gap-2">
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">Strong</span>
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+              </div>
+            </div>
+            <div class="font-mono text-sm text-slate-600 space-y-0.5">
+              <div>apps/server/src/routes/trainer.ts <span class="text-slate-400">— 1575 LOC, 16 endpoints</span></div>
+              <div>apps/server/src/lib/trainerStreamRegistry.ts</div>
+              <div>apps/server/src/lib/trainerToolLoop.ts</div>
+            </div>
+
+            <!-- Before / After -->
+            <div class="grid grid-cols-2 gap-4 mt-4">
+              <!-- Before -->
+              <div class="rounded-lg border border-slate-200 p-4 bg-stone-50">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-3 text-center">Before</p>
+                <div class="rounded-lg border border-red-300 bg-white p-3">
+                  <p class="text-xs font-mono text-center text-red-600 mb-2">routes/trainer.ts</p>
+                  <div class="space-y-1.5 text-[10px] text-slate-500 text-left font-mono">
+                    <div class="pl-2 border-l-2 border-slate-300">POST /chat</div>
+                    <div class="pl-2 border-l-2 border-slate-300">GET /chat/:streamId</div>
+                    <div class="pl-2 border-l-2 border-slate-300">POST /analyze/:id</div>
+                    <div class="pl-2 border-l-2 border-red-300 text-red-600">compaction (250 LOC)</div>
+                    <div class="pl-2 border-l-2 border-red-300 text-red-600">token tracking + cache</div>
+                    <div class="pl-2 border-l-2 border-slate-300">thread CRUD (4 routes)</div>
+                    <div class="pl-2 border-l-2 border-slate-300">history GET/PUT (paginated)</div>
+                    <div class="pl-2 border-l-2 border-slate-300">import / export</div>
+                    <div class="pl-2 border-l-2 border-red-300 text-red-600">~14 SQL statements</div>
+                    <div class="pl-2 border-l-2 border-red-300 text-red-600">getKimiRequestMetadata</div>
+                    <div class="pl-2 border-l-2 border-slate-300">sanitizeMessagesForModel</div>
+                  </div>
+                </div>
+                <p class="text-[10px] text-red-500 text-center mt-2">one file, six subsystems</p>
+              </div>
+              <!-- After -->
+              <div class="rounded-lg border border-slate-200 p-4 bg-stone-50">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-3 text-center">After</p>
+                <div class="space-y-2">
+                  <div class="rounded-lg border border-slate-700 bg-slate-800 p-2.5">
+                    <p class="text-xs font-mono text-center text-slate-200">trainer route</p>
+                    <p class="text-[10px] text-slate-400 text-center">thin HTTP dispatch</p>
+                  </div>
+                  <div class="rounded border border-slate-600 bg-slate-700 p-2">
+                    <p class="text-[10px] font-mono text-center text-slate-300">compaction engine</p>
+                  </div>
+                  <div class="rounded border border-slate-600 bg-slate-700 p-2">
+                    <p class="text-[10px] font-mono text-center text-slate-300">thread repo</p>
+                  </div>
+                  <div class="rounded border border-slate-600 bg-slate-700 p-2">
+                    <p class="text-[10px] font-mono text-center text-slate-300">history store</p>
+                  </div>
+                  <div class="rounded border border-slate-600 bg-slate-700 p-2">
+                    <p class="text-[10px] font-mono text-center text-slate-300">provider config</p>
+                  </div>
+                </div>
+                <p class="text-[10px] text-emerald-600 text-center mt-2">one seam per subsystem</p>
+              </div>
+            </div>
+
+            <div class="space-y-2 text-sm">
+              <p><span class="font-medium text-slate-700">Problem:</span> One module owns six distinct subsystems behind a single Hono interface. Every change to compaction, token tracking, or import/export touches the same 1575-line file.</p>
+              <p><span class="font-medium text-slate-700">Solution:</span> Split into a thin route module that dispatches to a compaction engine, a thread repository, a history store, and a provider-config module — each with its own seam.</p>
+            </div>
+            <div class="flex flex-wrap gap-2 text-xs">
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">locality: compaction bugs concentrate in one module</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">interface shrinks; route becomes dispatch-only</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">each subsystem testable through its own seam</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">delete ~14 inlined SQL statements</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- ================================================================ -->
+        <!-- CANDIDATE 2: Extract the compaction engine -->
+        <!-- ================================================================ -->
+        <article class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="p-6 space-y-4">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+              <h2 class="text-xl font-serif text-slate-800">Extract the compaction engine</h2>
+              <div class="flex gap-2">
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">Strong</span>
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+              </div>
+            </div>
+            <div class="font-mono text-sm text-slate-600 space-y-0.5">
+              <div>apps/server/src/routes/trainer.ts <span class="text-slate-400">— lines 1003–1391</span></div>
+            </div>
+
+            <!-- Before / After: Mass diagram -->
+            <div class="grid grid-cols-2 gap-4 mt-4">
+              <div class="rounded-lg border border-slate-200 p-4 bg-stone-50">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-3 text-center">Before — shallow (inlined in route)</p>
+                <div class="flex items-end justify-center gap-6 h-40">
+                  <div class="flex flex-col items-center">
+                    <div class="interface-bar w-16 bg-red-400" style="height: 90px"></div>
+                    <p class="text-[10px] text-slate-500 mt-1">interface<br/>(8 fns, 7 consts)</p>
+                  </div>
+                  <div class="flex flex-col items-center">
+                    <div class="impl-bar w-16 bg-slate-700" style="height: 100px"></div>
+                    <p class="text-[10px] text-slate-500 mt-1">implementation<br/>(~250 LOC)</p>
+                  </div>
+                </div>
+                <p class="text-[10px] text-red-500 text-center mt-2">interface ≈ implementation — no seam</p>
+              </div>
+              <div class="rounded-lg border border-slate-200 p-4 bg-stone-50">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-3 text-center">After — deep module</p>
+                <div class="flex items-end justify-center gap-6 h-40">
+                  <div class="flex flex-col items-center">
+                    <div class="interface-bar w-16 bg-emerald-500" style="height: 20px"></div>
+                    <p class="text-[10px] text-slate-500 mt-1">interface<br/>(compactThread)</p>
+                  </div>
+                  <div class="flex flex-col items-center">
+                    <div class="impl-bar w-16 bg-slate-800" style="height: 120px"></div>
+                    <p class="text-[10px] text-slate-500 mt-1">implementation<br/>(budget + batch + reconstruct)</p>
+                  </div>
+                </div>
+                <p class="text-[10px] text-emerald-600 text-center mt-2">small interface, deep implementation</p>
+              </div>
+            </div>
+
+            <div class="space-y-2 text-sm">
+              <p><span class="font-medium text-slate-700">Problem:</span> Compaction — budget computation, batch summarization, oversized-message handling, thread reconstruction — is inlined in the route with no seam. Untestable without a running server and a live LLM.</p>
+              <p><span class="font-medium text-slate-700">Solution:</span> Extract a compaction module with one interface: <code class="text-xs bg-slate-100 px-1 rounded">compactThread(threadId, userId): Promise&lt;CompactionResult&gt;</code>. Budget math, summary fetching, and new-thread construction all sit behind it.</p>
+            </div>
+            <div class="flex flex-wrap gap-2 text-xs">
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">locality: compaction logic in one module</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">testable with a fake LLM adapter</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">route handler shrinks to 3 lines</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">budget constants live next to their logic</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- ================================================================ -->
+        <!-- CANDIDATE 3: Extract the activity importer -->
+        <!-- ================================================================ -->
+        <article class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="p-6 space-y-4">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+              <h2 class="text-xl font-serif text-slate-800">Extract the activity importer</h2>
+              <div class="flex gap-2">
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">Strong</span>
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+              </div>
+            </div>
+            <div class="font-mono text-sm text-slate-600 space-y-0.5">
+              <div>apps/server/src/routes/strava.ts <span class="text-slate-400">— importSingleActivity, buildRecords, buildSummary, buildLaps</span></div>
+              <div>apps/server/src/routes/wahoo.ts <span class="text-slate-400">— importWorkout, isBikingWorkout</span></div>
+              <div>apps/server/src/lib/waxedChainReminders.ts <span class="text-slate-400">— computeDistanceKm (shared post-import)</span></div>
+              <div>apps/server/src/lib/athleteProfile.ts + athleteStats.ts <span class="text-slate-400">— maybeUpdateAthleteLocation (duplicated)</span></div>
+            </div>
+
+            <!-- Before / After: Call graph -->
+            <div class="grid grid-cols-2 gap-4 mt-4">
+              <div class="rounded-lg border border-slate-200 p-4 bg-stone-50">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-3 text-center">Before — duplicated scaffolding</p>
+                <div class="rounded-lg border border-slate-200 bg-white p-3">
+                  <pre class="mermaid">
+                    flowchart TD
+                      S[strava.ts] --> S1[fetch + streams]
+                      S --> S2[buildRecords]
+                      S --> S3[buildSummary]
+                      S --> S4[delete + insert]
+                      S --> S5[waxed-chain reminder]
+                      S --> S6[maybeUpdateAthleteLocation]
+                      W[wahoo.ts] --> W1[fetch workout]
+                      W --> W2[download FIT]
+                      W --> W3[parseFit]
+                      W --> W4[delete + insert]
+                      W --> W5[waxed-chain reminder]
+                      W --> W6[maybeUpdateAthleteLocation]
+                      classDef dup fill:#fef2f2,stroke:#dc2626
+                      class S4,S5,S6,W4,W5,W6 dup
+                  </pre>
+                </div>
+                <p class="text-[10px] text-red-500 text-center mt-2">post-import steps duplicated verbatim</p>
+              </div>
+              <div class="rounded-lg border border-slate-200 p-4 bg-stone-50">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-3 text-center">After — one import seam</p>
+                <div class="rounded-lg border border-slate-700 bg-slate-800 p-3">
+                  <pre class="mermaid">
+                    flowchart TD
+                      S[strava.ts] --> A
+                      W[wahoo.ts] --> A
+                      A[activity importer] --> P[persist: delete + insert]
+                      A --> R[waxed-chain reminder]
+                      A --> L[maybeUpdateAthleteLocation]
+                      classDef deep fill:#1e293b,stroke:#475569,color:#e2e8f0
+                      class A deep
+                  </pre>
+                </div>
+                <p class="text-[10px] text-emerald-600 text-center mt-2">one module, one post-import path</p>
+              </div>
+            </div>
+
+            <div class="space-y-2 text-sm">
+              <p><span class="font-medium text-slate-700">Problem:</span> "Import a ride" is spread across two route files with duplicated delete-then-insert, waxed-chain reminder, and location-inference calls. The Strava path inlines stream-to-record converters; the Wahoo path inlines biking detection. No shared import seam.</p>
+              <p><span class="font-medium text-slate-700">Solution:</span> Extract an activity importer that accepts a normalized <code class="text-xs bg-slate-100 px-1 rounded">{records, summary, laps, sourceId, source}</code> and owns persistence + post-import side effects. Each integration becomes a thin adapter that fetches and transforms to the normalized shape.</p>
+            </div>
+            <div class="flex flex-wrap gap-2 text-xs">
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">locality: import side effects in one module</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">leverage: one import path, N integrations</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">delete maybeUpdateAthleteLocation duplicate</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">testable with a fake records payload</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- ================================================================ -->
+        <!-- CANDIDATE 4: Unify the OAuth2 integration module -->
+        <!-- ================================================================ -->
+        <article class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="p-6 space-y-4">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+              <h2 class="text-xl font-serif text-slate-800">Unify the OAuth2 integration module</h2>
+              <div class="flex gap-2">
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">Strong</span>
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">ports &amp; adapters</span>
+              </div>
+            </div>
+            <div class="font-mono text-sm text-slate-600 space-y-0.5">
+              <div>apps/server/src/routes/strava.ts <span class="text-slate-400">— connect, callback, status, sync, webhook (1272 LOC)</span></div>
+              <div>apps/server/src/routes/wahoo.ts <span class="text-slate-400">— connect, callback, status, sync, webhook (855 LOC)</span></div>
+            </div>
+
+            <!-- Before/After: Cross-section -->
+            <div class="grid grid-cols-2 gap-4 mt-4">
+              <div class="rounded-lg border border-slate-200 p-4 bg-stone-50">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-3 text-center">Before — two parallel stacks</p>
+                <div class="space-y-1.5">
+                  <div class="flex gap-2">
+                    <div class="flex-1 h-8 border-l-4 border-red-400 bg-red-50 rounded-r flex items-center px-2 text-[10px] text-red-700">pendingStates + pruneStates</div>
+                    <div class="flex-1 h-8 border-l-4 border-red-400 bg-red-50 rounded-r flex items-center px-2 text-[10px] text-red-700">pendingStates + pruneStates</div>
+                  </div>
+                  <div class="flex gap-2">
+                    <div class="flex-1 h-8 border-l-4 border-slate-300 bg-slate-50 rounded-r flex items-center px-2 text-[10px] text-slate-600">token exchange</div>
+                    <div class="flex-1 h-8 border-l-4 border-slate-300 bg-slate-50 rounded-r flex items-center px-2 text-[10px] text-slate-600">token exchange</div>
+                  </div>
+                  <div class="flex gap-2">
+                    <div class="flex-1 h-8 border-l-4 border-slate-300 bg-slate-50 rounded-r flex items-center px-2 text-[10px] text-slate-600">token refresh</div>
+                    <div class="flex-1 h-8 border-l-4 border-slate-300 bg-slate-50 rounded-r flex items-center px-2 text-[10px] text-slate-600">token refresh</div>
+                  </div>
+                  <div class="flex gap-2">
+                    <div class="flex-1 h-8 border-l-4 border-red-400 bg-red-50 rounded-r flex items-center px-2 text-[10px] text-red-700">maybeUpdateAthleteLocation</div>
+                    <div class="flex-1 h-8 border-l-4 border-red-400 bg-red-50 rounded-r flex items-center px-2 text-[10px] text-red-700">maybeUpdateAthleteLocation</div>
+                  </div>
+                  <div class="flex gap-2">
+                    <div class="flex-1 h-8 border-l-4 border-slate-300 bg-slate-50 rounded-r flex items-center px-2 text-[10px] text-slate-600">webhook register</div>
+                    <div class="flex-1 h-8 border-l-4 border-slate-300 bg-slate-50 rounded-r flex items-center px-2 text-[10px] text-slate-600">webhook register</div>
+                  </div>
+                  <p class="text-[10px] text-slate-400 text-center pt-1">strava.ts ←→ wahoo.ts</p>
+                </div>
+              </div>
+              <div class="rounded-lg border border-slate-200 p-4 bg-stone-50">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-3 text-center">After — shared OAuth2 core</p>
+                <div class="space-y-1.5">
+                  <div class="h-10 border-l-4 border-slate-700 bg-slate-800 rounded-r flex items-center px-2 text-[10px] text-slate-200">OAuth2 core: state store, token exchange, token refresh, webhook register</div>
+                  <div class="flex gap-2">
+                    <div class="flex-1 h-7 border-l-4 border-emerald-400 bg-emerald-50 rounded-r flex items-center px-2 text-[10px] text-emerald-700">strava adapter</div>
+                    <div class="flex-1 h-7 border-l-4 border-emerald-400 bg-emerald-50 rounded-r flex items-center px-2 text-[10px] text-emerald-700">wahoo adapter</div>
+                  </div>
+                  <div class="h-7 border-l-4 border-slate-600 bg-slate-100 rounded-r flex items-center px-2 text-[10px] text-slate-600">activity importer (candidate 3)</div>
+                </div>
+                <p class="text-[10px] text-emerald-600 text-center mt-3">two adapters justify the seam</p>
+              </div>
+            </div>
+
+            <div class="space-y-2 text-sm">
+              <p><span class="font-medium text-slate-700">Problem:</span> Strava and Wahoo share the same OAuth2 flow shape — connect, state store, callback, token exchange, refresh, status, webhook — but each inlines its own copy. <code class="text-xs bg-slate-100 px-1 rounded">pendingStates</code>, <code class="text-xs bg-slate-100 px-1 rounded">pruneStates</code>, <code class="text-xs bg-slate-100 px-1 rounded">maybeUpdateAthleteLocation</code>, and <code class="text-xs bg-slate-100 px-1 rounded">getUserId</code> are duplicated verbatim.</p>
+              <p><span class="font-medium text-slate-700">Solution:</span> Extract an OAuth2 core module with a provider adapter interface (<code class="text-xs bg-slate-100 px-1 rounded">{ authorizeUrl, tokenEndpoint, scopes, parseTokenResponse }</code>). Two adapters — Strava, Wahoo — satisfy it. The state store becomes shared infrastructure, not per-route.</p>
+            </div>
+            <div class="flex flex-wrap gap-2 text-xs">
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">leverage: one OAuth2 core, N providers</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">delete ~200 LOC of duplication</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">state store survives restart if backed by db</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">testable with a fake provider adapter</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- ================================================================ -->
+        <!-- CANDIDATE 5: Unify the health-context derivation -->
+        <!-- ================================================================ -->
+        <article class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="p-6 space-y-4">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+              <h2 class="text-xl font-serif text-slate-800">Unify the health-context derivation</h2>
+              <div class="flex gap-2">
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Worth exploring</span>
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+              </div>
+            </div>
+            <div class="font-mono text-sm text-slate-600 space-y-0.5">
+              <div>apps/server/src/lib/owClient.ts <span class="text-slate-400">— computeHealthContext, determineStatus (563 LOC)</span></div>
+              <div>apps/server/src/lib/haeClient.ts <span class="text-slate-400">— computeHaeHealthContext, determineStatus (999 LOC)</span></div>
+              <div>apps/server/src/routes/health.ts <span class="text-slate-400">— buildHealthData, resolveHealthData</span></div>
+              <div>packages/shared/src/types.ts <span class="text-slate-400">— HealthContext (duplicated in owClient)</span></div>
+            </div>
+
+            <!-- Before/After: Call graph collapse -->
+            <div class="grid grid-cols-2 gap-4 mt-4">
+              <div class="rounded-lg border border-slate-200 p-4 bg-stone-50">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-3 text-center">Before — derivation split across two clients</p>
+                <div class="rounded-lg border border-slate-200 bg-white p-3">
+                  <pre class="mermaid">
+                    flowchart LR
+                      H[health.ts] --> OW[owClient]
+                      H --> HAE[haeClient]
+                      OW --> OW1[computeHealthContext]
+                      OW --> OW2[determineStatus]
+                      HAE --> HAE1[computeHaeHealthContext]
+                      HAE --> HAE2[determineStatus]
+                      OW -.cast.-> T["shared HealthContext"]
+                      HAE --> T
+                      classDef dup fill:#fef2f2,stroke:#dc2626
+                      class OW2,HAE2 dup
+                  </pre>
+                </div>
+              </div>
+              <div class="rounded-lg border border-slate-200 p-4 bg-stone-50">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-3 text-center">After — one derivation module</p>
+                <div class="rounded-lg border border-slate-700 bg-slate-800 p-3">
+                  <pre class="mermaid">
+                    flowchart LR
+                      H[health.ts] --> D[health-context derivation]
+                      OW[owClient] --> D
+                      HAE[haeClient] --> D
+                      classDef deep fill:#1e293b,stroke:#475569,color:#e2e8f0
+                      class D deep
+                  </pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="space-y-2 text-sm">
+              <p><span class="font-medium text-slate-700">Problem:</span> <code class="text-xs bg-slate-100 px-1 rounded">determineStatus</code> is duplicated verbatim. <code class="text-xs bg-slate-100 px-1 rounded">formatSleepDuration</code> appears 4×. <code class="text-xs bg-slate-100 px-1 rounded">HealthContext</code> is declared in shared AND re-declared locally in owClient. The two clients derive the same metrics (RHR, HRV, RR, SpO2, status) from different raw sources with near-identical logic.</p>
+              <p><span class="font-medium text-slate-700">Solution:</span> Extract a health-context derivation module that accepts raw per-day snapshots and produces <code class="text-xs bg-slate-100 px-1 rounded">HealthContext</code>. OW and HAE become adapters that produce raw snapshots; the derivation logic lives once.</p>
+            </div>
+            <div class="flex flex-wrap gap-2 text-xs">
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">locality: RHR/HRV/status logic in one module</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">delete determineStatus + formatSleepDuration duplicates</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">one HealthContext type, not two</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">derivation testable with synthetic snapshots</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- ================================================================ -->
+        <!-- CANDIDATE 6: Unify the provider stream adapters -->
+        <!-- ================================================================ -->
+        <article class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="p-6 space-y-4">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+              <h2 class="text-xl font-serif text-slate-800">Unify the provider stream adapters</h2>
+              <div class="flex gap-2">
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Worth exploring</span>
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">ports &amp; adapters</span>
+              </div>
+            </div>
+            <div class="font-mono text-sm text-slate-600 space-y-0.5">
+              <div>apps/server/src/lib/trainerStream.ts <span class="text-slate-400">— OpenRouter SSE → AG-UI (352 LOC)</span></div>
+              <div>apps/server/src/lib/ollamaTrainerStream.ts <span class="text-slate-400">— Ollama NDJSON → AG-UI (335 LOC)</span></div>
+            </div>
+
+            <!-- Before/After: Mass diagram -->
+            <div class="grid grid-cols-2 gap-4 mt-4">
+              <div class="rounded-lg border border-slate-200 p-4 bg-stone-50">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-3 text-center">Before — two adapters, shared skeleton copied</p>
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="rounded border border-slate-300 bg-white p-2">
+                    <p class="text-[10px] font-mono text-center text-slate-600 mb-1">trainerStream</p>
+                    <div class="space-y-0.5 text-[9px] text-slate-400 font-mono">
+                      <div class="text-red-500">safeParseArgs</div>
+                      <div class="text-red-500">messageContentToString</div>
+                      <div class="text-slate-500">RUN_STARTED + TEXT_START</div>
+                      <div class="text-slate-500">STEP gating</div>
+                      <div class="text-slate-500">TOOL_CALL_END</div>
+                      <div class="text-slate-500">RUN_FINISHED</div>
+                    </div>
+                  </div>
+                  <div class="rounded border border-slate-300 bg-white p-2">
+                    <p class="text-[10px] font-mono text-center text-slate-600 mb-1">ollamaTrainerStream</p>
+                    <div class="space-y-0.5 text-[9px] text-slate-400 font-mono">
+                      <div class="text-red-500">safeParseArgs</div>
+                      <div class="text-red-500">messageContentToString</div>
+                      <div class="text-slate-500">RUN_STARTED + TEXT_START</div>
+                      <div class="text-slate-500">STEP gating</div>
+                      <div class="text-slate-500">TOOL_CALL_END</div>
+                      <div class="text-slate-500">RUN_FINISHED</div>
+                    </div>
+                  </div>
+                </div>
+                <p class="text-[10px] text-red-500 text-center mt-2">~80 LOC skeleton duplicated</p>
+              </div>
+              <div class="rounded-lg border border-slate-200 p-4 bg-stone-50">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-3 text-center">After — shared AG-UI emitter</p>
+                <div class="space-y-2">
+                  <div class="rounded border border-slate-700 bg-slate-800 p-2">
+                    <p class="text-[10px] font-mono text-center text-slate-200">AG-UI emitter (shared skeleton)</p>
+                    <p class="text-[9px] text-slate-400 text-center">RUN_STARTED, TEXT_START, STEP gating, RUN_FINISHED</p>
+                  </div>
+                  <div class="flex gap-2">
+                    <div class="flex-1 rounded border border-emerald-400 bg-emerald-50 p-1.5">
+                      <p class="text-[10px] font-mono text-center text-emerald-700">OpenRouter<br/>parser</p>
+                    </div>
+                    <div class="flex-1 rounded border border-emerald-400 bg-emerald-50 p-1.5">
+                      <p class="text-[10px] font-mono text-center text-emerald-700">Ollama<br/>parser</p>
+                    </div>
+                  </div>
+                </div>
+                <p class="text-[10px] text-emerald-600 text-center mt-2">parsers vary; emission shared</p>
+              </div>
+            </div>
+
+            <div class="space-y-2 text-sm">
+              <p><span class="font-medium text-slate-700">Problem:</span> Two structurally identical adapters with the same AG-UI emission skeleton (~80 LOC), duplicated <code class="text-xs bg-slate-100 px-1 rounded">safeParseArgs</code> and <code class="text-xs bg-slate-100 px-1 rounded">messageContentToString</code>. They differ only in wire-format parsing (SSE deltas vs NDJSON complete chunks).</p>
+              <p><span class="font-medium text-slate-700">Solution:</span> Extract a shared AG-UI emitter that handles the RUN_STARTED/TEXT_MESSAGE_START/STEP/TOOL_CALL_END/RUN_FINISHED protocol. Each provider supplies only its wire-format parser as an adapter.</p>
+            </div>
+            <div class="flex flex-wrap gap-2 text-xs">
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">locality: AG-UI protocol in one module</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">delete safeParseArgs + messageContentToString copies</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">new provider = new parser, not new emitter</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">emitter testable with a fake parser</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- ================================================================ -->
+        <!-- CANDIDATE 7: Extract a persistence seam -->
+        <!-- ================================================================ -->
+        <article class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="p-6 space-y-4">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+              <h2 class="text-xl font-serif text-slate-800">Extract a persistence seam</h2>
+              <div class="flex gap-2">
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">Strong</span>
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+              </div>
+            </div>
+            <div class="font-mono text-sm text-slate-600 space-y-0.5">
+              <div>apps/server/src/db.ts <span class="text-slate-400">— singleton, schema, migrations (385 LOC)</span></div>
+              <div>apps/server/src/routes/*.ts <span class="text-slate-400">— ~14 SQL statements in trainer.ts alone</span></div>
+              <div>apps/server/src/lib/*.ts <span class="text-slate-400">— every lib prepares statements directly</span></div>
+              <div>getUserId(c) <span class="text-slate-400">— duplicated 8× across all route files</span></div>
+            </div>
+
+            <!-- Before/After: Call graph -->
+            <div class="grid grid-cols-2 gap-4 mt-4">
+              <div class="rounded-lg border border-slate-200 p-4 bg-stone-50">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-3 text-center">Before — every module reaches into db</p>
+                <div class="rounded-lg border border-slate-200 bg-white p-3">
+                  <pre class="mermaid">
+                    flowchart TD
+                      T[trainer.ts] --> DB[(db)]
+                      S[strava.ts] --> DB
+                      W[wahoo.ts] --> DB
+                      M[me.ts] --> DB
+                      H[health.ts] --> DB
+                      A[activities.ts] --> DB
+                      R[trainerStreamRegistry] --> DB
+                      C[compareSettings] --> DB
+                      classDef leak stroke:#dc2626,stroke-width:2px
+                      class T,S,W,M,H,A,R,C leak
+                  </pre>
+                </div>
+                <p class="text-[10px] text-red-500 text-center mt-2">no seam between routes and SQL</p>
+              </div>
+              <div class="rounded-lg border border-slate-200 p-4 bg-stone-50">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-3 text-center">After — repository seam per concern</p>
+                <div class="rounded-lg border border-slate-700 bg-slate-800 p-3">
+                  <pre class="mermaid">
+                    flowchart TD
+                      T[trainer.ts] --> TR[thread repo]
+                      S[strava.ts] --> SR[strava repo]
+                      W[wahoo.ts] --> WR[wahoo repo]
+                      TR --> DB[(db)]
+                      SR --> DB
+                      WR --> DB
+                      classDef deep fill:#1e293b,stroke:#475569,color:#e2e8f0
+                      class TR,SR,WR deep
+                  </pre>
+                </div>
+                <p class="text-[10px] text-emerald-600 text-center mt-2">routes testable with fake repos</p>
+              </div>
+            </div>
+
+            <div class="space-y-2 text-sm">
+              <p><span class="font-medium text-slate-700">Problem:</span> Every route and lib prepares SQL statements directly against the <code class="text-xs bg-slate-100 px-1 rounded">db</code> singleton. SQL is inlined in route handlers (disconnect, settings upserts, health-source reads). <code class="text-xs bg-slate-100 px-1 rounded">getUserId(c)</code> is copy-pasted 8×. No module can be tested without a real SQLite file.</p>
+              <p><span class="font-medium text-slate-700">Solution:</span> Extract per-concern repository modules (thread repo, activity repo, token repo, settings repo) with interfaces that accept and return domain shapes. Routes accept a repo, don't create one. <code class="text-xs bg-slate-100 px-1 rounded">getUserId</code> becomes shared auth middleware.</p>
+            </div>
+            <div class="flex flex-wrap gap-2 text-xs">
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">leverage: one repo interface, N call sites</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">routes testable with in-memory fakes</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">delete getUserId × 8</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">SQL lives next to schema, not in routes</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- ================================================================ -->
+        <!-- CANDIDATE 8: Consolidate peak power computation -->
+        <!-- ================================================================ -->
+        <article class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="p-6 space-y-4">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+              <h2 class="text-xl font-serif text-slate-800">Consolidate peak power computation</h2>
+              <div class="flex gap-2">
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Worth exploring</span>
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">in-process</span>
+              </div>
+            </div>
+            <div class="font-mono text-sm text-slate-600 space-y-0.5">
+              <div>packages/shared/src/power.ts <span class="text-slate-400">— peakPowerFromSeconds (per-second, zero-exclusive)</span></div>
+              <div>apps/server/src/routes/strava.ts <span class="text-slate-400">— computePeakPower (time+watt arrays, zero-inclusive)</span></div>
+              <div>apps/web/src/lib/stats.ts <span class="text-slate-400">— computePeakPower (records → per-second → shared logic)</span></div>
+            </div>
+
+            <!-- Before/After: simple boxes -->
+            <div class="grid grid-cols-2 gap-4 mt-4">
+              <div class="rounded-lg border border-slate-200 p-4 bg-stone-50">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-3 text-center">Before — three implementations, subtly different</p>
+                <div class="space-y-2">
+                  <div class="rounded border border-red-300 bg-red-50 p-2 text-[10px] font-mono text-red-700 text-center">shared: zero-exclusive sliding window</div>
+                  <div class="rounded border border-red-300 bg-red-50 p-2 text-[10px] font-mono text-red-700 text-center">strava: zero-inclusive sum ÷ non-zero count</div>
+                  <div class="rounded border border-red-300 bg-red-50 p-2 text-[10px] font-mono text-red-700 text-center">web: records → per-second → same as shared</div>
+                </div>
+                <p class="text-[10px] text-red-500 text-center mt-2">same concept, three zero-handling rules</p>
+              </div>
+              <div class="rounded-lg border border-slate-200 p-4 bg-stone-50">
+                <p class="text-xs uppercase tracking-wider text-slate-400 mb-3 text-center">After — one function, adapters convert input</p>
+                <div class="space-y-2">
+                  <div class="rounded border border-slate-700 bg-slate-800 p-2 text-[10px] font-mono text-slate-200 text-center">peakPowerFromSeconds (the canonical impl)</div>
+                  <div class="flex gap-2">
+                    <div class="flex-1 rounded border border-emerald-400 bg-emerald-50 p-1.5 text-[10px] font-mono text-emerald-700 text-center">strava: streams → per-second</div>
+                    <div class="flex-1 rounded border border-emerald-400 bg-emerald-50 p-1.5 text-[10px] font-mono text-emerald-700 text-center">web: records → per-second</div>
+                  </div>
+                </div>
+                <p class="text-[10px] text-emerald-600 text-center mt-2">one zero-handling rule, testable</p>
+              </div>
+            </div>
+
+            <div class="space-y-2 text-sm">
+              <p><span class="font-medium text-slate-700">Problem:</span> Three implementations of "best average power over N seconds" with subtly different zero/gap handling. A value computed in Strava import can differ from the same activity's web-chart peak — a correctness bug waiting to surface.</p>
+              <p><span class="font-medium text-slate-700">Solution:</span> Keep <code class="text-xs bg-slate-100 px-1 rounded">peakPowerFromSeconds</code> as the canonical implementation. Strava and web each provide a thin adapter that converts their input shape to per-second arrays, then delegate.</p>
+            </div>
+            <div class="flex flex-wrap gap-2 text-xs">
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">locality: one zero-handling rule</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">correctness: same peak value everywhere</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">delete 2 duplicate implementations</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">trivially testable with known arrays</span>
+            </div>
+          </div>
+        </article>
+
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- TOP RECOMMENDATION -->
+      <!-- ================================================================ -->
+      <section id="top-recommendation">
+        <div class="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-6 space-y-3">
+          <div class="flex items-center gap-2">
+            <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-600 text-white">Top recommendation</span>
+          </div>
+          <h2 class="text-2xl font-serif text-slate-800">Start with the compaction engine</h2>
+          <p class="text-sm text-slate-700">
+            It's the highest-leverage extract: ~250 LOC of self-contained logic with clear inputs (messages, model, budget constants) and one output (a new thread). It has zero tests today and can't be tested without a running server. Extracting it gives you the first testable seam in the trainer subsystem, proves the pattern for splitting the rest of the god-module, and is small enough to do in one session.
+          </p>
+          <a href="#" class="text-sm text-emerald-700 hover:underline">↑ See candidate 2</a>
+        </div>
+      </section>
+
+    </main>
+  </body>
+</html>
