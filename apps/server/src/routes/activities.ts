@@ -12,19 +12,9 @@ import type {
 import { recomputeSummaryPeakPowers } from "../lib/tools/activityUtils.js";
 import { computeDistanceKm } from "../lib/waxedChainReminders.js";
 import { importActivity } from "../lib/activityImporter.js";
+import { getUserId } from "../lib/getUserId.js";
 
 const activities = new Hono();
-
-/** Extract the authenticated user ID from Authentik proxy headers */
-function getUserId(c: {
-	req: { header: (name: string) => string | undefined };
-}): string {
-	const userId = c.req.header("x-authentik-username");
-	if (!userId) {
-		throw new Error("Missing X-authentik-username header");
-	}
-	return userId;
-}
 
 // Prepared statements for performance — now scoped by user_id
 const listStmt = db.prepare(

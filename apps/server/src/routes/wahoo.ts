@@ -9,6 +9,14 @@ import {
 	type WahooWorkoutSummary,
 	type WahooWorkoutsResponse,
 } from "../lib/wahooImportAdapter.js";
+import { getUserId } from "../lib/getUserId.js";
+import { oauthStateStore } from "../lib/oauthStateStore.js";
+import {
+	type OAuth2Provider,
+	type OAuth2TokenStore,
+	type StoredToken,
+	OAuth2Flow,
+} from "../lib/oauth2.js";
 
 const wahoo = new Hono();
 
@@ -40,7 +48,9 @@ interface WahooWebhookEvent {
 	};
 }
 
-interface StoredWahooToken {
+// ─── OAuth2 provider + token store ────────────────────────────────────────────
+
+interface WahooTokenRow {
 	user_id: string;
 	access_token: string;
 	refresh_token: string;
@@ -50,61 +60,68 @@ interface StoredWahooToken {
 	webhook_enabled: number;
 }
 
-// ─── CSRF State Store ─────────────────────────────────────────────────────────
-
-interface PendingState {
-	userId: string;
-	expiresAt: number;
+function rowToToken(row: WahooTokenRow): StoredToken {
+	return {
+		userId: row.user_id,
+		accessToken: row.access_token,
+		refreshToken: row.refresh_token,
+		expiresAt: row.expires_at,
+		providerUserId: row.wahoo_user_id,
+		scope: row.scope,
+	};
 }
 
-/** state UUID → pending callback context */
-const pendingStates = new Map<string, PendingState>();
+const WAHOO_SCOPE = "user_read user_write workouts_read offline_data";
 
-/** Prune expired states to avoid unbounded growth */
-function pruneStates() {
-	const now = Date.now();
-	for (const [key, pending] of pendingStates) {
-		if (now > pending.expiresAt) {
-			console.log(
-				`[wahoo] Pruning expired OAuth state ${key} for user ${pending.userId}`,
-			);
-			pendingStates.delete(key);
+const wahooProvider: OAuth2Provider = {
+	name: "wahoo",
+	authorizeUrl: "https://api.wahooligan.com/oauth/authorize",
+	tokenUrl: "https://api.wahooligan.com/oauth/token",
+	clientId: env.WAHOO_CLIENT_ID ?? "",
+	clientSecret: env.WAHOO_CLIENT_SECRET ?? "",
+	redirectUri: env.WAHOO_REDIRECT_URI ?? "",
+	scope: WAHOO_SCOPE,
+	// Wahoo requires redirect_uri in the code-for-token exchange.
+	extraExchangeParams: { redirect_uri: env.WAHOO_REDIRECT_URI ?? "" },
+	parseTokenResponse: (body) => {
+		const b = body as WahooTokenResponse;
+		return {
+			accessToken: b.access_token,
+			refreshToken: b.refresh_token,
+			expiresAt: Math.floor(Date.now() / 1000) + b.expires_in,
+			providerUserId: null, // fetched separately below
+			scope: WAHOO_SCOPE,
+		};
+	},
+	fetchProviderUserId: async (accessToken) => {
+		const res = await fetch("https://api.wahooligan.com/v1/user", {
+			headers: { Authorization: `Bearer ${accessToken}` },
+		});
+		if (!res.ok) {
+			console.error(`[wahoo] Failed to fetch Wahoo user: ${res.status}`);
+			return null;
 		}
-	}
-}
+		const user = (await res.json()) as WahooUser;
+		console.log(
+			`[wahoo] Fetched Wahoo user: id=${user.id}, name=${user.first} ${user.last}`,
+		);
+		return user.id;
+	},
+	deauthorize: async (accessToken) => {
+		await fetch("https://api.wahooligan.com/v1/permissions", {
+			method: "DELETE",
+			headers: { Authorization: `Bearer ${accessToken}` },
+		});
+		console.log("[wahoo] Deauthorized app");
+	},
+};
 
-async function exchangeWahooToken(
-	params: Record<string, string>,
-): Promise<Response> {
-	const startedAt = Date.now();
-	console.log("[wahoo] Token request starting");
-	const response = await fetch("https://api.wahooligan.com/oauth/token", {
-		method: "POST",
-		headers: { "Content-Type": "application/x-www-form-urlencoded" },
-		body: new URLSearchParams(params),
-	});
-	console.log(
-		`[wahoo] Token exchange completed in ${Date.now() - startedAt}ms with status ${response.status}`,
-	);
-	return response;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getUserId(c: {
-	req: { header: (name: string) => string | undefined };
-}): string {
-	const userId = c.req.header("x-authentik-username");
-	if (!userId) throw new Error("Missing x-authentik-username header");
-	return userId;
-}
-
-const getTokenStmt = db.prepare<StoredWahooToken, [string]>(
+const getTokenStmt = db.prepare<WahooTokenRow, [string]>(
 	`SELECT user_id, access_token, refresh_token, expires_at, wahoo_user_id, scope, webhook_enabled
    FROM wahoo_tokens WHERE user_id = ?`,
 );
 
-const getTokenByWahooUserStmt = db.prepare<StoredWahooToken, [number]>(
+const getTokenByWahooUserStmt = db.prepare<WahooTokenRow, [number]>(
 	`SELECT user_id, access_token, refresh_token, expires_at, wahoo_user_id, scope, webhook_enabled
    FROM wahoo_tokens WHERE wahoo_user_id = ?`,
 );
@@ -125,36 +142,35 @@ const setWebhookEnabledStmt = db.prepare(
 	`UPDATE wahoo_tokens SET webhook_enabled = ?, updated_at = datetime('now') WHERE user_id = ?`,
 );
 
-/** Return a valid access token for the user, refreshing if within 60s of expiry. */
-async function getValidToken(userId: string): Promise<string> {
-	const token = getTokenStmt.get(userId);
-	if (!token) throw new Error("Wahoo not connected for this user");
-
-	if (Math.floor(Date.now() / 1000) >= token.expires_at - 60) {
-		console.log(`[wahoo] Starting token refresh for user ${userId}`);
-		const res = await exchangeWahooToken({
-			client_id: env.WAHOO_CLIENT_ID ?? "",
-			client_secret: env.WAHOO_CLIENT_SECRET ?? "",
-			grant_type: "refresh_token",
-			refresh_token: token.refresh_token,
-		});
-		console.log(
-			`[wahoo] Token refresh response received for user ${userId}: status=${res.status}`,
+const wahooTokenStore: OAuth2TokenStore = {
+	get: (userId) => {
+		const row = getTokenStmt.get(userId);
+		return row ? rowToToken(row) : null;
+	},
+	getByProviderUserId: (wahooUserId) => {
+		const row = getTokenByWahooUserStmt.get(wahooUserId);
+		return row ? rowToToken(row) : null;
+	},
+	upsert: (token) => {
+		upsertTokenStmt.run(
+			token.userId,
+			token.accessToken,
+			token.refreshToken,
+			token.expiresAt,
+			token.providerUserId ?? null,
+			token.scope,
+			token.userId,
 		);
-		if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`);
-		const data = (await res.json()) as WahooTokenResponse;
-		const expiresAt = Math.floor(Date.now() / 1000) + data.expires_in;
-		updateTokenStmt.run(
-			data.access_token,
-			data.refresh_token,
-			expiresAt,
-			userId,
-		);
-		return data.access_token;
-	}
+	},
+	updateTokens: (userId, accessToken, refreshToken, expiresAt) => {
+		updateTokenStmt.run(accessToken, refreshToken, expiresAt, userId);
+	},
+	delete: (userId) => {
+		db.prepare("DELETE FROM wahoo_tokens WHERE user_id = ?").run(userId);
+	},
+};
 
-	return token.access_token;
-}
+const wahooFlow = new OAuth2Flow(wahooProvider, wahooTokenStore);
 
 /**
  * Fetch a workout's FIT file, parse it, and persist it via the shared importer.
@@ -230,28 +246,10 @@ wahoo.get("/connect", (c) => {
 		return c.json({ error: "Unauthorized" }, 401);
 	}
 
-	pruneStates();
-	const state = crypto.randomUUID();
-	pendingStates.set(state, {
-		userId,
-		expiresAt: Date.now() + 10 * 60 * 1000,
-	});
-	console.log(
-		`[wahoo] Created OAuth state ${state} for user ${userId}; pendingStates=${pendingStates.size}`,
-	);
-
-	const params = new URLSearchParams({
-		client_id: env.WAHOO_CLIENT_ID,
-		redirect_uri: env.WAHOO_REDIRECT_URI,
-		response_type: "code",
-		scope: "user_read user_write workouts_read offline_data",
-		state,
-	});
-
+	const state = oauthStateStore.create(wahooProvider.name, userId);
+	console.log(`[wahoo] Created OAuth state ${state} for user ${userId}`);
 	console.log(`[wahoo] Initiating OAuth for user ${userId}`);
-	return c.redirect(
-		`https://api.wahooligan.com/oauth/authorize?${params.toString()}`,
-	);
+	return c.redirect(wahooFlow.buildAuthorizeUrl(state));
 });
 
 /** GET /api/wahoo/callback — exchange code for tokens */
@@ -269,72 +267,40 @@ wahoo.get("/callback", async (c) => {
 		return c.redirect("/settings?wahoo=error");
 	}
 
-	pruneStates();
-	const pending = pendingStates.get(state);
+	const userId = oauthStateStore.consume(wahooProvider.name, state);
 	console.log(
-		`[wahoo] Callback state lookup: state=${state}, found=${Boolean(pending)}, pendingStates=${pendingStates.size}`,
+		`[wahoo] Callback state lookup: state=${state}, found=${Boolean(userId)}`,
 	);
-	if (!pending) {
+	if (!userId) {
 		console.warn("[wahoo] Invalid or expired state parameter");
 		return c.redirect("/settings?wahoo=error");
 	}
-	pendingStates.delete(state);
-	console.log(
-		`[wahoo] Callback state consumed: state=${state}, remainingPendingStates=${pendingStates.size}`,
-	);
-	const userId = pending.userId;
 	console.log(`[wahoo] Callback resolved user from state: userId=${userId}`);
 
 	try {
 		console.log(`[wahoo] Starting token exchange for user ${userId}`);
-		const res = await exchangeWahooToken({
-			client_id: env.WAHOO_CLIENT_ID ?? "",
-			client_secret: env.WAHOO_CLIENT_SECRET ?? "",
-			code,
-			redirect_uri: env.WAHOO_REDIRECT_URI ?? "",
-			grant_type: "authorization_code",
-		});
+		const parsed = await wahooFlow.exchangeCode(code);
 		console.log(
-			`[wahoo] Token exchange response received for user ${userId}: status=${res.status}`,
+			`[wahoo] Token exchange parsed for user ${userId}: wahooUserId=${parsed.providerUserId ?? "none"}`,
 		);
 
-		if (!res.ok) {
-			console.error(`[wahoo] Token exchange failed: ${res.status}`);
+		if (parsed.providerUserId == null) {
+			console.error(`[wahoo] Failed to resolve Wahoo user id for ${userId}`);
 			return c.redirect("/settings?wahoo=error");
 		}
-
-		const data = (await res.json()) as WahooTokenResponse;
-		const expiresAt = Math.floor(Date.now() / 1000) + data.expires_in;
-		console.log(
-			`[wahoo] Token exchange JSON parsed for user ${userId}: expires_in=${data.expires_in}`,
-		);
-
-		// Fetch the authenticated Wahoo user to get their wahoo_user_id
-		const userRes = await fetch("https://api.wahooligan.com/v1/user", {
-			headers: { Authorization: `Bearer ${data.access_token}` },
-		});
-		if (!userRes.ok) {
-			console.error(`[wahoo] Failed to fetch Wahoo user: ${userRes.status}`);
-			return c.redirect("/settings?wahoo=error");
-		}
-		const wahooUser = (await userRes.json()) as WahooUser;
-		console.log(
-			`[wahoo] Fetched Wahoo user: id=${wahooUser.id}, name=${wahooUser.first} ${wahooUser.last}`,
-		);
 
 		console.log(`[wahoo] Persisting Wahoo tokens for user ${userId}`);
-		upsertTokenStmt.run(
+		wahooTokenStore.upsert({
 			userId,
-			data.access_token,
-			data.refresh_token,
-			expiresAt,
-			wahooUser.id,
-			"user_read user_write workouts_read offline_data",
-			userId,
-		);
+			accessToken: parsed.accessToken,
+			refreshToken: parsed.refreshToken,
+			expiresAt: parsed.expiresAt,
+			providerUserId: parsed.providerUserId,
+			scope: parsed.scope ?? "",
+		});
 
 		console.log(
-			`[wahoo] Connected Wahoo user ${wahooUser.id} for local user ${userId}`,
+			`[wahoo] Connected Wahoo user ${parsed.providerUserId} for local user ${userId}`,
 		);
 		return c.redirect("/settings?wahoo=connected");
 	} catch (err) {
@@ -352,14 +318,14 @@ wahoo.get("/status", (c) => {
 		return c.json({ error: "Unauthorized" }, 401);
 	}
 
-	const token = getTokenStmt.get(userId);
-	if (!token) return c.json({ connected: false });
+	const row = getTokenStmt.get(userId);
+	if (!row) return c.json({ connected: false });
 
 	return c.json({
 		connected: true,
-		wahooUserId: token.wahoo_user_id,
-		scope: token.scope,
-		webhookEnabled: token.webhook_enabled === 1,
+		wahooUserId: row.wahoo_user_id,
+		scope: row.scope,
+		webhookEnabled: row.webhook_enabled === 1,
 	});
 });
 
@@ -372,27 +338,7 @@ wahoo.delete("/disconnect", async (c) => {
 		return c.json({ error: "Unauthorized" }, 401);
 	}
 
-	const token = getTokenStmt.get(userId);
-
-	// Deauthorize on Wahoo's side (revokes the app's access)
-	if (token) {
-		try {
-			const accessToken = await getValidToken(userId);
-			await fetch("https://api.wahooligan.com/v1/permissions", {
-				method: "DELETE",
-				headers: { Authorization: `Bearer ${accessToken}` },
-			});
-			console.log(`[wahoo] Deauthorized app for user ${userId}`);
-		} catch (err) {
-			console.warn(
-				`[wahoo] Failed to deauthorize on Wahoo side for user ${userId}:`,
-				err,
-			);
-		}
-	}
-
-	db.prepare("DELETE FROM wahoo_tokens WHERE user_id = ?").run(userId);
-	console.log(`[wahoo] Disconnected user ${userId}`);
+	await wahooFlow.deauthorize(userId);
 	return c.json({ ok: true });
 });
 
@@ -409,7 +355,7 @@ wahoo.post("/sync", async (c) => {
 
 	let accessToken: string;
 	try {
-		accessToken = await getValidToken(userId);
+		accessToken = await wahooFlow.getValidToken(userId);
 	} catch (err) {
 		return c.json({ error: (err as Error).message }, 400);
 	}
@@ -534,7 +480,7 @@ wahoo.post("/webhook", async (c) => {
 	// Process in background — don't block the response
 	(async () => {
 		try {
-			const tokenRow = getTokenByWahooUserStmt.get(event.user.id);
+			const tokenRow = wahooTokenStore.getByProviderUserId(event.user.id);
 			if (!tokenRow) {
 				console.log(
 					`[wahoo] Webhook for unknown Wahoo user ${event.user.id} — no local token`,
@@ -542,7 +488,7 @@ wahoo.post("/webhook", async (c) => {
 				return;
 			}
 
-			const userId = tokenRow.user_id;
+			const userId = tokenRow.userId;
 			const workoutId = event.workout_summary.workout.id;
 
 			// Backoff schedule (ms) for re-fetching the workout while the FIT
@@ -557,7 +503,7 @@ wahoo.post("/webhook", async (c) => {
 			for (let attempt = 0; attempt < backoffScheduleMs.length; attempt++) {
 				// Re-resolve the access token each iteration — it may expire
 				// during the long backoff window.
-				const accessToken = await getValidToken(userId);
+				const accessToken = await wahooFlow.getValidToken(userId);
 				const full = await fetchWorkout(workoutId, accessToken);
 				result = await importWorkout(userId, full);
 				if (result !== "pending") break;
@@ -614,7 +560,7 @@ wahoo.post("/webhook/register", async (c) => {
 
 	let accessToken: string;
 	try {
-		accessToken = await getValidToken(userId);
+		accessToken = await wahooFlow.getValidToken(userId);
 	} catch (err) {
 		return c.json({ error: (err as Error).message }, 400);
 	}
@@ -656,7 +602,7 @@ wahoo.delete("/webhook/register", async (c) => {
 
 	let accessToken: string;
 	try {
-		accessToken = await getValidToken(userId);
+		accessToken = await wahooFlow.getValidToken(userId);
 	} catch (err) {
 		return c.json({ error: (err as Error).message }, 400);
 	}

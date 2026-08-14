@@ -39,6 +39,7 @@ import {
 	inferLocationFromActivities,
 } from "../lib/athleteStats.js";
 import { db } from "../db.js";
+import { getUserId } from "../lib/getUserId.js";
 
 const me = new Hono();
 
@@ -115,16 +116,6 @@ me.get("/zones", (c) => {
 	const estimates = getUserEstimates(userId);
 	return c.json(buildZonesResponse(profile, estimates));
 });
-
-function getUserId(c: {
-	req: { header: (name: string) => string | undefined };
-}): string {
-	const userId = c.req.header("x-authentik-username");
-	if (!userId) {
-		throw new Error("Missing x-authentik-username header");
-	}
-	return userId;
-}
 
 // GET /me — return the current user info from Authentik proxy headers
 me.get("/", (c) => {

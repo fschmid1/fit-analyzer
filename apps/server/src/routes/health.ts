@@ -15,18 +15,9 @@ import {
 	computeActivityStats,
 	computeAllTimeEstimates,
 } from "../lib/athleteStats.js";
+import { getUserId } from "../lib/getUserId.js";
 
 const health = new Hono();
-
-function getUserId(c: {
-	req: { header: (name: string) => string | undefined };
-}): string {
-	const userId = c.req.header("x-authentik-username");
-	if (!userId) {
-		throw new Error("Missing x-authentik-username header");
-	}
-	return userId;
-}
 
 function formatSleepDuration(minutes: number): string {
 	const h = Math.floor(minutes / 60);

@@ -1,16 +1,20 @@
 /**
- * Extract the authenticated user ID from Authentik proxy headers.
+ * Extract the authenticated user ID from the Authentik reverse-proxy header.
  *
- * Every route handler that needs the current user duplicates this logic. It
- * is extracted here so the auth seam has a single home and the route
- * handlers can stay focused on dispatch.
+ * Every API route is mounted behind an Authentik proxy that injects
+ * `x-authentik-username` on every authenticated request. Routes call this
+ * helper to pull the user; a missing header means the request did not pass
+ * through the proxy (or the proxy dropped the header), so we throw and the
+ * caller maps that to a 401.
  *
- * Throws when the `x-authentik-username` header is missing. Route handlers
- * are expected to catch and return a 401.
+ * The parameter is a structural type so this works with any Hono context
+ * (and with the lightweight test doubles used in oauth2.test.ts).
  */
-export function getUserId(c: {
+export interface AuthentikContext {
 	req: { header: (name: string) => string | undefined };
-}): string {
+}
+
+export function getUserId(c: AuthentikContext): string {
 	const userId = c.req.header("x-authentik-username");
 	if (!userId) throw new Error("Missing x-authentik-username header");
 	return userId;
