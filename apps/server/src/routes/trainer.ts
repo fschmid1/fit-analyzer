@@ -36,6 +36,7 @@ import {
 	compactMessages,
 	messageTokenLength,
 } from "../lib/compactionEngine.js";
+import { getUserId } from "../lib/getUserId.js";
 
 const BASE_SYSTEM_PROMPT =
 	"You are an expert endurance sports coach specialising in cycling and triathlon. " +
@@ -160,14 +161,6 @@ async function getProviderConfig(modelId: string) {
 		includeReasoning: true,
 		metadata: undefined,
 	};
-}
-
-function getUserId(c: {
-	req: { header: (name: string) => string | undefined };
-}): string {
-	const userId = c.req.header("x-authentik-username");
-	if (!userId) throw new Error("Missing x-authentik-username header");
-	return userId;
 }
 
 function parseToolCalls(raw: unknown): UIToolCall[] | undefined {

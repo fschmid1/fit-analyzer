@@ -7,18 +7,9 @@ import {
 	getHaeLastSync,
 } from "../lib/haeClient.js";
 import { db } from "../db.js";
+import { getUserId } from "../lib/getUserId.js";
 
 const healthAutoExport = new Hono();
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function getUserId(c: {
-	req: { header: (name: string) => string | undefined };
-}): string {
-	const userId = c.req.header("x-authentik-username");
-	if (!userId) throw new Error("Missing x-authentik-username header");
-	return userId;
-}
 
 // ─── POST /api/health-auto-export ──── ingest incoming data ─────────────────
 

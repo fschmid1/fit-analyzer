@@ -171,6 +171,23 @@ try {
 	/* column already exists */
 }
 
+// OAuth2 CSRF state store — shared by Strava and Wahoo flows.
+// Replaces the previous in-memory `pendingStates` Maps, which were lost on
+// every server restart and aborted any user mid-OAuth. Persisting states in
+// the db means a callback that lands after a redeploy still resolves.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS oauth_states (
+    state       TEXT PRIMARY KEY,
+    provider    TEXT NOT NULL,
+    user_id     TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at  INTEGER NOT NULL
+  )
+`);
+db.exec(
+	"CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states(expires_at)",
+);
+
 // Strava OAuth token storage
 db.exec(`
   CREATE TABLE IF NOT EXISTS strava_tokens (

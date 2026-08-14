@@ -1,18 +1,9 @@
 import { Hono } from "hono";
 import { db } from "../db.js";
 import type { HeatmapPoint, HeatmapResponse } from "@fit-analyzer/shared";
+import { getUserId } from "../lib/getUserId.js";
 
 const heatmap = new Hono();
-
-function getUserId(c: {
-	req: { header: (name: string) => string | undefined };
-}): string {
-	const userId = c.req.header("x-authentik-username");
-	if (!userId) {
-		throw new Error("Missing x-authentik-username header");
-	}
-	return userId;
-}
 
 const recordsStmt = db.prepare(
 	`SELECT records FROM activities

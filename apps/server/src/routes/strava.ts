@@ -16,6 +16,14 @@ import {
 	updateAthleteProfile,
 } from "../lib/athleteProfile.js";
 import { inferLocationFromActivities } from "../lib/athleteStats.js";
+import { getUserId } from "../lib/getUserId.js";
+import { oauthStateStore } from "../lib/oauthStateStore.js";
+import {
+	type OAuth2Provider,
+	type OAuth2TokenStore,
+	type StoredToken,
+	OAuth2Flow,
+} from "../lib/oauth2.js";
 
 const strava = new Hono();
 
@@ -77,15 +85,6 @@ interface StravaLap {
 	average_cadence?: number;
 }
 
-interface StoredToken {
-	user_id: string;
-	access_token: string;
-	refresh_token: string;
-	expires_at: number;
-	athlete_id: number;
-	scope: string;
-}
-
 interface StravaWebhookEvent {
 	object_type: string; // "activity" | "athlete"
 	aspect_type: string; // "create" | "update" | "delete"
@@ -96,63 +95,55 @@ interface StravaWebhookEvent {
 	updates?: Record<string, string>;
 }
 
-// ─── CSRF State Store ─────────────────────────────────────────────────────────
+// ─── OAuth2 provider + token store ────────────────────────────────────────────
 
-interface PendingState {
-	userId: string;
-	expiresAt: number;
+interface StravaTokenRow {
+	user_id: string;
+	access_token: string;
+	refresh_token: string;
+	expires_at: number;
+	athlete_id: number;
+	scope: string;
 }
 
-/** state UUID → pending callback context */
-const pendingStates = new Map<string, PendingState>();
-
-/** Prune expired states to avoid unbounded growth */
-function pruneStates() {
-	const now = Date.now();
-	for (const [key, pending] of pendingStates) {
-		if (now > pending.expiresAt) {
-			console.log(
-				`[strava] Pruning expired OAuth state ${key} for user ${pending.userId}`,
-			);
-			pendingStates.delete(key);
-		}
-	}
+function rowToToken(row: StravaTokenRow): StoredToken {
+	return {
+		userId: row.user_id,
+		accessToken: row.access_token,
+		refreshToken: row.refresh_token,
+		expiresAt: row.expires_at,
+		providerUserId: row.athlete_id,
+		scope: row.scope,
+	};
 }
 
-async function exchangeStravaTokenWithBunFetch(
-	params: Record<string, string>,
-): Promise<Response> {
-	const startedAt = Date.now();
-	console.log("[strava] Bun fetch token request starting");
-	const response = await fetch("https://www.strava.com/oauth/token", {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/x-www-form-urlencoded",
-		},
-		body: new URLSearchParams(params),
-	});
-	console.log(
-		`[strava] Bun fetch token exchange completed in ${Date.now() - startedAt}ms with status ${response.status}`,
-	);
-	return response;
-}
+const stravaProvider: OAuth2Provider = {
+	name: "strava",
+	authorizeUrl: "https://www.strava.com/oauth/authorize",
+	tokenUrl: "https://www.strava.com/oauth/token",
+	clientId: env.STRAVA_CLIENT_ID ?? "",
+	clientSecret: env.STRAVA_CLIENT_SECRET ?? "",
+	redirectUri: env.STRAVA_REDIRECT_URI ?? "",
+	scope: "activity:read_all,read",
+	extraAuthorizeParams: { approval_prompt: "auto" },
+	parseTokenResponse: (body) => {
+		const b = body as StravaTokenResponse;
+		return {
+			accessToken: b.access_token,
+			refreshToken: b.refresh_token,
+			expiresAt: b.expires_at,
+			providerUserId: b.athlete?.id ?? null,
+			scope: b.scope ?? "",
+		};
+	},
+};
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getUserId(c: {
-	req: { header: (name: string) => string | undefined };
-}): string {
-	const userId = c.req.header("x-authentik-username");
-	if (!userId) throw new Error("Missing x-authentik-username header");
-	return userId;
-}
-
-const getTokenStmt = db.prepare<StoredToken, [string]>(
+const getTokenStmt = db.prepare<StravaTokenRow, [string]>(
 	`SELECT user_id, access_token, refresh_token, expires_at, athlete_id, scope
    FROM strava_tokens WHERE user_id = ?`,
 );
 
-const getTokenByAthleteStmt = db.prepare<StoredToken, [number]>(
+const getTokenByAthleteStmt = db.prepare<StravaTokenRow, [number]>(
 	`SELECT user_id, access_token, refresh_token, expires_at, athlete_id, scope
    FROM strava_tokens WHERE athlete_id = ?`,
 );
@@ -168,6 +159,35 @@ const updateTokenStmt = db.prepare(
    SET access_token = ?, refresh_token = ?, expires_at = ?, updated_at = datetime('now')
    WHERE user_id = ?`,
 );
+
+const stravaTokenStore: OAuth2TokenStore = {
+	get: (userId) => {
+		const row = getTokenStmt.get(userId);
+		return row ? rowToToken(row) : null;
+	},
+	getByProviderUserId: (athleteId) => {
+		const row = getTokenByAthleteStmt.get(athleteId);
+		return row ? rowToToken(row) : null;
+	},
+	upsert: (token) => {
+		upsertTokenStmt.run(
+			token.userId,
+			token.accessToken,
+			token.refreshToken,
+			token.expiresAt,
+			token.providerUserId ?? 0,
+			token.scope,
+		);
+	},
+	updateTokens: (userId, accessToken, refreshToken, expiresAt) => {
+		updateTokenStmt.run(accessToken, refreshToken, expiresAt, userId);
+	},
+	delete: (userId) => {
+		db.prepare("DELETE FROM strava_tokens WHERE user_id = ?").run(userId);
+	},
+};
+
+const stravaFlow = new OAuth2Flow(stravaProvider, stravaTokenStore);
 
 const checkStravaActivityStmt = db.prepare<{ id: string }, [string, string]>(
 	"SELECT id FROM activities WHERE user_id = ? AND strava_activity_id = ?",
@@ -206,36 +226,6 @@ function maybeUpdateAthleteLocation(userId: string): void {
 			err,
 		);
 	}
-}
-
-/** Return a valid access token for the user, refreshing if within 60s of expiry. */
-async function getValidToken(userId: string): Promise<string> {
-	const token = getTokenStmt.get(userId);
-	if (!token) throw new Error("Strava not connected for this user");
-
-	if (Math.floor(Date.now() / 1000) >= token.expires_at - 60) {
-		console.log(`[strava] Starting token refresh for user ${userId}`);
-		const res = await exchangeStravaTokenWithBunFetch({
-			client_id: env.STRAVA_CLIENT_ID ?? "",
-			client_secret: env.STRAVA_CLIENT_SECRET ?? "",
-			grant_type: "refresh_token",
-			refresh_token: token.refresh_token,
-		});
-		console.log(
-			`[strava] Token refresh response received for user ${userId}: status=${res.status}`,
-		);
-		if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`);
-		const data = (await res.json()) as StravaTokenResponse;
-		updateTokenStmt.run(
-			data.access_token,
-			data.refresh_token,
-			data.expires_at,
-			userId,
-		);
-		return data.access_token;
-	}
-
-	return token.access_token;
 }
 
 /** Compute the best average power for a rolling time window (in seconds). */
@@ -542,29 +532,10 @@ strava.get("/connect", (c) => {
 		return c.json({ error: "Unauthorized" }, 401);
 	}
 
-	pruneStates();
-	const state = crypto.randomUUID();
-	pendingStates.set(state, {
-		userId,
-		expiresAt: Date.now() + 10 * 60 * 1000,
-	});
-	console.log(
-		`[strava] Created OAuth state ${state} for user ${userId}; pendingStates=${pendingStates.size}`,
-	);
-
-	const params = new URLSearchParams({
-		client_id: env.STRAVA_CLIENT_ID,
-		redirect_uri: env.STRAVA_REDIRECT_URI,
-		response_type: "code",
-		approval_prompt: "auto",
-		scope: "activity:read_all,read",
-		state,
-	});
-
+	const state = oauthStateStore.create(stravaProvider.name, userId);
+	console.log(`[strava] Created OAuth state ${state} for user ${userId}`);
 	console.log(`[strava] Initiating OAuth for user ${userId}`);
-	return c.redirect(
-		`https://www.strava.com/oauth/authorize?${params.toString()}`,
-	);
+	return c.redirect(stravaFlow.buildAuthorizeUrl(state));
 });
 
 /** GET /api/strava/callback — exchange code for tokens */
@@ -582,60 +553,35 @@ strava.get("/callback", async (c) => {
 		return c.redirect("/settings?strava=error");
 	}
 
-	pruneStates();
-	const pending = pendingStates.get(state);
+	const userId = oauthStateStore.consume(stravaProvider.name, state);
 	console.log(
-		`[strava] Callback state lookup: state=${state}, found=${Boolean(pending)}, pendingStates=${pendingStates.size}`,
+		`[strava] Callback state lookup: state=${state}, found=${Boolean(userId)}`,
 	);
-	if (!pending) {
+	if (!userId) {
 		console.warn("[strava] Invalid or expired state parameter");
 		return c.redirect("/settings?strava=error");
 	}
-	pendingStates.delete(state);
-	console.log(
-		`[strava] Callback state consumed: state=${state}, remainingPendingStates=${pendingStates.size}`,
-	);
-	const userId = pending.userId;
 	console.log(`[strava] Callback resolved user from state: userId=${userId}`);
 
 	try {
 		console.log(`[strava] Starting token exchange for user ${userId}`);
-		const res = await exchangeStravaTokenWithBunFetch({
-			client_id: env.STRAVA_CLIENT_ID ?? "",
-			client_secret: env.STRAVA_CLIENT_SECRET ?? "",
-			code,
-			grant_type: "authorization_code",
-		});
+		const parsed = await stravaFlow.exchangeCode(code);
 		console.log(
-			`[strava] Token exchange response received for user ${userId}: status=${res.status}`,
-		);
-
-		if (!res.ok) {
-			console.error(`[strava] Token exchange failed: ${res.status}`);
-			return c.redirect("/settings?strava=error");
-		}
-
-		console.log(`[strava] Parsing token exchange JSON for user ${userId}`);
-		const data = (await res.json()) as StravaTokenResponse;
-		console.log(
-			`[strava] Token exchange JSON parsed for user ${userId}: athleteId=${data.athlete.id}, scope=${data.scope ?? "none"}`,
+			`[strava] Token exchange parsed for user ${userId}: athleteId=${parsed.providerUserId ?? "none"}, scope=${parsed.scope ?? "none"}`,
 		);
 
 		console.log(`[strava] Persisting Strava tokens for user ${userId}`);
-		upsertTokenStmt.run(
+		stravaTokenStore.upsert({
 			userId,
-			data.access_token,
-			data.refresh_token,
-			data.expires_at,
-			data.athlete.id,
-			data.scope ?? "",
-		);
+			accessToken: parsed.accessToken,
+			refreshToken: parsed.refreshToken,
+			expiresAt: parsed.expiresAt,
+			providerUserId: parsed.providerUserId ?? null,
+			scope: parsed.scope ?? "",
+		});
 
 		console.log(
-			`[strava] Connected athlete ${data.athlete.id} for user ${userId}`,
-		);
-		console.log(
-			`[strava] Callback completed successfully for user ${userId}, redirecting to settings`,
+			`[strava] Connected athlete ${parsed.providerUserId ?? "?"} for user ${userId}`,
 		);
 		return c.redirect("/settings?strava=connected");
 	} catch (err) {
@@ -653,18 +599,18 @@ strava.get("/status", (c) => {
 		return c.json({ error: "Unauthorized" }, 401);
 	}
 
-	const token = getTokenStmt.get(userId);
+	const token = stravaTokenStore.get(userId);
 	if (!token) return c.json({ connected: false });
 
 	return c.json({
 		connected: true,
-		athleteId: token.athlete_id,
+		athleteId: token.providerUserId,
 		scope: token.scope,
 	});
 });
 
 /** DELETE /api/strava/disconnect — remove stored tokens */
-strava.delete("/disconnect", (c) => {
+strava.delete("/disconnect", async (c) => {
 	let userId: string;
 	try {
 		userId = getUserId(c);
@@ -672,8 +618,7 @@ strava.delete("/disconnect", (c) => {
 		return c.json({ error: "Unauthorized" }, 401);
 	}
 
-	db.prepare("DELETE FROM strava_tokens WHERE user_id = ?").run(userId);
-	console.log(`[strava] Disconnected user ${userId}`);
+	await stravaFlow.deauthorize(userId);
 	return c.json({ ok: true });
 });
 
@@ -690,7 +635,7 @@ strava.post("/sync", async (c) => {
 
 	let accessToken: string;
 	try {
-		accessToken = await getValidToken(userId);
+		accessToken = await stravaFlow.getValidToken(userId);
 	} catch (err) {
 		return c.json({ error: (err as Error).message }, 400);
 	}
@@ -944,7 +889,7 @@ strava.get("/events", async (c) => {
 
 	let accessToken: string;
 	try {
-		accessToken = await getValidToken(userId);
+		accessToken = await stravaFlow.getValidToken(userId);
 	} catch (err) {
 		if (
 			err instanceof Error &&
@@ -984,7 +929,7 @@ strava.get("/routes/:id/gpx", async (c) => {
 
 	let accessToken: string;
 	try {
-		accessToken = await getValidToken(userId);
+		accessToken = await stravaFlow.getValidToken(userId);
 	} catch (err) {
 		if (
 			err instanceof Error &&
@@ -1050,7 +995,7 @@ strava.get("/routes/:id/gpx/download", async (c) => {
 
 	let accessToken: string;
 	try {
-		accessToken = await getValidToken(userId);
+		accessToken = await stravaFlow.getValidToken(userId);
 	} catch (err) {
 		if (
 			err instanceof Error &&
@@ -1128,7 +1073,7 @@ strava.post("/webhook", async (c) => {
 	}
 
 	// Look up which local user owns this athlete
-	const tokenRow = getTokenByAthleteStmt.get(event.owner_id);
+	const tokenRow = stravaTokenStore.getByProviderUserId(event.owner_id);
 	if (!tokenRow) {
 		console.log(
 			`[strava webhook] No local user for athlete ${event.owner_id} — ignoring`,
@@ -1139,15 +1084,15 @@ strava.post("/webhook", async (c) => {
 	// Process in background — don't block the response
 	(async () => {
 		try {
-			const accessToken = await getValidToken(tokenRow.user_id);
+			const accessToken = await stravaFlow.getValidToken(tokenRow.userId);
 			const result = await importSingleActivity(
-				tokenRow.user_id,
+				tokenRow.userId,
 				event.object_id,
 				accessToken,
 			);
 			if (result) {
 				console.log(
-					`[strava webhook] Auto-${result} activity ${event.object_id} for user ${tokenRow.user_id}`,
+					`[strava webhook] Auto-${result} activity ${event.object_id} for user ${tokenRow.userId}`,
 				);
 			} else {
 				console.log(
