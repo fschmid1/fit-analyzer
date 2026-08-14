@@ -66,11 +66,13 @@ export type { AvailableModelId, ModelEntry, Provider } from "./coachModels.js";
 export {
 	buildPowerBySecond,
 	buildCadenceBySecond,
+	buildMetricBySecondFromTimeSeries,
 	computeNormalizedPower,
 	normalizedPowerFromSeconds,
 	computeNormalizedCadence,
 	normalizedCadenceFromSeconds,
 	peakPowerFromSeconds,
+	peakPowerFromTimeSeries,
 } from "./power.js";
 
 export type { ZoneBand, ZoneRange, ZonesResponse } from "./zones.js";

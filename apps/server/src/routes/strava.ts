@@ -1,7 +1,8 @@
 import {
 	normalizedPowerFromSeconds,
 	normalizedCadenceFromSeconds,
-	peakPowerFromSeconds,
+	peakPowerFromTimeSeries,
+	buildMetricBySecondFromTimeSeries,
 	type ActivitySummary,
 	type LapMarker,
 	type StoredRecord,
@@ -238,76 +239,6 @@ async function getValidToken(userId: string): Promise<string> {
 	return token.access_token;
 }
 
-/** Compute the best average power for a rolling time window (in seconds). */
-function computePeakPower(
-	timeArr: number[],
-	wattsArr: number[],
-	windowSecs: number,
-): number | null {
-	if (!wattsArr.length || !timeArr.length) return null;
-
-	let bestAvg = 0;
-	let lo = 0;
-	let sum = 0;
-
-	for (let hi = 0; hi < timeArr.length; hi++) {
-		sum += wattsArr[hi];
-		while (timeArr[hi] - timeArr[lo] > windowSecs) {
-			sum -= wattsArr[lo];
-			lo++;
-		}
-		const actualWindow = timeArr[hi] - timeArr[lo];
-		if (actualWindow >= Math.min(windowSecs, timeArr[timeArr.length - 1])) {
-			const avg = sum / (hi - lo + 1);
-			if (avg > bestAvg) bestAvg = avg;
-		}
-	}
-
-	return bestAvg > 0 ? Math.round(bestAvg) : null;
-}
-
-/**
- * Build a per-second cadence series from a Strava time/cadence stream. Strava
- * streams don't always include every second, so we carry forward the last
- * known value. Missing leading samples default to 0 rpm.
- */
-function stravaStreamToCadenceBySecond(
-	timeArr: number[],
-	cadenceArr: number[],
-): (number | null)[] {
-	if (timeArr.length === 0) return [];
-	const maxTime = Math.floor(timeArr[timeArr.length - 1]);
-	const cadenceBySecond: (number | null)[] = new Array(maxTime + 1).fill(null);
-	let streamIdx = 0;
-	let lastValue: number | null = null;
-	for (let s = 0; s <= maxTime; s++) {
-		while (streamIdx < timeArr.length && timeArr[streamIdx] <= s + 0.5) {
-			lastValue = cadenceArr[streamIdx];
-			streamIdx++;
-		}
-		cadenceBySecond[s] = lastValue;
-	}
-	return cadenceBySecond;
-}
-function stravaStreamToPowerBySecond(
-	timeArr: number[],
-	wattsArr: number[],
-): (number | null)[] {
-	if (timeArr.length === 0) return [];
-	const maxTime = Math.floor(timeArr[timeArr.length - 1]);
-	const powerBySecond: (number | null)[] = new Array(maxTime + 1).fill(null);
-	let streamIdx = 0;
-	let lastValue: number | null = null;
-	for (let s = 0; s <= maxTime; s++) {
-		while (streamIdx < timeArr.length && timeArr[streamIdx] <= s + 0.5) {
-			lastValue = wattsArr[streamIdx];
-			streamIdx++;
-		}
-		powerBySecond[s] = lastValue;
-	}
-	return powerBySecond;
-}
-
 /** Build StoredRecord[] from Strava streams (key_by_type format). */
 function buildRecords(startDate: Date, streams: StravaStreams): StoredRecord[] {
 	const timeData = streams.time?.data ?? [];
@@ -389,19 +320,19 @@ function buildSummary(
 				: null,
 		avgPower: avg(powerVals),
 		normalizedPower: normalizedPowerFromSeconds(
-			stravaStreamToPowerBySecond(timeArr, wattsArr),
+			buildMetricBySecondFromTimeSeries(timeArr, wattsArr),
 		),
 		maxPower: max(powerVals),
 		avgHeartRate: avg(hrVals),
 		maxHeartRate: max(hrVals),
 		avgCadence: avg(cadVals),
 		normalizedCadence: normalizedCadenceFromSeconds(
-			stravaStreamToCadenceBySecond(timeArr, cadenceArr),
+			buildMetricBySecondFromTimeSeries(timeArr, cadenceArr),
 		),
 		totalWork,
-		peak1minPower: computePeakPower(timeArr, wattsArr, 60),
-		peak5minPower: computePeakPower(timeArr, wattsArr, 300),
-		peak20minPower: computePeakPower(timeArr, wattsArr, 1200),
+		peak1minPower: peakPowerFromTimeSeries(timeArr, wattsArr, 60),
+		peak5minPower: peakPowerFromTimeSeries(timeArr, wattsArr, 300),
+		peak20minPower: peakPowerFromTimeSeries(timeArr, wattsArr, 1200),
 		locationCity: activity.location_city ?? null,
 		locationState: activity.location_state ?? null,
 		locationCountry: activity.location_country ?? null,
