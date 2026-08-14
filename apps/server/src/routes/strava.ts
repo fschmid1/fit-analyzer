@@ -1,21 +1,14 @@
-import {
-	normalizedPowerFromSeconds,
-	normalizedCadenceFromSeconds,
-	peakPowerFromSeconds,
-	type ActivitySummary,
-	type LapMarker,
-	type StoredRecord,
-	type StravaClubEvent,
-} from "@fit-analyzer/shared";
+import type { StravaClubEvent } from "@fit-analyzer/shared";
 import { Hono } from "hono";
 import { db } from "../db.js";
 import { env } from "../env.js";
-import { handleNewActivityForWaxedChainReminder } from "../lib/waxedChainReminders.js";
+import { importActivity } from "../lib/activityImporter.js";
 import {
-	getAthleteProfile,
-	updateAthleteProfile,
-} from "../lib/athleteProfile.js";
-import { inferLocationFromActivities } from "../lib/athleteStats.js";
+	defaultStravaFetch,
+	isRideActivity,
+	stravaActivityToPayload,
+	type StravaActivity,
+} from "../lib/stravaImportAdapter.js";
 
 const strava = new Hono();
 
@@ -27,54 +20,6 @@ interface StravaTokenResponse {
 	expires_at: number;
 	athlete: { id: number };
 	scope?: string;
-}
-
-interface StravaActivity {
-	id: number;
-	name: string;
-	type: string;
-	sport_type: string;
-	start_date: string;
-	moving_time: number;
-	elapsed_time: number;
-	distance?: number;
-	average_watts?: number;
-	max_watts?: number;
-	average_heartrate?: number;
-	max_heartrate?: number;
-	average_cadence?: number;
-	kilojoules?: number;
-	location_city?: string | null;
-	location_state?: string | null;
-	location_country?: string | null;
-}
-
-interface StravaNumericStream {
-	type: string;
-	data: number[];
-}
-
-interface StravaLatLngStream {
-	type: string;
-	data: [number, number][];
-}
-
-interface StravaStreams {
-	time?: StravaNumericStream;
-	watts?: StravaNumericStream;
-	heartrate?: StravaNumericStream;
-	cadence?: StravaNumericStream;
-	velocity_smooth?: StravaNumericStream;
-	grade_smooth?: StravaNumericStream;
-	latlng?: StravaLatLngStream;
-}
-
-interface StravaLap {
-	start_index: number;
-	end_index: number;
-	average_watts?: number;
-	average_heartrate?: number;
-	average_cadence?: number;
 }
 
 interface StoredToken {
@@ -169,45 +114,6 @@ const updateTokenStmt = db.prepare(
    WHERE user_id = ?`,
 );
 
-const checkStravaActivityStmt = db.prepare<{ id: string }, [string, string]>(
-	"SELECT id FROM activities WHERE user_id = ? AND strava_activity_id = ?",
-);
-
-const deleteStravaActivityStmt = db.prepare(
-	"DELETE FROM activities WHERE user_id = ? AND strava_activity_id = ?",
-);
-
-const insertActivityStmt = db.prepare(
-	`INSERT INTO activities
-     (id, date, summary, records, laps, intervals, user_id, strava_activity_id)
-   VALUES (?, ?, ?, ?, ?, '[]', ?, ?)`,
-);
-
-/**
- * Update the athlete's inferred location from recent activities, but only if
- * they haven't set a location manually. Runs async and logs failures instead of
- * blocking the import path.
- */
-function maybeUpdateAthleteLocation(userId: string): void {
-	const profile = getAthleteProfile(userId);
-	if (profile.location) return;
-
-	const inferred = inferLocationFromActivities(userId);
-	if (!inferred) return;
-
-	try {
-		updateAthleteProfile(userId, { location: inferred });
-		console.log(
-			`[strava] Inferred athlete location for user ${userId}: ${inferred}`,
-		);
-	} catch (err) {
-		console.error(
-			`[strava] Failed to update inferred location for user ${userId}:`,
-			err,
-		);
-	}
-}
-
 /** Return a valid access token for the user, refreshing if within 60s of expiry. */
 async function getValidToken(userId: string): Promise<string> {
 	const token = getTokenStmt.get(userId);
@@ -238,279 +144,33 @@ async function getValidToken(userId: string): Promise<string> {
 	return token.access_token;
 }
 
-/** Compute the best average power for a rolling time window (in seconds). */
-function computePeakPower(
-	timeArr: number[],
-	wattsArr: number[],
-	windowSecs: number,
-): number | null {
-	if (!wattsArr.length || !timeArr.length) return null;
-
-	let bestAvg = 0;
-	let lo = 0;
-	let sum = 0;
-
-	for (let hi = 0; hi < timeArr.length; hi++) {
-		sum += wattsArr[hi];
-		while (timeArr[hi] - timeArr[lo] > windowSecs) {
-			sum -= wattsArr[lo];
-			lo++;
-		}
-		const actualWindow = timeArr[hi] - timeArr[lo];
-		if (actualWindow >= Math.min(windowSecs, timeArr[timeArr.length - 1])) {
-			const avg = sum / (hi - lo + 1);
-			if (avg > bestAvg) bestAvg = avg;
-		}
-	}
-
-	return bestAvg > 0 ? Math.round(bestAvg) : null;
-}
-
-/**
- * Build a per-second cadence series from a Strava time/cadence stream. Strava
- * streams don't always include every second, so we carry forward the last
- * known value. Missing leading samples default to 0 rpm.
- */
-function stravaStreamToCadenceBySecond(
-	timeArr: number[],
-	cadenceArr: number[],
-): (number | null)[] {
-	if (timeArr.length === 0) return [];
-	const maxTime = Math.floor(timeArr[timeArr.length - 1]);
-	const cadenceBySecond: (number | null)[] = new Array(maxTime + 1).fill(null);
-	let streamIdx = 0;
-	let lastValue: number | null = null;
-	for (let s = 0; s <= maxTime; s++) {
-		while (streamIdx < timeArr.length && timeArr[streamIdx] <= s + 0.5) {
-			lastValue = cadenceArr[streamIdx];
-			streamIdx++;
-		}
-		cadenceBySecond[s] = lastValue;
-	}
-	return cadenceBySecond;
-}
-function stravaStreamToPowerBySecond(
-	timeArr: number[],
-	wattsArr: number[],
-): (number | null)[] {
-	if (timeArr.length === 0) return [];
-	const maxTime = Math.floor(timeArr[timeArr.length - 1]);
-	const powerBySecond: (number | null)[] = new Array(maxTime + 1).fill(null);
-	let streamIdx = 0;
-	let lastValue: number | null = null;
-	for (let s = 0; s <= maxTime; s++) {
-		while (streamIdx < timeArr.length && timeArr[streamIdx] <= s + 0.5) {
-			lastValue = wattsArr[streamIdx];
-			streamIdx++;
-		}
-		powerBySecond[s] = lastValue;
-	}
-	return powerBySecond;
-}
-
-/** Build StoredRecord[] from Strava streams (key_by_type format). */
-function buildRecords(startDate: Date, streams: StravaStreams): StoredRecord[] {
-	const timeData = streams.time?.data ?? [];
-	const wattsData = streams.watts?.data ?? [];
-	const hrData = streams.heartrate?.data ?? [];
-	const cadData = streams.cadence?.data ?? [];
-	const velData = streams.velocity_smooth?.data ?? [];
-	const gradeData = streams.grade_smooth?.data ?? [];
-	const latLngData = streams.latlng?.data ?? [];
-
-	return timeData.map((elapsed, i) => ({
-		timestamp: new Date(startDate.getTime() + elapsed * 1000).toISOString(),
-		elapsedSeconds: elapsed,
-		power: wattsData[i] ?? null,
-		heartRate: hrData[i] ?? null,
-		cadence: cadData[i] ?? null,
-		speed: velData[i] != null ? Math.round(velData[i] * 3.6 * 10) / 10 : null,
-		gradient: gradeData[i] ?? null,
-		lat: latLngData[i]?.[0] ?? null,
-		lng: latLngData[i]?.[1] ?? null,
-	}));
-}
-
-/**
- * Build ActivitySummary entirely from raw stream data.
- * Nothing is taken from Strava's pre-computed API fields.
- *
- * Uses a simple mean of non-zero samples, matching Garmin's session record:
- * the device records at 1 Hz so its simple mean == its time-weighted mean.
- * Time-weighting Strava's variable-rate stream is NOT equivalent because large
- * Δt values at pause/auto-pause boundaries are gaps, not sample durations —
- * weighting by them over-penalises the first sample after each stop.
- */
-function buildSummary(
-	activity: StravaActivity,
-	records: StoredRecord[],
-	timeArr: number[],
-	wattsArr: number[],
-	cadenceArr: number[],
-): ActivitySummary {
-	// Simple mean of non-zero values, mirroring Garmin session record behaviour:
-	// zeros (coasting / sensor dropout) are excluded from averages.
-	const powerVals = records
-		.map((r) => r.power)
-		.filter((v): v is number => v !== null && v > 0);
-	const hrVals = records
-		.map((r) => r.heartRate)
-		.filter((v): v is number => v !== null && v > 0);
-	const cadVals = records
-		.map((r) => r.cadence)
-		.filter((v): v is number => v !== null && v > 0);
-
-	const avg = (vals: number[]) =>
-		vals.length
-			? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length)
-			: null;
-	const max = (vals: number[]) =>
-		vals.length ? vals.reduce((m, v) => (v > m ? v : m), vals[0]) : null;
-
-	// Total work: ∫ power dt (W·s = J), nulls treated as 0W
-	let totalWork: number | null = null;
-	if (wattsArr.length > 0 && timeArr.length === wattsArr.length) {
-		let joules = 0;
-		for (let i = 0; i < wattsArr.length; i++) {
-			const dt = i === 0 ? timeArr[0] : timeArr[i] - timeArr[i - 1];
-			joules += (wattsArr[i] ?? 0) * dt;
-		}
-		totalWork = Math.round(joules);
-	}
-
-	return {
-		date: activity.start_date.slice(0, 10),
-		// moving_time matches Garmin's totalTimerTime (excludes pauses; time stream
-		// runs 0→elapsed_time which overshoots by the total paused duration)
-		totalTimerTime: activity.moving_time,
-		totalDistanceKm:
-			activity.distance != null
-				? Math.round((activity.distance / 1000) * 10) / 10
-				: null,
-		avgPower: avg(powerVals),
-		normalizedPower: normalizedPowerFromSeconds(
-			stravaStreamToPowerBySecond(timeArr, wattsArr),
-		),
-		maxPower: max(powerVals),
-		avgHeartRate: avg(hrVals),
-		maxHeartRate: max(hrVals),
-		avgCadence: avg(cadVals),
-		normalizedCadence: normalizedCadenceFromSeconds(
-			stravaStreamToCadenceBySecond(timeArr, cadenceArr),
-		),
-		totalWork,
-		peak1minPower: computePeakPower(timeArr, wattsArr, 60),
-		peak5minPower: computePeakPower(timeArr, wattsArr, 300),
-		peak20minPower: computePeakPower(timeArr, wattsArr, 1200),
-		locationCity: activity.location_city ?? null,
-		locationState: activity.location_state ?? null,
-		locationCountry: activity.location_country ?? null,
-	};
-}
-
-/** Build LapMarker[] from Strava laps, converting stream indices to elapsed seconds. */
-function buildLaps(laps: StravaLap[], timeArr: number[]): LapMarker[] {
-	return laps.map((lap) => ({
-		startSeconds: timeArr[lap.start_index] ?? lap.start_index,
-		endSeconds:
-			timeArr[Math.min(lap.end_index, timeArr.length - 1)] ?? lap.end_index,
-		avgPower: lap.average_watts ?? null,
-		avgHeartRate: lap.average_heartrate ?? null,
-		avgCadence: lap.average_cadence ?? null,
-	}));
-}
-
-const RIDE_TYPES = new Set(["Ride", "VirtualRide", "EBikeRide"]);
-
 /**
  * Fetch a single Strava activity by ID and insert it into the activities table.
- * Returns true if imported, false if skipped (already exists or not a ride).
+ * Returns:
+ * - "imported" / "updated": activity was imported (newly or as a replacement)
+ * - null: activity type is not a ride — caller should not retry
  */
 async function importSingleActivity(
 	userId: string,
 	stravaActivityId: number,
 	accessToken: string,
 ): Promise<"imported" | "updated" | null> {
-	const stravaId = String(stravaActivityId);
-
-	const alreadyExists = checkStravaActivityStmt.get(userId, stravaId);
-
-	// Fetch full activity details
-	const actRes = await fetch(
-		`https://www.strava.com/api/v3/activities/${stravaActivityId}`,
-		{ headers: { Authorization: `Bearer ${accessToken}` } },
-	);
-	if (!actRes.ok)
-		throw new Error(
-			`Failed to fetch activity ${stravaActivityId}: ${actRes.status}`,
-		);
-	const activity = (await actRes.json()) as StravaActivity;
-
-	// Only import rides
-	if (!RIDE_TYPES.has(activity.type) && !RIDE_TYPES.has(activity.sport_type))
-		return null;
-
-	// Fetch streams
-	const streamsRes = await fetch(
-		`https://www.strava.com/api/v3/activities/${stravaActivityId}/streams?keys=time,watts,heartrate,cadence,velocity_smooth,grade_smooth,latlng&key_by_type=true`,
-		{ headers: { Authorization: `Bearer ${accessToken}` } },
-	);
-	const streams: StravaStreams = streamsRes.ok
-		? ((await streamsRes.json()) as StravaStreams)
-		: {};
-
-	if (!streamsRes.ok) {
-		console.warn(
-			`[strava] Streams unavailable for activity ${stravaActivityId}: ${streamsRes.status}`,
-		);
-	}
-
-	// Fetch laps
-	const lapsRes = await fetch(
-		`https://www.strava.com/api/v3/activities/${stravaActivityId}/laps`,
-		{ headers: { Authorization: `Bearer ${accessToken}` } },
-	);
-	const rawLaps: StravaLap[] = lapsRes.ok
-		? ((await lapsRes.json()) as StravaLap[])
-		: [];
-
-	const timeArr = streams.time?.data ?? [];
-	const wattsArr = streams.watts?.data ?? [];
-	const cadenceArr = streams.cadence?.data ?? [];
-	const startDate = new Date(activity.start_date);
-
-	const records = buildRecords(startDate, streams);
-	const summary = buildSummary(
-		activity,
-		records,
-		timeArr,
-		wattsArr,
-		cadenceArr,
-	);
-	const laps = buildLaps(rawLaps, timeArr);
-
-	if (alreadyExists) {
-		deleteStravaActivityStmt.run(userId, stravaId);
-	}
-
-	const id = crypto.randomUUID();
-	insertActivityStmt.run(
-		id,
-		summary.date,
-		JSON.stringify(summary),
-		JSON.stringify(records),
-		JSON.stringify(laps),
+	const result = await stravaActivityToPayload(
 		userId,
-		stravaId,
+		stravaActivityId,
+		accessToken,
+		defaultStravaFetch,
 	);
+	if ("skipped" in result) return null;
 
-	await handleNewActivityForWaxedChainReminder(userId, records);
-	maybeUpdateAthleteLocation(userId);
-
-	console.log(
-		`[strava] ${alreadyExists ? "Re-imported" : "Imported"} activity ${stravaActivityId} (${activity.name}) → ${id}`,
-	);
-	return alreadyExists ? "updated" : "imported";
+	const importResult = await importActivity(db, result.payload);
+	// Strava route exposes imported/updated to the sync counter; a skip (no
+	// content change) is reported as null so the caller doesn't double-count.
+	return importResult.status === "imported"
+		? "imported"
+		: importResult.status === "updated"
+			? "updated"
+			: null;
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
@@ -736,9 +396,7 @@ strava.post("/sync", async (c) => {
 		const pageActivities = (await listRes.json()) as StravaActivity[];
 		if (pageActivities.length === 0) break;
 
-		const rides = pageActivities.filter(
-			(a) => RIDE_TYPES.has(a.type) || RIDE_TYPES.has(a.sport_type),
-		);
+		const rides = pageActivities.filter(isRideActivity);
 
 		for (const activity of rides) {
 			try {
