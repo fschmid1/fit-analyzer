@@ -1,6 +1,7 @@
 import { db } from "../../db.js";
 import {
 	buildPowerBySecond,
+	mapStoredRecords,
 	peakPowerFromSeconds,
 	type ActivitySummary,
 	type StoredRecord,
@@ -56,18 +57,7 @@ function computeTssForActivity(
 
 	// Fallback: derive NP from records if the summary didn't store it
 	try {
-		const mapped = records.map((r) => ({
-			timestamp: new Date(r.timestamp),
-			elapsedSeconds: r.elapsedSeconds,
-			power: r.power,
-			heartRate: r.heartRate,
-			cadence: r.cadence,
-			speed: r.speed,
-			gradient: r.gradient,
-			lat: r.lat,
-			lng: r.lng,
-		}));
-		const powerBySecond = buildPowerBySecond(mapped);
+		const powerBySecond = buildPowerBySecond(mapStoredRecords(records));
 		let sum = 0;
 		let count = 0;
 		const window = 30;

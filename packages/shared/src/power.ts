@@ -1,6 +1,26 @@
-import type { ActivityRecord } from "./types.js";
+import type { ActivityRecord, StoredRecord } from "./types.js";
 
 const NP_WINDOW_SECONDS = 30;
+
+/**
+ * Convert `StoredRecord[]` (JSON-parsed, with string timestamps) to
+ * `ActivityRecord[]` (with Date timestamps). Used by server-side code
+ * that reads records from the database before passing them to
+ * `buildPowerBySecond` / `peakPowerFromSeconds`.
+ */
+export function mapStoredRecords(records: StoredRecord[]): ActivityRecord[] {
+	return records.map((r) => ({
+		timestamp: new Date(r.timestamp),
+		elapsedSeconds: r.elapsedSeconds,
+		power: r.power,
+		heartRate: r.heartRate,
+		cadence: r.cadence,
+		speed: r.speed,
+		gradient: r.gradient,
+		lat: r.lat,
+		lng: r.lng,
+	}));
+}
 
 /*
  * Reusable helper: given a per-second numeric array and a window size,
@@ -113,51 +133,33 @@ export function buildMetricBySecondFromTimeSeries(
 
 /**
  * Compute the best average power for a rolling time window (in seconds)
- * from a per-second power array. Gaps (null or zero) are ignored in the
- * average. Returns null if there aren't enough data points.
+ * from a per-second power array. Zeros (coasting) and gaps (null) are
+ * treated as zero watts and included in the window — the average is
+ * always `windowSum / windowSeconds`, matching how Garmin, Strava, and
+ * other cycling tools compute peak power. Returns null if there aren't
+ * enough data points.
  */
 export function peakPowerFromSeconds(
 	powerBySecond: (number | null)[],
 	windowSeconds: number,
 ): number | null {
-	if (powerBySecond.length === 0 || powerBySecond.length - 1 < windowSeconds)
-		return null;
+	if (powerBySecond.length < windowSeconds) return null;
 
-	let best = 0;
 	let windowSum = 0;
-	let windowCount = 0;
 
 	// Initialize first window
-	for (let i = 0; i < windowSeconds && i < powerBySecond.length; i++) {
-		const power = powerBySecond[i];
-		if (power != null && power > 0) {
-			windowSum += power;
-			windowCount++;
-		}
+	for (let i = 0; i < windowSeconds; i++) {
+		windowSum += powerBySecond[i] ?? 0;
 	}
 
-	if (windowCount > 0) {
-		best = windowSum / windowCount;
-	}
+	let best = windowSum / windowSeconds;
 
 	// Slide the window
 	for (let i = windowSeconds; i < powerBySecond.length; i++) {
-		const entering = powerBySecond[i];
-		const leaving = powerBySecond[i - windowSeconds];
-
-		if (entering != null && entering > 0) {
-			windowSum += entering;
-			windowCount++;
-		}
-		if (leaving != null && leaving > 0) {
-			windowSum -= leaving;
-			windowCount--;
-		}
-
-		if (windowCount > 0) {
-			const avg = windowSum / windowCount;
-			if (avg > best) best = avg;
-		}
+		windowSum +=
+			(powerBySecond[i] ?? 0) - (powerBySecond[i - windowSeconds] ?? 0);
+		const avg = windowSum / windowSeconds;
+		if (avg > best) best = avg;
 	}
 
 	return best > 0 ? Math.round(best) : null;

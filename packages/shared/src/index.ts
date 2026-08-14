@@ -67,6 +67,7 @@ export {
 	buildPowerBySecond,
 	buildCadenceBySecond,
 	buildMetricBySecondFromTimeSeries,
+	mapStoredRecords,
 	computeNormalizedPower,
 	normalizedPowerFromSeconds,
 	computeNormalizedCadence,

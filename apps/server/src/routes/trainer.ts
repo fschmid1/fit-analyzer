@@ -13,6 +13,7 @@ import type { ModelMessage } from "@tanstack/ai";
 import { Hono } from "hono";
 import { db } from "../db.js";
 import { getCoachModelSettings } from "../lib/coachModelSettings.js";
+import { recomputeSummaryPeakPowers } from "../lib/tools/activityUtils.js";
 import {
 	compactMessages,
 	messageTokenLength,
@@ -229,7 +230,10 @@ trainer.post("/analyze/:activityId", async (c) => {
 	}
 
 	const activity = {
-		summary: JSON.parse(row.summary) as ActivitySummary,
+		summary: recomputeSummaryPeakPowers(
+			JSON.parse(row.summary) as ActivitySummary,
+			JSON.parse(row.records) as StoredRecord[],
+		),
 		records: JSON.parse(row.records) as StoredRecord[],
 		laps: JSON.parse(row.laps),
 		intervals: JSON.parse(row.intervals || "[]") as Interval[],

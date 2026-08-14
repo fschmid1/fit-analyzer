@@ -19,7 +19,7 @@ describe("peakPowerFromSeconds", () => {
 		});
 
 		it("finds the best sliding window of 3s", () => {
-			// windows: [100,100,300]=166, [100,300,300]=233, [300,300,100]=233
+			// windows: [100,100,300]=167, [100,300,300]=233, [300,300,100]=233
 			const arr = [100, 100, 300, 300, 100];
 			expect(peakPowerFromSeconds(arr, 3)).toBe(233);
 		});
@@ -31,21 +31,28 @@ describe("peakPowerFromSeconds", () => {
 	});
 
 	describe("zero and gap handling", () => {
-		it("ignores zeros — a single non-zero beats a zero-inclusive average", () => {
-			// zero-inclusive would give [400,0]=200; zero-exclusive gives 400
+		it("includes zeros in the average — coasting dilutes the window", () => {
+			// windows: [400,0]=200, [0,0]=0, [0,0]=0
 			const arr = [400, 0, 0, 0];
-			expect(peakPowerFromSeconds(arr, 2)).toBe(400);
+			expect(peakPowerFromSeconds(arr, 2)).toBe(200);
 		});
 
-		it("ignores nulls the same as zeros", () => {
+		it("treats nulls the same as zeros", () => {
+			// windows: [400,0]=200, [0,0]=0, [0,0]=0
 			const arr: (number | null)[] = [400, null, null, null];
-			expect(peakPowerFromSeconds(arr, 2)).toBe(400);
+			expect(peakPowerFromSeconds(arr, 2)).toBe(200);
 		});
 
-		it("does not let zeros dilute a mixed window", () => {
+		it("does not let zeros dilute a fully non-zero window", () => {
 			// best 2s window is [300,300]=300; zeros elsewhere don't pull it down
 			const arr = [0, 300, 300, 0, 0];
 			expect(peakPowerFromSeconds(arr, 2)).toBe(300);
+		});
+
+		it("a mixed window averages over the full window length", () => {
+			// [400, 0, 400] window 3 → (400+0+400)/3 = 267
+			const arr = [400, 0, 400];
+			expect(peakPowerFromSeconds(arr, 3)).toBe(267);
 		});
 	});
 
@@ -54,8 +61,7 @@ describe("peakPowerFromSeconds", () => {
 			expect(peakPowerFromSeconds([], 60)).toBeNull();
 		});
 
-		it("returns null when window is larger than array span", () => {
-			// length 5 → span 4s; a 60s window can't fit
+		it("returns null when window is larger than array", () => {
 			expect(peakPowerFromSeconds([200, 200, 200, 200, 200], 60)).toBeNull();
 		});
 
@@ -67,10 +73,18 @@ describe("peakPowerFromSeconds", () => {
 			expect(peakPowerFromSeconds([null, null, null, null], 2)).toBeNull();
 		});
 
-		it("returns null for a single value (window must fit the span)", () => {
-			// length 1 → span 0s; any windowSeconds >= 1 can't fit
-			expect(peakPowerFromSeconds([350], 1)).toBeNull();
+		it("returns the value when array length equals window size", () => {
+			// length 1, window 1 — exactly fits
+			expect(peakPowerFromSeconds([350], 1)).toBe(350);
+		});
+
+		it("returns null when array is shorter than window", () => {
 			expect(peakPowerFromSeconds([350], 2)).toBeNull();
+		});
+
+		it("returns the average when array length equals window size", () => {
+			// length 3, window 3 — exactly fits: (100+200+300)/3 = 200
+			expect(peakPowerFromSeconds([100, 200, 300], 3)).toBe(200);
 		});
 	});
 });
@@ -201,8 +215,8 @@ describe("peakPowerFromTimeSeries", () => {
 			expect(peakPowerFromTimeSeries(timeArr, wattsArr, 2)).toBe(
 				peakPowerFromSeconds(perSecond, 2),
 			);
-			// and that value is the zero-exclusive 400, not 200
-			expect(peakPowerFromTimeSeries(timeArr, wattsArr, 2)).toBe(400);
+			// and that value is the zero-inclusive 200, not 400
+			expect(peakPowerFromTimeSeries(timeArr, wattsArr, 2)).toBe(200);
 		});
 	});
 });

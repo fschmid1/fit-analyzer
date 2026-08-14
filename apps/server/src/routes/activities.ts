@@ -9,6 +9,7 @@ import type {
 	UpdateIntervalsBody,
 	UIToolCall,
 } from "@fit-analyzer/shared";
+import { recomputeSummaryPeakPowers } from "../lib/tools/activityUtils.js";
 import { computeDistanceKm } from "../lib/waxedChainReminders.js";
 import { importActivity } from "../lib/activityImporter.js";
 
@@ -104,7 +105,11 @@ activities.get("/", (c) => {
 	const items: ActivityListItem[] = rows.map((row) => {
 		const rawSummary = JSON.parse(row.summary) as ActivitySummary;
 		const records = JSON.parse(row.records) as StoredRecord[];
-		const { summary, repaired } = hydrateSummaryDistance(rawSummary, records);
+		const { summary: hydrated, repaired } = hydrateSummaryDistance(
+			rawSummary,
+			records,
+		);
+		const summary = recomputeSummaryPeakPowers(hydrated, records);
 
 		if (repaired) {
 			updateSummaryStmt.run(JSON.stringify(summary), row.id, userId);
@@ -157,7 +162,11 @@ activities.get("/:id", (c) => {
 
 	const records = JSON.parse(row.records) as StoredRecord[];
 	const rawSummary = JSON.parse(row.summary) as ActivitySummary;
-	const { summary, repaired } = hydrateSummaryDistance(rawSummary, records);
+	const { summary: hydrated, repaired } = hydrateSummaryDistance(
+		rawSummary,
+		records,
+	);
+	const summary = recomputeSummaryPeakPowers(hydrated, records);
 
 	if (repaired) {
 		updateSummaryStmt.run(JSON.stringify(summary), row.id, userId);

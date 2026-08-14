@@ -1,6 +1,7 @@
 import { db } from "../../db.js";
 import {
 	buildPowerBySecond,
+	mapStoredRecords,
 	peakPowerFromSeconds,
 	type ActivitySummary,
 	type Interval,
@@ -40,31 +41,36 @@ export interface PeakPowers {
 	peak60min: number | null;
 }
 
-export function computePeakPowers(
-	records: StoredRecord[],
-	summary: ActivitySummary,
-): PeakPowers {
-	const mapped = records.map((r) => ({
-		timestamp: new Date(r.timestamp),
-		elapsedSeconds: r.elapsedSeconds,
-		power: r.power,
-		heartRate: r.heartRate,
-		cadence: r.cadence,
-		speed: r.speed,
-		gradient: r.gradient,
-		lat: r.lat,
-		lng: r.lng,
-	}));
-	const powerBySecond = buildPowerBySecond(mapped);
+export function computePeakPowers(records: StoredRecord[]): PeakPowers {
+	const powerBySecond = buildPowerBySecond(mapStoredRecords(records));
 	return {
 		peak5s: peakPowerFromSeconds(powerBySecond, 5),
 		peak30s: peakPowerFromSeconds(powerBySecond, 30),
-		peak1min: summary.peak1minPower ?? peakPowerFromSeconds(powerBySecond, 60),
-		peak5min: summary.peak5minPower ?? peakPowerFromSeconds(powerBySecond, 300),
+		peak1min: peakPowerFromSeconds(powerBySecond, 60),
+		peak5min: peakPowerFromSeconds(powerBySecond, 300),
 		peak10min: peakPowerFromSeconds(powerBySecond, 600),
-		peak20min:
-			summary.peak20minPower ?? peakPowerFromSeconds(powerBySecond, 1200),
+		peak20min: peakPowerFromSeconds(powerBySecond, 1200),
 		peak60min: peakPowerFromSeconds(powerBySecond, 3600),
+	};
+}
+
+/**
+ * Recompute peak power fields (1min, 5min, 20min) from records and
+ * overwrite the corresponding fields on the summary. Stored summary
+ * values may be stale (computed with a previous algorithm), so any
+ * code serving activities to the UI or trainer should call this.
+ */
+export function recomputeSummaryPeakPowers(
+	summary: ActivitySummary,
+	records: StoredRecord[],
+): ActivitySummary {
+	if (records.length === 0) return summary;
+	const peaks = computePeakPowers(records);
+	return {
+		...summary,
+		peak1minPower: peaks.peak1min,
+		peak5minPower: peaks.peak5min,
+		peak20minPower: peaks.peak20min,
 	};
 }
 
@@ -84,11 +90,12 @@ export function rowToActivity(row: ActivityRow): ParsedActivity | null {
 		const records = JSON.parse(row.records) as StoredRecord[];
 		const laps = JSON.parse(row.laps) as LapMarker[];
 		const intervals = JSON.parse(row.intervals || "[]") as Interval[];
-		const peakPowers = computePeakPowers(records, summary);
+		const peakPowers = computePeakPowers(records);
+		const updatedSummary = recomputeSummaryPeakPowers(summary, records);
 		return {
 			id: row.id,
 			date: row.date,
-			summary,
+			summary: updatedSummary,
 			records,
 			laps,
 			intervals,
