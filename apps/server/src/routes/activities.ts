@@ -9,10 +9,8 @@ import type {
 	UpdateIntervalsBody,
 	UIToolCall,
 } from "@fit-analyzer/shared";
-import {
-	computeDistanceKm,
-	handleNewActivityForWaxedChainReminder,
-} from "../lib/waxedChainReminders.js";
+import { computeDistanceKm } from "../lib/waxedChainReminders.js";
+import { importActivity } from "../lib/activityImporter.js";
 
 const activities = new Hono();
 
@@ -39,11 +37,6 @@ const getStmt = db.prepare(
 	`SELECT id, date, summary, records, laps, intervals, interval_minutes, custom_ranges, created_at as createdAt, analysis, analysis_tool_calls as analysisToolCalls
    FROM activities
    WHERE id = ? AND user_id = ?`,
-);
-
-const insertStmt = db.prepare(
-	`INSERT INTO activities (id, date, summary, records, laps, intervals, user_id)
-   VALUES (?, ?, ?, ?, ?, ?, ?)`,
 );
 
 const updateIntervalsStmt = db.prepare(
@@ -220,27 +213,23 @@ activities.post("/", async (c) => {
 		);
 	}
 
-	const id = crypto.randomUUID();
-	const date = body.summary.date;
-
-	insertStmt.run(
-		id,
-		date,
-		JSON.stringify(body.summary),
-		JSON.stringify(body.records),
-		JSON.stringify(body.laps),
-		JSON.stringify(body.intervals ?? []),
+	// FIT uploads have no external id — generate one so the payload shape is
+	// consistent with the Strava/Wahoo adapters. The importer treats fit-upload
+	// as always-insert (no dedup column), so each upload creates a fresh row.
+	const result = await importActivity(db, {
+		source: "fit-upload",
+		sourceActivityId: crypto.randomUUID(),
+		records: body.records,
+		summary: body.summary,
+		laps: body.laps,
 		userId,
-	);
+	});
 
-	void handleNewActivityForWaxedChainReminder(userId, body.records).catch(
-		(error) => {
-			console.error(
-				`[activities] Failed to evaluate waxed-chain reminder for user ${userId}:`,
-				error,
-			);
-		},
-	);
+	// FIT uploads always insert (no dedup column), so `id` is non-null.
+	const id = result.id;
+	if (!id) {
+		return c.json({ error: "Failed to persist activity" }, 500);
+	}
 
 	return c.json({ id }, 201);
 });
