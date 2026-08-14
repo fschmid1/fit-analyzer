@@ -31,3 +31,17 @@ Long term maintainability is a core priority. If you add new functionality, firs
 - `packages/shared`: Shared TypeScript types exchanged between server and web, including activity records, summaries, interval payloads, trainer chat shapes, and user settings. Keep this package focused on cross-app contracts and lightweight shared definitions.
 
 Prefer keeping domain logic in the package that owns the behavior. Move code into `packages/shared` only when both apps truly depend on the same types or logic.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as GitHub issues in `fschmid1/fit-analyzer` (uses `gh`). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Multi-context: root `CONTEXT-MAP.md` + per-package `CONTEXT.md` and `docs/adr/` under `apps/server`, `apps/web`, `packages/shared`. See `docs/agents/domain.md`.
