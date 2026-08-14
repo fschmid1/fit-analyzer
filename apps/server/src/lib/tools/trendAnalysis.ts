@@ -1,6 +1,19 @@
 import { db } from "../../db.js";
-import type { ActivitySummary, ToolDefinition } from "@fit-analyzer/shared";
+import {
+	buildPowerBySecond,
+	mapStoredRecords,
+	peakPowerFromSeconds,
+	type ActivitySummary,
+	type StoredRecord,
+	type ToolDefinition,
+} from "@fit-analyzer/shared";
 import type { ToolHandler } from "./registry.js";
+
+const PEAK_POWER_METRICS = new Set<string>([
+	"peak1minPower",
+	"peak5minPower",
+	"peak20minPower",
+]);
 
 const METRIC_LIST = [
 	"avgPower",
@@ -33,7 +46,7 @@ const METRIC_LABELS: Record<MetricKey, string> = {
 const DEFAULT_LOOKBACK_DAYS = 90;
 
 const summaryStmt = db.prepare(
-	`SELECT date, summary FROM activities
+	`SELECT date, summary, records FROM activities
      WHERE user_id = ? AND date >= ? AND date <= ?
      ORDER BY date ASC`,
 );
@@ -143,6 +156,7 @@ export const trendAnalysisHandler: ToolHandler = async (args, context) => {
 	const rows = summaryStmt.all(userId, startStr, endStr) as {
 		date: string;
 		summary: string;
+		records: string;
 	}[];
 
 	const dates: string[] = [];
@@ -155,7 +169,29 @@ export const trendAnalysisHandler: ToolHandler = async (args, context) => {
 		} catch {
 			continue;
 		}
-		const val = extractMetric(summary, metric);
+
+		let val: number | null;
+		if (PEAK_POWER_METRICS.has(metric)) {
+			// Recompute peak powers from records — stored summary values may
+			// be stale (computed with a previous algorithm).
+			let records: StoredRecord[];
+			try {
+				records = JSON.parse(row.records) as StoredRecord[];
+			} catch {
+				records = [];
+			}
+			const powerBySecond = buildPowerBySecond(mapStoredRecords(records));
+			const windowSeconds =
+				metric === "peak1minPower"
+					? 60
+					: metric === "peak5minPower"
+						? 300
+						: 1200;
+			val = peakPowerFromSeconds(powerBySecond, windowSeconds);
+		} else {
+			val = extractMetric(summary, metric);
+		}
+
 		if (val != null) {
 			dates.push(row.date);
 			values.push(val);

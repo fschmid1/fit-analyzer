@@ -7,22 +7,32 @@ import type {
 	TrainerMessage,
 	UIToolCall,
 } from "@fit-analyzer/shared";
-import {
-	APPROX_CHARS_PER_TOKEN,
-	AVAILABLE_MODELS,
-	getModelProvider,
-} from "@fit-analyzer/shared";
+import { AVAILABLE_MODELS } from "@fit-analyzer/shared";
 import { convertMessagesToModelMessages } from "@tanstack/ai";
-import type { ModelMessage, UIMessage } from "@tanstack/ai";
+import type { ModelMessage } from "@tanstack/ai";
 import { Hono } from "hono";
 import { db } from "../db.js";
-import { env } from "../env.js";
 import { getCoachModelSettings } from "../lib/coachModelSettings.js";
+import { recomputeSummaryPeakPowers } from "../lib/tools/activityUtils.js";
+import {
+	compactMessages,
+	messageTokenLength,
+} from "../lib/compactionEngine.js";
+import { getUserId } from "../lib/getUserId.js";
 import { getOllamaModels } from "../lib/ollamaModelCache.js";
 import {
 	parseCoachingMarkdown,
 	serializeCoachingMarkdown,
 } from "../lib/parseCoachingMarkdown.js";
+import {
+	fetchCompactionSummary,
+	getKimiRequestMetadata,
+	getProviderConfig,
+	resolveThreadModel,
+	sanitizeMessagesForModel,
+} from "../lib/providerConfig.js";
+import { messageRepo, serializeToolCalls } from "../lib/messageRepo.js";
+import { threadRepo } from "../lib/threadRepo.js";
 import { getToolDefinitions } from "../lib/tools/registry.js";
 import {
 	cancelTrainerStream,
@@ -32,11 +42,6 @@ import {
 	verifyStreamOwner,
 } from "../lib/trainerStreamRegistry.js";
 import { createTrainerToolLoop } from "../lib/trainerToolLoop.js";
-import {
-	compactMessages,
-	messageTokenLength,
-} from "../lib/compactionEngine.js";
-import { getUserId } from "../lib/getUserId.js";
 
 const BASE_SYSTEM_PROMPT =
 	"You are an expert endurance sports coach specialising in cycling and triathlon. " +
@@ -76,132 +81,11 @@ async function buildSystemPrompt(
 	return BASE_SYSTEM_PROMPT;
 }
 
-/**
- * Strip `display` fields from tool-call part outputs before converting to
- * ModelMessages.  The `display` blob is purely for UI rendering and can
- * contain thousands of per-second data points (records, lat/lng, etc.).
- * Keeping it out of the LLM context prevents immediate context bloat.
- */
-function sanitizeMessagesForModel(
-	messages: Array<UIMessage | ModelMessage>,
-): Array<UIMessage | ModelMessage> {
-	return messages.map((msg) => {
-		if ("parts" in msg && Array.isArray(msg.parts)) {
-			const parts = msg.parts.map((part) => {
-				if (
-					part.type === "tool-call" &&
-					part.output &&
-					typeof part.output === "object"
-				) {
-					const output = { ...part.output } as Record<string, unknown>;
-					if (output.result && typeof output.result === "object") {
-						const result = { ...output.result } as Record<string, unknown>;
-						const { display: _, ...resultWithoutDisplay } = result;
-						output.result = resultWithoutDisplay;
-					}
-					return { ...part, output };
-				}
-				return part;
-			});
-			return { ...msg, parts };
-		}
-		return msg;
-	});
-}
-
 // Active compaction requests by user/thread. Prevents duplicate concurrent
 // compactions and gives the UI a way to know that work is in progress.
 const activeCompactions = new Map<string, Promise<unknown>>();
 function compactionKey(userId: string, threadId: string) {
 	return `${userId}:${threadId}`;
-}
-
-async function getProviderConfig(modelId: string) {
-	const staticProvider = getModelProvider(modelId);
-	if (staticProvider === "ollama-cloud") {
-		return {
-			provider: "ollama-cloud" as const,
-			apiKey: env.OLLAMA_CLOUD_KEY,
-			apiKeyEnvName: "OLLAMA_CLOUD_KEY",
-			baseUrl: env.OLLAMA_BASE_URL,
-			includeReasoning: false,
-			metadata: undefined,
-		};
-	}
-	if (staticProvider === "openrouter") {
-		return {
-			provider: "openrouter" as const,
-			apiKey: env.OPENROUTER_KEY,
-			apiKeyEnvName: "OPENROUTER_KEY",
-			baseUrl: "https://openrouter.ai/api/v1",
-			includeReasoning: true,
-			metadata: undefined,
-		};
-	}
-
-	// Check dynamic Ollama cache
-	const ollamaModels = await getOllamaModels();
-	if (ollamaModels.some((m) => m.id === modelId)) {
-		return {
-			provider: "ollama-cloud" as const,
-			apiKey: env.OLLAMA_CLOUD_KEY,
-			apiKeyEnvName: "OLLAMA_CLOUD_KEY",
-			baseUrl: env.OLLAMA_BASE_URL,
-			includeReasoning: false,
-			metadata: undefined,
-		};
-	}
-
-	// Default: openrouter
-	return {
-		provider: "openrouter" as const,
-		apiKey: env.OPENROUTER_KEY,
-		apiKeyEnvName: "OPENROUTER_KEY",
-		baseUrl: "https://openrouter.ai/api/v1",
-		includeReasoning: true,
-		metadata: undefined,
-	};
-}
-
-function parseToolCalls(raw: unknown): UIToolCall[] | undefined {
-	if (raw == null || raw === "") return undefined;
-	if (typeof raw !== "string") return undefined;
-	try {
-		const parsed = JSON.parse(raw);
-		if (!Array.isArray(parsed)) return undefined;
-		return parsed as UIToolCall[];
-	} catch {
-		return undefined;
-	}
-}
-
-function serializeToolCalls(
-	toolCalls: UIToolCall[] | undefined,
-): string | null {
-	if (!toolCalls || toolCalls.length === 0) return null;
-	return JSON.stringify(toolCalls);
-}
-
-interface MessageRow {
-	id: string;
-	role: string;
-	content: string;
-	createdAt: string;
-	toolCalls: unknown;
-}
-
-function rowToTrainerMessage(row: MessageRow): TrainerMessage {
-	const msg: TrainerMessage = {
-		id: row.id,
-		role: row.role as "user" | "assistant",
-		content: row.content,
-		createdAt: row.createdAt,
-	};
-	const toolCalls = parseToolCalls(row.toolCalls);
-	if (toolCalls && toolCalls.length > 0) {
-		msg.toolCalls = toolCalls;
-	}
-	return msg;
 }
 
 type TrainerChatRequestBody = {
@@ -215,123 +99,11 @@ function getStringBodyValue(value: unknown): string | undefined {
 	return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function getKimiRequestMetadata(body: TrainerChatRequestBody, userId: string) {
-	const threadId = getStringBodyValue(body.threadId);
-	const conversationId = getStringBodyValue(body.conversationId) ?? threadId;
-
-	return {
-		app: "fit-analyzer",
-		feature: "trainer-chat",
-		context_cache: "openrouter-moonshot-automatic",
-		user_id: userId,
-		...(threadId ? { thread_id: threadId } : {}),
-		...(conversationId ? { conversation_id: conversationId } : {}),
-	};
-}
-
-// ─── Prepared statements ─────────────────────────────────────────────────────
-
-const getThreadsStmt = db.prepare(
-	`SELECT c.id, c.name, c.activity_id as activityId, c.coach_model as coachModel,
-            c.created_at as createdAt, c.updated_at as updatedAt,
-            COUNT(m.id) as messageCount,
-            COALESCE(c.context_tokens, SUM(LENGTH(m.content)) / ${APPROX_CHARS_PER_TOKEN}, 0) as contextTokens
-     FROM trainer_chats c
-     LEFT JOIN trainer_messages m ON m.chat_id = c.id
-     WHERE c.user_id = ? AND c.activity_id = ?
-     GROUP BY c.id
-     ORDER BY c.created_at ASC`,
-);
-
-const getThreadByIdStmt = db.prepare(
-	`SELECT id, name, activity_id as activityId, coach_model as coachModel, user_id as userId,
-            context_tokens as contextTokens, created_at as createdAt, updated_at as updatedAt
-     FROM trainer_chats
-     WHERE id = ? AND user_id = ?`,
-);
-
-const getMessagesStmt = db.prepare(
-	`SELECT id, role, content, created_at as createdAt, tool_calls as toolCalls
-     FROM trainer_messages
-     WHERE chat_id = ?
-     ORDER BY created_at ASC, id ASC`,
-);
-
-const getMessagesPageStmt = db.prepare(
-	`SELECT id, role, content, created_at as createdAt, tool_calls as toolCalls
-     FROM trainer_messages
-     WHERE chat_id = ?
-       AND (created_at < ? OR (created_at = ? AND id < ?))
-     ORDER BY created_at DESC, id DESC
-     LIMIT ?`,
-);
-
-const getMessagesLatestStmt = db.prepare(
-	`SELECT id, role, content, created_at as createdAt, tool_calls as toolCalls
-     FROM trainer_messages
-     WHERE chat_id = ?
-     ORDER BY created_at DESC, id DESC
-     LIMIT ?`,
-);
-
-const countMessagesStmt = db.prepare(
-	"SELECT COUNT(*) as c FROM trainer_messages WHERE chat_id = ?",
-);
-
-const createThreadStmt = db.prepare(
-	`INSERT INTO trainer_chats (id, activity_id, user_id, name, coach_model, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-);
-
-const renameThreadStmt = db.prepare(
-	`UPDATE trainer_chats SET name = ?, updated_at = datetime('now')
-     WHERE id = ? AND user_id = ?`,
-);
-
-const updateThreadModelStmt = db.prepare(
-	`UPDATE trainer_chats SET coach_model = ?, updated_at = datetime('now')
-     WHERE id = ? AND user_id = ?`,
-);
-
-const updateThreadContextTokensStmt = db.prepare(
-	`UPDATE trainer_chats SET context_tokens = ?, updated_at = datetime('now')
-     WHERE id = ? AND user_id = ?`,
-);
-
-const deleteThreadStmt = db.prepare(
-	"DELETE FROM trainer_chats WHERE id = ? AND user_id = ?",
-);
-
-const deleteMessagesStmt = db.prepare(
-	"DELETE FROM trainer_messages WHERE chat_id = ?",
-);
-
-const touchThreadStmt = db.prepare(
-	`UPDATE trainer_chats SET updated_at = datetime('now') WHERE id = ?`,
-);
-
-const insertMessageStmt = db.prepare(
-	`INSERT INTO trainer_messages (id, chat_id, role, content, created_at, tool_calls)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-);
-
-async function resolveThreadModel(
-	thread: { coachModel: string | null } | undefined,
-	userId: string,
-): Promise<string> {
-	if (thread?.coachModel) {
-		const known = AVAILABLE_MODELS.find((m) => m.id === thread.coachModel);
-		if (known) return known.id;
-		const ollamaModels = await getOllamaModels();
-		if (ollamaModels.some((m) => m.id === thread.coachModel)) {
-			return thread.coachModel;
-		}
-	}
-	const settings = await getCoachModelSettings(userId);
-	return settings.coachModel;
-}
-
 const trainer = new Hono();
+
+// ─── Inline activity analysis ───────────────────────────────────────────────
+// These two statements are activity-analysis specific and stay in the route
+// until plan 10 extracts an activityRepo. They are not trainer-concern SQL.
 
 const updateActivityAnalysisStmt = db.prepare(
 	"UPDATE activities SET analysis = ?, analysis_tool_calls = ? WHERE id = ? AND user_id = ?",
@@ -341,8 +113,6 @@ const getActivityStmt = db.prepare(
 	`SELECT id, summary, records, laps, intervals, interval_minutes, custom_ranges, analysis, analysis_tool_calls
    FROM activities WHERE id = ? AND user_id = ?`,
 );
-
-// ─── Inline activity analysis ───────────────────────────────────────────────
 
 const ANALYSIS_SYSTEM_PROMPT =
 	"You are an expert endurance sports coach specialising in cycling. " +
@@ -460,7 +230,10 @@ trainer.post("/analyze/:activityId", async (c) => {
 	}
 
 	const activity = {
-		summary: JSON.parse(row.summary) as ActivitySummary,
+		summary: recomputeSummaryPeakPowers(
+			JSON.parse(row.summary) as ActivitySummary,
+			JSON.parse(row.records) as StoredRecord[],
+		),
 		records: JSON.parse(row.records) as StoredRecord[],
 		laps: JSON.parse(row.laps),
 		intervals: JSON.parse(row.intervals || "[]") as Interval[],
@@ -622,11 +395,7 @@ trainer.post("/chat", async (c) => {
 	);
 
 	const threadId = getStringBodyValue(body.threadId);
-	const thread = threadId
-		? (getThreadByIdStmt.get(threadId, userId) as
-				| { coachModel: string | null; activityId: string }
-				| undefined)
-		: undefined;
+	const thread = threadId ? threadRepo.getById(userId, threadId) : null;
 	const model = await resolveThreadModel(thread, userId);
 	const providerConfig = await getProviderConfig(model);
 
@@ -642,13 +411,15 @@ trainer.post("/chat", async (c) => {
 			return c.json({ error: "Stream not found or already completed" }, 404);
 		}
 	} else {
-		const activityId = thread
-			? ((thread as { activityId?: string }).activityId ?? undefined)
-			: undefined;
+		const activityId = thread?.activityId ?? undefined;
 		const systemPrompt = await buildSystemPrompt(userId, activityId);
 		const tools = getToolDefinitions();
 		const metadata = providerConfig.includeReasoning
-			? getKimiRequestMetadata(body, userId)
+			? getKimiRequestMetadata(
+					userId,
+					getStringBodyValue(body.threadId),
+					getStringBodyValue(body.conversationId),
+				)
 			: undefined;
 
 		startTrainerStreamProducer(
@@ -750,22 +521,7 @@ trainer.get("/models", async (c) => {
 trainer.get("/threads/:activityId", (c) => {
 	const userId = getUserId(c);
 	const { activityId } = c.req.param();
-	const threads = (
-		getThreadsStmt.all(userId, activityId) as Array<{
-			id: string;
-			name: string;
-			activityId: string;
-			coachModel: string | null;
-			createdAt: string;
-			updatedAt: string;
-			messageCount: number;
-			contextTokens: number | null;
-		}>
-	).map((t) => ({
-		...t,
-		messageCount: t.messageCount ?? 0,
-		contextTokens: Math.ceil(t.contextTokens ?? 0),
-	}));
+	const threads = threadRepo.listByActivity(userId, activityId);
 	return c.json({ threads });
 });
 
@@ -786,14 +542,12 @@ trainer.post("/threads/:activityId", async (c) => {
 	const model: string | undefined = (
 		body.coachModel as string | undefined
 	)?.trim();
-	const threadId = crypto.randomUUID();
 	const known =
 		model &&
 		(AVAILABLE_MODELS.find((m) => m.id === model) ||
 			(await getOllamaModels()).some((m) => m.id === model));
 	const coachModel = known ? model : null;
-	createThreadStmt.run(threadId, activityId, userId, name, coachModel);
-	const thread = getThreadByIdStmt.get(threadId, userId);
+	const thread = threadRepo.create(userId, activityId, name, coachModel);
 	return c.json({ thread });
 });
 
@@ -815,16 +569,16 @@ trainer.patch("/threads/:threadId", async (c) => {
 			{ error: "Name, coachModel or contextTokens is required" },
 			400,
 		);
-	if (name) renameThreadStmt.run(name, threadId, userId);
+	if (name) threadRepo.rename(userId, threadId, name);
 	if (model) {
 		const known =
 			AVAILABLE_MODELS.find((m) => m.id === model) ||
 			(await getOllamaModels()).some((m) => m.id === model);
 		const coachModel = known ? model : null;
-		updateThreadModelStmt.run(coachModel, threadId, userId);
+		threadRepo.updateModel(userId, threadId, coachModel);
 	}
 	if (contextTokens !== undefined) {
-		updateThreadContextTokensStmt.run(contextTokens, threadId, userId);
+		threadRepo.updateContextTokens(userId, threadId, contextTokens);
 	}
 	return c.json({ ok: true });
 });
@@ -832,10 +586,7 @@ trainer.patch("/threads/:threadId", async (c) => {
 trainer.delete("/threads/:threadId", (c) => {
 	const userId = getUserId(c);
 	const { threadId } = c.req.param();
-	db.transaction(() => {
-		deleteMessagesStmt.run(threadId);
-		deleteThreadStmt.run(threadId, userId);
-	})();
+	threadRepo.delete(userId, threadId);
 	return c.json({ ok: true });
 });
 
@@ -868,9 +619,7 @@ function countThreadContextTokens(
 trainer.get("/history/:threadId", (c) => {
 	const userId = getUserId(c);
 	const { threadId } = c.req.param();
-	const thread = getThreadByIdStmt.get(threadId, userId) as
-		| { id: string; updatedAt: string; contextTokens: number | null }
-		| undefined;
+	const thread = threadRepo.getById(userId, threadId);
 	if (!thread) {
 		return c.json({
 			threadId,
@@ -889,49 +638,21 @@ trainer.get("/history/:threadId", (c) => {
 		Number.isFinite(rawLimit) && rawLimit > 0
 			? Math.min(MAX_PAGE_SIZE, Math.floor(rawLimit))
 			: DEFAULT_PAGE_SIZE;
-	const cursor = c.req.query("cursor");
+	const cursor = c.req.query("cursor") ?? null;
 
-	let page: MessageRow[];
-	if (cursor) {
-		const sep = cursor.indexOf("|");
-		const cursorCreatedAt = sep === -1 ? cursor : cursor.slice(0, sep);
-		const cursorId = sep === -1 ? "" : cursor.slice(sep + 1);
-		// SQLite returns UTC ISO strings; keep as-is for the comparison.
-		page = getMessagesPageStmt.all(
-			thread.id,
-			cursorCreatedAt,
-			cursorCreatedAt,
-			cursorId,
-			limit + 1,
-		) as MessageRow[];
-	} else {
-		page = getMessagesLatestStmt.all(thread.id, limit + 1) as MessageRow[];
-	}
-
-	const hasMore = page.length > limit;
-	const trimmed = hasMore ? page.slice(0, limit) : page;
-	// We pulled most-recent-first; flip back to ascending so the chat renders oldest → newest.
-	const messages = trimmed.reverse().map(rowToTrainerMessage);
-
-	let nextCursor: string | null = null;
-	if (hasMore) {
-		const oldest = trimmed[0];
-		nextCursor = `${oldest.createdAt}|${oldest.id}`;
-	}
-
-	const { c: total } = countMessagesStmt.get(thread.id) as { c: number };
+	const page = messageRepo.getPage(thread.id, cursor, limit);
 	const contextTokens =
 		thread.contextTokens != null
 			? thread.contextTokens
-			: countThreadContextTokens(thread.id, messages);
+			: countThreadContextTokens(thread.id, page.messages);
 
 	return c.json({
 		threadId,
-		messages,
+		messages: page.messages,
 		updatedAt: thread.updatedAt,
-		nextCursor,
-		hasMore,
-		total,
+		nextCursor: page.nextCursor,
+		hasMore: page.hasMore,
+		total: page.total,
 		contextTokens,
 	});
 });
@@ -939,93 +660,16 @@ trainer.get("/history/:threadId", (c) => {
 trainer.put("/history/:threadId", async (c) => {
 	const userId = getUserId(c);
 	const { threadId } = c.req.param();
-	const thread = getThreadByIdStmt.get(threadId, userId);
+	const thread = threadRepo.getById(userId, threadId);
 	if (!thread) return c.json({ error: "Thread not found" }, 404);
 
 	const body: SaveTrainerHistoryBody = await c.req.json();
 	const messages: TrainerMessage[] = body.messages ?? [];
 
-	db.transaction(() => {
-		deleteMessagesStmt.run(threadId);
-		touchThreadStmt.run(threadId);
-		for (const m of messages) {
-			insertMessageStmt.run(
-				m.id,
-				threadId,
-				m.role,
-				m.content,
-				m.createdAt,
-				serializeToolCalls(m.toolCalls),
-			);
-		}
-	})();
+	messageRepo.replaceAll(threadId, messages);
 
 	return c.json({ ok: true });
 });
-
-/**
- * Non-streaming chat completion used by the compaction engine. Routes to the
- * provider-specific endpoint and returns the assistant message text.
- *
- * This stays route-side because it depends on provider config + env secrets;
- * the pure compaction logic in `compactionEngine.ts` only sees an injected
- * `fetchSummary` callback.
- */
-async function fetchCompactionSummary(
-	providerConfig: Awaited<ReturnType<typeof getProviderConfig>>,
-	model: string,
-	prompt: string,
-	abortSignal?: AbortSignal,
-): Promise<string> {
-	// Combine the caller's abort signal with the 240s timeout so either one
-	// cancels the request. If the caller already aborted, the fetch fails fast.
-	const timeoutSignal = AbortSignal.timeout(240_000);
-	const signal = abortSignal
-		? AbortSignal.any([abortSignal, timeoutSignal])
-		: timeoutSignal;
-
-	let response: Response;
-
-	if (providerConfig.provider === "ollama-cloud") {
-		response = await fetch(`${providerConfig.baseUrl}/api/chat`, {
-			method: "POST",
-			headers: {
-				Authorization: `Bearer ${providerConfig.apiKey}`,
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				model,
-				messages: [{ role: "user", content: prompt }],
-				stream: false,
-			}),
-			signal,
-		});
-	} else {
-		response = await fetch(`${providerConfig.baseUrl}/chat/completions`, {
-			method: "POST",
-			headers: {
-				Authorization: `Bearer ${providerConfig.apiKey}`,
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				model,
-				messages: [{ role: "user", content: prompt }],
-			}),
-			signal,
-		});
-	}
-
-	if (!response.ok) {
-		const err = await response.json().catch(() => ({}));
-		throw new Error(`Compaction request failed: ${JSON.stringify(err)}`);
-	}
-
-	const data = await response.json();
-	if (providerConfig.provider === "ollama-cloud") {
-		return data.message?.content ?? "*(Summary unavailable)*";
-	}
-	return data.choices?.[0]?.message?.content ?? "*(Summary unavailable)*";
-}
 
 // ─── Compact / fork ───────────────────────────────────────────────────────────
 
@@ -1044,19 +688,10 @@ trainer.post("/compact/:threadId", async (c) => {
 		}
 	}
 
-	const sourceThread = getThreadByIdStmt.get(threadId, userId) as
-		| {
-				id: string;
-				name: string;
-				activityId: string;
-				coachModel: string | null;
-		  }
-		| undefined;
+	const sourceThread = threadRepo.getById(userId, threadId);
 	if (!sourceThread) return c.json({ error: "Thread not found" }, 404);
 
-	const allMessages = (getMessagesStmt.all(threadId) as MessageRow[]).map(
-		rowToTrainerMessage,
-	);
+	const allMessages = messageRepo.getAll(threadId);
 
 	const model = await resolveThreadModel(sourceThread, userId);
 	const providerConfig = await getProviderConfig(model);
@@ -1086,33 +721,19 @@ trainer.post("/compact/:threadId", async (c) => {
 		const forkId = crypto.randomUUID();
 		const forkName = `${sourceThread.name} · Compacted`;
 
-		db.transaction(() => {
-			createThreadStmt.run(
+		threadRepo.transaction(() => {
+			threadRepo.insertWithId(
 				forkId,
-				sourceThread.activityId,
 				userId,
+				sourceThread.activityId,
 				forkName,
 				sourceThread.coachModel,
 			);
-			for (const m of result.messages) {
-				insertMessageStmt.run(
-					m.id,
-					forkId,
-					m.role,
-					m.content,
-					m.createdAt,
-					serializeToolCalls(m.toolCalls),
-				);
-			}
-		})();
+			messageRepo.insertMany(forkId, result.messages);
+		});
 
-		const forkThread = getThreadByIdStmt.get(forkId, userId) as {
-			id: string;
-			name: string;
-			activityId: string;
-			createdAt: string;
-			updatedAt: string;
-		};
+		const forkThread = threadRepo.getById(userId, forkId);
+		if (!forkThread) throw new Error("Compaction fork thread vanished");
 
 		return {
 			thread: { ...forkThread, messageCount: result.messages.length },
@@ -1140,19 +761,10 @@ trainer.post("/fork/:threadId", async (c) => {
 	const userId = getUserId(c);
 	const { threadId } = c.req.param();
 
-	const sourceThread = getThreadByIdStmt.get(threadId, userId) as
-		| {
-				id: string;
-				name: string;
-				activityId: string;
-				coachModel: string | null;
-		  }
-		| undefined;
+	const sourceThread = threadRepo.getById(userId, threadId);
 	if (!sourceThread) return c.json({ error: "Thread not found" }, 404);
 
-	const allMessages = (getMessagesStmt.all(threadId) as MessageRow[]).map(
-		rowToTrainerMessage,
-	);
+	const allMessages = messageRepo.getAll(threadId);
 
 	const forkId = crypto.randomUUID();
 	const forkName = `${sourceThread.name} \u00b7 Copy`;
@@ -1163,34 +775,19 @@ trainer.post("/fork/:threadId", async (c) => {
 		id: crypto.randomUUID(),
 	}));
 
-	db.transaction(() => {
-		createThreadStmt.run(
+	threadRepo.transaction(() => {
+		threadRepo.insertWithId(
 			forkId,
-			sourceThread.activityId,
 			userId,
+			sourceThread.activityId,
 			forkName,
 			sourceThread.coachModel,
 		);
-		for (const m of newMessages) {
-			insertMessageStmt.run(
-				m.id,
-				forkId,
-				m.role,
-				m.content,
-				m.createdAt,
-				serializeToolCalls(m.toolCalls),
-			);
-		}
-	})();
+		messageRepo.insertMany(forkId, newMessages);
+	});
 
-	const forkThread = getThreadByIdStmt.get(forkId, userId) as {
-		id: string;
-		name: string;
-		activityId: string;
-		coachModel: string | null;
-		createdAt: string;
-		updatedAt: string;
-	};
+	const forkThread = threadRepo.getById(userId, forkId);
+	if (!forkThread) throw new Error("Fork thread vanished");
 
 	return c.json({
 		thread: { ...forkThread, messageCount: newMessages.length },
@@ -1224,37 +821,25 @@ trainer.post("/import", async (c) => {
 	let targetThreadId = threadId;
 
 	if (targetThreadId) {
-		const thread = getThreadByIdStmt.get(targetThreadId, userId);
+		const thread = threadRepo.getById(userId, targetThreadId);
 		if (!thread) return c.json({ error: "Thread not found" }, 404);
+		messageRepo.replaceAll(targetThreadId, messages);
 	} else {
-		targetThreadId = crypto.randomUUID();
-		createThreadStmt.run(
-			targetThreadId,
-			"general",
-			userId,
-			"Imported Chat",
-			null,
-		);
-	}
-
-	if (!targetThreadId) {
-		return c.json({ error: "Thread not found" }, 404);
-	}
-
-	db.transaction(() => {
-		deleteMessagesStmt.run(targetThreadId);
-		touchThreadStmt.run(targetThreadId);
-		for (const m of messages) {
-			insertMessageStmt.run(
-				m.id,
-				targetThreadId,
-				m.role,
-				m.content,
-				m.createdAt,
-				serializeToolCalls(m.toolCalls),
+		const newThreadId = crypto.randomUUID();
+		// Create the thread and seed its messages atomically — a crash
+		// between the two would leave an empty thread.
+		threadRepo.transaction(() => {
+			threadRepo.insertWithId(
+				newThreadId,
+				userId,
+				"general",
+				"Imported Chat",
+				null,
 			);
-		}
-	})();
+			messageRepo.replaceAll(newThreadId, messages);
+		});
+		targetThreadId = newThreadId;
+	}
 
 	return c.json({ imported: messages.length, threadId: targetThreadId });
 });
@@ -1275,19 +860,10 @@ trainer.get("/export/:threadId", async (c) => {
 	const userId = getUserId(c);
 	const { threadId } = c.req.param();
 
-	const thread = getThreadByIdStmt.get(threadId, userId) as
-		| {
-				id: string;
-				name: string;
-				coachModel: string | null;
-				createdAt: string;
-		  }
-		| undefined;
+	const thread = threadRepo.getById(userId, threadId);
 	if (!thread) return c.json({ error: "Thread not found" }, 404);
 
-	const messages = (getMessagesStmt.all(threadId) as MessageRow[]).map(
-		rowToTrainerMessage,
-	);
+	const messages = messageRepo.getAll(threadId);
 	if (messages.length === 0) {
 		return c.json({ error: "Thread has no messages to export" }, 400);
 	}

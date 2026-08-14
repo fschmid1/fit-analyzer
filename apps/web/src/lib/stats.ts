@@ -1,5 +1,4 @@
 import {
-	buildPowerBySecond,
 	computeNormalizedPower,
 	computeNormalizedCadence,
 	type ActivityRecord,
@@ -57,61 +56,6 @@ export function computeAverages(records: ActivityRecord[]): SelectionStats {
 		normalizedCadence: computeNormalizedCadence(records),
 		duration,
 	};
-}
-
-/**
- * Sliding window best average power over a given duration.
- * Returns null if there aren't enough data points.
- * Zero-power seconds (coasting / sensor dropouts) are ignored.
- */
-export function computePeakPower(
-	records: ActivityRecord[],
-	windowSeconds: number,
-): number | null {
-	const powerRecords = records.filter((r) => r.power != null && r.power > 0);
-	if (powerRecords.length === 0) return null;
-
-	const powerBySecond = buildPowerBySecond(records);
-	if (powerBySecond.length - 1 < windowSeconds) return null;
-
-	let best = 0;
-	let windowSum = 0;
-	let windowCount = 0;
-
-	// Initialize first window
-	for (let i = 0; i < windowSeconds && i < powerBySecond.length; i++) {
-		const power = powerBySecond[i];
-		if (power != null && power > 0) {
-			windowSum += power;
-			windowCount++;
-		}
-	}
-
-	if (windowCount > 0) {
-		best = windowSum / windowCount;
-	}
-
-	// Slide the window
-	for (let i = windowSeconds; i < powerBySecond.length; i++) {
-		const entering = powerBySecond[i];
-		const leaving = powerBySecond[i - windowSeconds];
-
-		if (entering != null && entering > 0) {
-			windowSum += entering;
-			windowCount++;
-		}
-		if (leaving != null && leaving > 0) {
-			windowSum -= leaving;
-			windowCount--;
-		}
-
-		if (windowCount > 0) {
-			const avg = windowSum / windowCount;
-			if (avg > best) best = avg;
-		}
-	}
-
-	return best > 0 ? Math.round(best) : null;
 }
 
 /**

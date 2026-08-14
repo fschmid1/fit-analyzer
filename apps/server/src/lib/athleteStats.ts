@@ -1,6 +1,7 @@
 import { db } from "../db.js";
 import {
 	buildPowerBySecond,
+	mapStoredRecords,
 	peakPowerFromSeconds,
 	type ActivitySummary,
 	type StoredRecord,
@@ -26,7 +27,7 @@ function formatHours(seconds: number): string {
 }
 
 const summaryStmt = db.prepare(
-	`SELECT summary FROM activities
+	`SELECT summary, records FROM activities
    WHERE user_id = ? AND date >= ? AND date <= ?
    ORDER BY date ASC`,
 );
@@ -38,6 +39,7 @@ export function computeActivityStats(
 ): ActivityStats {
 	const rows = summaryStmt.all(userId, startDate, endDate) as {
 		summary: string;
+		records: string;
 	}[];
 
 	let totalDurationSeconds = 0;
@@ -50,6 +52,7 @@ export function computeActivityStats(
 	const normalizedCadenceVals: number[] = [];
 	const peak1minVals: number[] = [];
 	const peak5minVals: number[] = [];
+	const peak20minVals: number[] = [];
 	let totalWork = 0;
 	let maxPower = 0;
 	let maxHeartRate = 0;
@@ -75,9 +78,25 @@ export function computeActivityStats(
 		if (summary.avgCadence != null) cadenceVals.push(summary.avgCadence);
 		if (summary.normalizedCadence != null)
 			normalizedCadenceVals.push(summary.normalizedCadence);
-		if (summary.peak1minPower != null) peak1minVals.push(summary.peak1minPower);
-		if (summary.peak5minPower != null) peak5minVals.push(summary.peak5minPower);
 		if (summary.totalWork != null) totalWork += summary.totalWork;
+
+		// Recompute peak powers from records — stored summary values may be
+		// stale (computed with a previous algorithm).
+		let records: StoredRecord[];
+		try {
+			records = JSON.parse(row.records) as StoredRecord[];
+		} catch {
+			records = [];
+		}
+		if (records.length > 0) {
+			const powerBySecond = buildPowerBySecond(mapStoredRecords(records));
+			const peak1min = peakPowerFromSeconds(powerBySecond, 60);
+			const peak5min = peakPowerFromSeconds(powerBySecond, 300);
+			const peak20min = peakPowerFromSeconds(powerBySecond, 1200);
+			if (peak1min != null) peak1minVals.push(peak1min);
+			if (peak5min != null) peak5minVals.push(peak5min);
+			if (peak20min != null) peak20minVals.push(peak20min);
+		}
 	}
 
 	const avg = (vals: number[]) =>
@@ -100,7 +119,8 @@ export function computeActivityStats(
 		normalizedCadence: avg(normalizedCadenceVals),
 		peak1minPower: peak1minVals.length > 0 ? Math.max(...peak1minVals) : null,
 		peak5minPower: peak5minVals.length > 0 ? Math.max(...peak5minVals) : null,
-		peak20minPower: null,
+		peak20minPower:
+			peak20minVals.length > 0 ? Math.max(...peak20minVals) : null,
 		totalWork: totalWork > 0 ? Math.round(totalWork) : null,
 	};
 }
@@ -228,30 +248,15 @@ export function computeAllTimeEstimates(
 	for (const row of rows) {
 		const summary = JSON.parse(row.summary) as ActivitySummary;
 
-		if (
-			summary.peak20minPower != null &&
-			summary.peak20minPower > bestPeak20min
-		) {
-			bestPeak20min = summary.peak20minPower;
-		} else {
+		try {
 			const records = JSON.parse(row.records) as StoredRecord[];
-			const powerBySecond = buildPowerBySecond(
-				records.map((r) => ({
-					timestamp: new Date(r.timestamp),
-					elapsedSeconds: r.elapsedSeconds,
-					power: r.power,
-					heartRate: r.heartRate,
-					cadence: r.cadence,
-					speed: r.speed,
-					gradient: r.gradient,
-					lat: r.lat,
-					lng: r.lng,
-				})),
-			);
+			const powerBySecond = buildPowerBySecond(mapStoredRecords(records));
 			const computed = peakPowerFromSeconds(powerBySecond, 1200);
 			if (computed != null && computed > bestPeak20min) {
 				bestPeak20min = computed;
 			}
+		} catch {
+			// Skip malformed records blobs.
 		}
 
 		if (summary.maxHeartRate != null && summary.maxHeartRate > maxHeartRate) {

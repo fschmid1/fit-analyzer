@@ -1,6 +1,26 @@
-import type { ActivityRecord } from "./types.js";
+import type { ActivityRecord, StoredRecord } from "./types.js";
 
 const NP_WINDOW_SECONDS = 30;
+
+/**
+ * Convert `StoredRecord[]` (JSON-parsed, with string timestamps) to
+ * `ActivityRecord[]` (with Date timestamps). Used by server-side code
+ * that reads records from the database before passing them to
+ * `buildPowerBySecond` / `peakPowerFromSeconds`.
+ */
+export function mapStoredRecords(records: StoredRecord[]): ActivityRecord[] {
+	return records.map((r) => ({
+		timestamp: new Date(r.timestamp),
+		elapsedSeconds: r.elapsedSeconds,
+		power: r.power,
+		heartRate: r.heartRate,
+		cadence: r.cadence,
+		speed: r.speed,
+		gradient: r.gradient,
+		lat: r.lat,
+		lng: r.lng,
+	}));
+}
 
 /*
  * Reusable helper: given a per-second numeric array and a window size,
@@ -85,55 +105,81 @@ export function buildCadenceBySecond(
 }
 
 /**
+ * Build a per-second array from a variable-rate time series (e.g. a Strava
+ * stream). Strava streams don't sample every second, so the last known value
+ * is carried forward across seconds without a sample. `timeArr` is expected
+ * to be sorted ascending; seconds before the first sample are `null`.
+ * Equivalent to `buildMetricBySecond` but operating on parallel time/value
+ * arrays instead of `ActivityRecord[]`.
+ */
+export function buildMetricBySecondFromTimeSeries(
+	timeArr: number[],
+	valuesArr: number[],
+): (number | null)[] {
+	if (timeArr.length === 0) return [];
+	const maxTime = Math.floor(timeArr[timeArr.length - 1]);
+	const bySecond: (number | null)[] = new Array(maxTime + 1).fill(null);
+	let streamIdx = 0;
+	let lastValue: number | null = null;
+	for (let s = 0; s <= maxTime; s++) {
+		while (streamIdx < timeArr.length && timeArr[streamIdx] <= s + 0.5) {
+			lastValue = valuesArr[streamIdx];
+			streamIdx++;
+		}
+		bySecond[s] = lastValue;
+	}
+	return bySecond;
+}
+
+/**
  * Compute the best average power for a rolling time window (in seconds)
- * from a per-second power array. Gaps (null or zero) are ignored in the
- * average. Returns null if there aren't enough data points.
+ * from a per-second power array. Zeros (coasting) and gaps (null) are
+ * treated as zero watts and included in the window — the average is
+ * always `windowSum / windowSeconds`, matching how Garmin, Strava, and
+ * other cycling tools compute peak power. Returns null if there aren't
+ * enough data points.
  */
 export function peakPowerFromSeconds(
 	powerBySecond: (number | null)[],
 	windowSeconds: number,
 ): number | null {
-	if (powerBySecond.length === 0 || powerBySecond.length - 1 < windowSeconds)
-		return null;
+	if (powerBySecond.length < windowSeconds) return null;
 
-	let best = 0;
 	let windowSum = 0;
-	let windowCount = 0;
 
 	// Initialize first window
-	for (let i = 0; i < windowSeconds && i < powerBySecond.length; i++) {
-		const power = powerBySecond[i];
-		if (power != null && power > 0) {
-			windowSum += power;
-			windowCount++;
-		}
+	for (let i = 0; i < windowSeconds; i++) {
+		windowSum += powerBySecond[i] ?? 0;
 	}
 
-	if (windowCount > 0) {
-		best = windowSum / windowCount;
-	}
+	let best = windowSum / windowSeconds;
 
 	// Slide the window
 	for (let i = windowSeconds; i < powerBySecond.length; i++) {
-		const entering = powerBySecond[i];
-		const leaving = powerBySecond[i - windowSeconds];
-
-		if (entering != null && entering > 0) {
-			windowSum += entering;
-			windowCount++;
-		}
-		if (leaving != null && leaving > 0) {
-			windowSum -= leaving;
-			windowCount--;
-		}
-
-		if (windowCount > 0) {
-			const avg = windowSum / windowCount;
-			if (avg > best) best = avg;
-		}
+		windowSum +=
+			(powerBySecond[i] ?? 0) - (powerBySecond[i - windowSeconds] ?? 0);
+		const avg = windowSum / windowSeconds;
+		if (avg > best) best = avg;
 	}
 
 	return best > 0 ? Math.round(best) : null;
+}
+
+/**
+ * Compute the best average power for a rolling time window (in seconds)
+ * from a variable-rate time series (e.g. a Strava time/watts stream). The
+ * stream is resampled to per-second via carry-forward, then delegated to
+ * `peakPowerFromSeconds`. This keeps peak-power values consistent across
+ * FIT and Strava imports — same ride, same number, regardless of source.
+ */
+export function peakPowerFromTimeSeries(
+	timeArr: number[],
+	wattsArr: number[],
+	windowSeconds: number,
+): number | null {
+	if (timeArr.length === 0 || wattsArr.length === 0) return null;
+	const powerBySecond = buildMetricBySecondFromTimeSeries(timeArr, wattsArr);
+	return peakPowerFromSeconds(powerBySecond, windowSeconds);
 }
 
 export function computeNormalizedPower(

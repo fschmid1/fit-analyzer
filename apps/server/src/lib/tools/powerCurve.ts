@@ -1,8 +1,8 @@
 import { db } from "../../db.js";
 import {
 	buildPowerBySecond,
+	mapStoredRecords,
 	peakPowerFromSeconds,
-	type ActivitySummary,
 	type StoredRecord,
 	type ToolDefinition,
 	type ToolResult,
@@ -37,18 +37,7 @@ interface ActivityRow {
 function computePowerCurve(
 	records: StoredRecord[],
 ): Record<number, number | null> {
-	const mapped = records.map((r) => ({
-		timestamp: new Date(r.timestamp),
-		elapsedSeconds: r.elapsedSeconds,
-		power: r.power,
-		heartRate: r.heartRate,
-		cadence: r.cadence,
-		speed: r.speed,
-		gradient: r.gradient,
-		lat: r.lat,
-		lng: r.lng,
-	}));
-	const powerBySecond = buildPowerBySecond(mapped);
+	const powerBySecond = buildPowerBySecond(mapStoredRecords(records));
 	const out: Record<number, number | null> = {};
 	for (const seconds of DURATIONS_SECONDS) {
 		out[seconds] = peakPowerFromSeconds(powerBySecond, seconds);
@@ -126,22 +115,10 @@ export const powerCurveHandler: ToolHandler = async (args, context) => {
 		for (const seconds of DURATIONS_SECONDS) allTimeBest[seconds] = 0;
 		for (const r of allRows) {
 			let recs: StoredRecord[];
-			let summary: ActivitySummary;
 			try {
 				recs = JSON.parse(r.records) as StoredRecord[];
-				summary = JSON.parse(r.summary) as ActivitySummary;
 			} catch {
 				continue;
-			}
-			// Use summary peak values as a fast path where available
-			if (summary.peak1minPower != null) {
-				allTimeBest[60] = Math.max(allTimeBest[60], summary.peak1minPower);
-			}
-			if (summary.peak5minPower != null) {
-				allTimeBest[300] = Math.max(allTimeBest[300], summary.peak5minPower);
-			}
-			if (summary.peak20minPower != null) {
-				allTimeBest[1200] = Math.max(allTimeBest[1200], summary.peak20minPower);
 			}
 			const curve = computePowerCurve(recs);
 			for (const seconds of DURATIONS_SECONDS) {

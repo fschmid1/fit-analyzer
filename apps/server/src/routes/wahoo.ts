@@ -1,14 +1,14 @@
-import { parseFit } from "@fit-analyzer/shared";
-import type { StoredRecord } from "@fit-analyzer/shared";
 import { Hono } from "hono";
 import { db } from "../db.js";
 import { env } from "../env.js";
-import { handleNewActivityForWaxedChainReminder } from "../lib/waxedChainReminders.js";
+import { importActivity } from "../lib/activityImporter.js";
 import {
-	getAthleteProfile,
-	updateAthleteProfile,
-} from "../lib/athleteProfile.js";
-import { inferLocationFromActivities } from "../lib/athleteStats.js";
+	defaultFitDownloader,
+	wahooWorkoutToPayload,
+	type WahooWorkout,
+	type WahooWorkoutSummary,
+	type WahooWorkoutsResponse,
+} from "../lib/wahooImportAdapter.js";
 import { getUserId } from "../lib/getUserId.js";
 import { oauthStateStore } from "../lib/oauthStateStore.js";
 import {
@@ -34,54 +34,6 @@ interface WahooUser {
 	first: string;
 	last: string;
 	email?: string;
-}
-
-interface WahooWorkoutSummary {
-	id: number;
-	name?: string;
-	ascent_accum: string;
-	cadence_avg: string;
-	calories_accum: string;
-	distance_accum: string;
-	duration_active_accum: string;
-	duration_paused_accum: string;
-	duration_total_accum: string;
-	heart_rate_avg: string;
-	power_bike_np_last: string;
-	power_bike_tss_last: string;
-	power_avg: string;
-	speed_avg: string;
-	work_accum: string;
-	time_zone?: string;
-	manual?: boolean;
-	edited?: boolean;
-	fitness_app_id?: number;
-	file: { url: string | null };
-	created_at: string;
-	updated_at: string;
-}
-
-interface WahooWorkout {
-	id: number;
-	starts: string;
-	minutes: number;
-	name: string;
-	plan_id: number | null;
-	plan_ids: number[];
-	route_id: number | null;
-	workout_token: string;
-	workout_type_id: number;
-	workout_type_family_id?: number;
-	workout_summary: WahooWorkoutSummary | null;
-	created_at: string;
-	updated_at: string;
-}
-
-interface WahooWorkoutsResponse {
-	workouts: WahooWorkout[];
-	total: number;
-	page: number;
-	per_page: number;
 }
 
 interface WahooWebhookEvent {
@@ -220,81 +172,8 @@ const wahooTokenStore: OAuth2TokenStore = {
 
 const wahooFlow = new OAuth2Flow(wahooProvider, wahooTokenStore);
 
-const checkWahooActivityStmt = db.prepare<{ id: string }, [string, string]>(
-	"SELECT id FROM activities WHERE user_id = ? AND wahoo_activity_id = ?",
-);
-
-const deleteWahooActivityStmt = db.prepare(
-	"DELETE FROM activities WHERE user_id = ? AND wahoo_activity_id = ?",
-);
-
-const insertActivityStmt = db.prepare(
-	`INSERT INTO activities
-     (id, date, summary, records, laps, intervals, user_id, wahoo_activity_id)
-   VALUES (?, ?, ?, ?, ?, '[]', ?, ?)`,
-);
-
 /**
- * Update the athlete's inferred location from recent activities, but only if
- * they haven't set a location manually. Runs async and logs failures instead of
- * blocking the import path.
- */
-function maybeUpdateAthleteLocation(userId: string): void {
-	const profile = getAthleteProfile(userId);
-	if (profile.location) return;
-
-	const inferred = inferLocationFromActivities(userId);
-	if (!inferred) return;
-
-	try {
-		updateAthleteProfile(userId, { location: inferred });
-		console.log(
-			`[wahoo] Inferred athlete location for user ${userId}: ${inferred}`,
-		);
-	} catch (err) {
-		console.error(
-			`[wahoo] Failed to update inferred location for user ${userId}:`,
-			err,
-		);
-	}
-}
-
-/** Biking workout type family id (covers road, indoor, trainer, virtual, ebike, etc.) */
-const BIKING_WORKOUT_TYPE_FAMILY_ID = 0;
-
-/**
- * Wahoo workout_type_id values whose family is BIKING (id 0).
- * The /workouts endpoints return workout_type_id but not workout_type_family_id,
- * so we map the id → family ourselves. Source: Wahoo API "Workout Types" table.
- */
-const BIKING_WORKOUT_TYPE_IDS = new Set<number>([
-	0, // BIKING
-	11, // BIKING_CYCLECROSS
-	12, // BIKING_INDOOR
-	13, // BIKING_MOUNTAIN
-	14, // BIKING_RECUMBENT
-	15, // BIKING_ROAD
-	16, // BIKING_TRACK
-	17, // BIKING_MOTOCYCLING
-	49, // BIKING_INDOOR_CYCLING_CLASS
-	61, // BIKING_INDOOR_TRAINER
-	64, // EBIKING
-	68, // BIKING_INDOOR_VIRTUAL
-	70, // HANDCYCLING
-]);
-
-/** Returns true if the workout belongs to the BIKING family. */
-function isBikingWorkout(workout: WahooWorkout): boolean {
-	// Prefer the family id when present (some responses include it)…
-	if (workout.workout_type_family_id != null) {
-		return workout.workout_type_family_id === BIKING_WORKOUT_TYPE_FAMILY_ID;
-	}
-	// …otherwise infer it from workout_type_id.
-	return BIKING_WORKOUT_TYPE_IDS.has(workout.workout_type_id);
-}
-
-/**
- * Fetch a workout's FIT file, parse it, and insert it into the activities table.
+ * Fetch a workout's FIT file, parse it, and persist it via the shared importer.
  * - "imported" / "updated": workout was imported (newly or as a replacement)
  * - "skipped": workout is not a biking workout — do not retry
  * - "pending": workout is biking but has no downloadable FIT file yet — the
@@ -306,64 +185,17 @@ async function importWorkout(
 	userId: string,
 	workout: WahooWorkout,
 ): Promise<"imported" | "updated" | "skipped" | "pending"> {
-	// Only import biking workouts
-	if (!isBikingWorkout(workout)) {
-		return "skipped";
+	const result = await wahooWorkoutToPayload(userId, workout, {
+		downloader: defaultFitDownloader,
+	});
+	if ("skipped" in result) {
+		return result.skipped === "not-biking" ? "skipped" : "pending";
 	}
 
-	const wahooId = String(workout.id);
-
-	// Need a workout summary with a downloadable FIT file
-	const fitUrl = workout.workout_summary?.file?.url;
-	if (!fitUrl) {
-		console.log(
-			`[wahoo] Workout ${wahooId} has no FIT file yet — deferring (caller may retry)`,
-		);
-		return "pending";
-	}
-
-	const alreadyExists = checkWahooActivityStmt.get(userId, wahooId);
-
-	// Download FIT file from Wahoo CDN (unauthenticated, doesn't count against rate limits)
-	const fitRes = await fetch(fitUrl);
-	if (!fitRes.ok) {
-		throw new Error(
-			`Failed to download FIT file for workout ${wahooId}: ${fitRes.status}`,
-		);
-	}
-	const fitBuffer = await fitRes.arrayBuffer();
-
-	// Parse using the shared FIT parser (same as client-side uploads)
-	const { records, summary, laps } = parseFit(fitBuffer);
-
-	// Convert ActivityRecord[] (Date timestamps) → StoredRecord[] (ISO strings)
-	const storedRecords: StoredRecord[] = records.map((r) => ({
-		...r,
-		timestamp: r.timestamp.toISOString(),
-	}));
-
-	if (alreadyExists) {
-		deleteWahooActivityStmt.run(userId, wahooId);
-	}
-
-	const id = crypto.randomUUID();
-	insertActivityStmt.run(
-		id,
-		summary.date,
-		JSON.stringify(summary),
-		JSON.stringify(storedRecords),
-		JSON.stringify(laps),
-		userId,
-		wahooId,
-	);
-
-	await handleNewActivityForWaxedChainReminder(userId, storedRecords);
-	maybeUpdateAthleteLocation(userId);
-
-	console.log(
-		`[wahoo] ${alreadyExists ? "Re-imported" : "Imported"} workout ${wahooId} (${workout.name}) → ${id}`,
-	);
-	return alreadyExists ? "updated" : "imported";
+	const importResult = await importActivity(db, result.payload);
+	// Map importer "skipped" (no content change) to route "skipped" so the
+	// webhook backoff loop and sync counter don't treat it as a re-import.
+	return importResult.status === "skipped" ? "skipped" : importResult.status;
 }
 
 /**
