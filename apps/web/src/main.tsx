@@ -2,11 +2,14 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
+import { SettingsProvider } from "./lib/settingsContext";
 import "./index.css";
 import "leaflet/dist/leaflet.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 	<BrowserRouter>
-		<App />
+		<SettingsProvider preload>
+			<App />
+		</SettingsProvider>
 	</BrowserRouter>,
 );

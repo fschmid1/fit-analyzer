@@ -51,6 +51,7 @@ import { useTrainerHistoryPersist } from "./useTrainerHistoryPersist";
 import { DotsLoader } from "./DotsLoader";
 import { ChatMessageRow } from "./ChatMessageRow";
 import { addChartHighlight } from "../../lib/chartHighlightStore";
+import { notifyProfileChanged } from "../../lib/profileStore";
 
 const PAGE_SIZE = 20;
 const TOP_SENTINEL_THRESHOLD_PX = 200;
@@ -143,6 +144,14 @@ export function TrainerChat({
 						chunk.display,
 					);
 				}
+			}
+			if (
+				(chunk.toolName === "update_profile" ||
+					chunk.toolName === "set_zones" ||
+					chunk.toolName === "reset_zones") &&
+				!chunk.error
+			) {
+				notifyProfileChanged();
 			}
 		}
 	}, []);

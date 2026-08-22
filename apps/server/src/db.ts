@@ -399,4 +399,32 @@ db.exec(
 	"CREATE INDEX IF NOT EXISTS idx_hae_health_user_date ON hae_health_history(user_id, date)",
 );
 
+// Athlete zone overrides — per-user custom zone boundaries that replace the
+// derived (FTP / max HR) defaults. Stored as JSON arrays of ZoneRange
+// aligned by index to POWER_ZONE_BANDS / HR_ZONE_BANDS. NULL = use derived.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS athlete_zones (
+    user_id                  TEXT PRIMARY KEY,
+    power_zones_override     TEXT,
+    hr_zones_override        TEXT,
+    updated_at               TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
+// Profile changelog — append-only audit of athlete profile and zone changes.
+// One row per logical update event (e.g. one update_profile tool call).
+// `changes` is a JSON diff keyed by field name with {old,new} entries.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS profile_changes (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL,
+    source      TEXT NOT NULL,
+    changes     TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+db.exec(
+	"CREATE INDEX IF NOT EXISTS idx_profile_changes_user_created ON profile_changes(user_id, created_at DESC, id)",
+);
+
 export { db };

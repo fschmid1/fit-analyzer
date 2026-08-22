@@ -49,11 +49,15 @@ export type {
 	ChartHighlight,
 	AthleteProfile,
 	UpdateAthleteProfileBody,
+	UpdateZoneOverridesBody,
+	ProfileChangeEntry,
+	ProfileChangeSource,
 } from "./types.js";
 
 export {
 	APPROX_CHARS_PER_TOKEN,
 	estimateContextTokens,
+	PROFILE_CHANGE_SOURCE_LABELS,
 } from "./types.js";
 
 export {
@@ -76,7 +80,22 @@ export {
 	peakPowerFromTimeSeries,
 } from "./power.js";
 
-export type { ZoneBand, ZoneRange, ZonesResponse } from "./zones.js";
-export { POWER_ZONE_BANDS, HR_ZONE_BANDS, resolveZones } from "./zones.js";
+export type {
+	ZoneBand,
+	ZoneRange,
+	ZoneOverride,
+	ZonesResponse,
+} from "./zones.js";
+export {
+	POWER_ZONE_BANDS,
+	HR_ZONE_BANDS,
+	resolveZones,
+	applyZoneOverrides,
+	isZoneOverride,
+	isZoneOverrideArray,
+	normalizeZoneOverride,
+	normalizeZoneOverrides,
+	formatZoneRange,
+} from "./zones.js";
 
 export { parseFit } from "./parseFit.js";

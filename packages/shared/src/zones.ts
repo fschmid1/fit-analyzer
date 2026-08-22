@@ -43,6 +43,14 @@ export interface ZoneRange {
 	upper: number;
 }
 
+/**
+ * A user-authored zone override stored as an absolute range. When present for
+ * a zone index, it replaces the derived band. `null` means "no override for
+ * this index — use the derived band". Stored as a sparse array aligned by
+ * index to `POWER_ZONE_BANDS` / `HR_ZONE_BANDS`.
+ */
+export type ZoneOverride = ZoneRange;
+
 export interface ZonesResponse {
 	/** Functional Threshold Power used to derive power zones (W), or null if unavailable. */
 	ftp: number | null;
@@ -52,6 +60,10 @@ export interface ZonesResponse {
 	source: "profile" | "estimated" | "none";
 	powerZones: ZoneRange[];
 	hrZones: ZoneRange[];
+	/** True when any power zone boundary has been overridden by the user or trainer. */
+	powerZonesOverridden: boolean;
+	/** True when any HR zone boundary has been overridden by the user or trainer. */
+	hrZonesOverridden: boolean;
 }
 
 /** Resolve a set of zone bands into absolute ranges given a reference value. */
@@ -67,4 +79,75 @@ export function resolveZones(
 				? Number.POSITIVE_INFINITY
 				: Math.round(b.max * reference),
 	}));
+}
+
+/**
+ * Merge derived zones with per-index overrides. An override entry must match
+ * the band's name to be applied; mismatches are ignored so stale overrides
+ * (e.g. after a band rename) don't silently shift a different zone. Returns
+ * the merged zones and whether any override was applied.
+ */
+export function applyZoneOverrides(
+	derived: readonly ZoneRange[],
+	overrides: readonly (ZoneOverride | null)[] | null,
+): { zones: ZoneRange[]; anyOverridden: boolean } {
+	if (!overrides || overrides.length === 0) {
+		return { zones: [...derived], anyOverridden: false };
+	}
+	let anyOverridden = false;
+	const zones = derived.map((band, i) => {
+		const ov = overrides[i];
+		if (!ov || ov.name !== band.name) return band;
+		anyOverridden = true;
+		return { name: ov.name, lower: ov.lower, upper: ov.upper };
+	});
+	return { zones, anyOverridden };
+}
+
+/** Type-guard: true when a value has the ZoneRange shape ({name, lower, upper}). */
+export function isZoneOverride(v: unknown): v is ZoneOverride {
+	return (
+		v != null &&
+		typeof v === "object" &&
+		typeof (v as ZoneOverride).name === "string" &&
+		typeof (v as ZoneOverride).lower === "number" &&
+		(typeof (v as ZoneOverride).upper === "number" ||
+			(v as ZoneOverride).upper === null)
+	);
+}
+
+/** Type-guard: true when every element of an array is a ZoneOverride. */
+export function isZoneOverrideArray(v: unknown): v is ZoneOverride[] {
+	if (!Array.isArray(v)) return false;
+	return v.every(isZoneOverride);
+}
+
+/**
+ * Normalize a zone override: convert `null` upper to `Infinity` (the JSON-
+ * serializable representation of "no upper bound"). Callers that accept zone
+ * overrides from HTTP/LLM input should run this before persisting.
+ */
+export function normalizeZoneOverride(z: ZoneOverride): ZoneOverride {
+	return {
+		name: z.name,
+		lower: z.lower,
+		upper: z.upper == null ? Number.POSITIVE_INFINITY : z.upper,
+	};
+}
+
+/** Normalize every zone in an array (see {@link normalizeZoneOverride}). */
+export function normalizeZoneOverrides(
+	zones: readonly ZoneOverride[],
+): ZoneOverride[] {
+	return zones.map(normalizeZoneOverride);
+}
+
+/**
+ * Format a zone range as a human-readable string, e.g. "180–240W" or "160+ bpm"
+ * (the top zone uses "+" when upper is Infinity).
+ */
+export function formatZoneRange(zone: ZoneRange, unit: string): string {
+	const upper = zone.upper;
+	if (upper === Number.POSITIVE_INFINITY) return `${zone.lower}${unit}+`;
+	return `${zone.lower}–${upper}${unit}`;
 }

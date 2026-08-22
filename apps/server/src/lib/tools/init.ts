@@ -50,6 +50,12 @@ import {
 	updateProfileDefinition,
 	updateProfileHandler,
 } from "./updateProfile.js";
+import {
+	setZonesDefinition,
+	setZonesHandler,
+	resetZonesDefinition,
+	resetZonesHandler,
+} from "./setZones.js";
 
 let initialized = false;
 
@@ -73,5 +79,7 @@ export function initTools(): void {
 	registerTool(rideRecommendationDefinition, rideRecommendationHandler);
 	registerTool(highlightChartDefinition, highlightChartHandler);
 	registerTool(updateProfileDefinition, updateProfileHandler);
+	registerTool(setZonesDefinition, setZonesHandler);
+	registerTool(resetZonesDefinition, resetZonesHandler);
 	registerTool(healthDataDefinition, healthDataHandler);
 }

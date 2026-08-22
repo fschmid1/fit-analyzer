@@ -1,11 +1,12 @@
 import type { ToolDefinition } from "@fit-analyzer/shared";
 import type { ToolHandler } from "./registry.js";
-import { updateAthleteProfile } from "../athleteProfile.js";
+import { getAthleteProfile, updateAthleteProfile } from "../athleteProfile.js";
+import { profileChangesRepo, buildProfileDiff } from "../profileChanges.js";
 
 export const updateProfileDefinition: ToolDefinition = {
 	name: "update_profile",
 	description:
-		"Update the athlete's profile settings (FTP, max HR, goal event, weekly hours, focus areas). Use this when the athlete confirms a value you suggested, or when they explicitly ask you to update their profile.",
+		"Update the athlete's profile settings (FTP, max HR, goal event, weekly hours, focus areas). Use this when the athlete confirms a value you suggested, or when they explicitly ask you to update their profile. Does NOT affect custom zone overrides — use set_zones / reset_zones for those.",
 	parameters: {
 		type: "object",
 		properties: {
@@ -76,7 +77,13 @@ export const updateProfileHandler: ToolHandler = async (args, context) => {
 		};
 	}
 
+	const beforeProfile = getAthleteProfile(context.userId);
 	const updated = updateAthleteProfile(context.userId, updates);
+	const diff = buildProfileDiff(
+		beforeProfile as unknown as Record<string, unknown>,
+		updated as unknown as Record<string, unknown>,
+	);
+	profileChangesRepo.append(context.userId, "update_profile", diff);
 
 	const lines: string[] = ["Athlete profile updated:"];
 	if (updates.ftp != null) lines.push(`- FTP: ${updated.ftp} W`);

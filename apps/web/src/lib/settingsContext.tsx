@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { UserSettingsResponse } from "../lib/api";
 import { fetchUserSettings } from "../lib/api";
+import { subscribeProfileChanged } from "./profileStore";
 
 interface SettingsContextValue {
 	data: UserSettingsResponse | null;
@@ -42,6 +43,20 @@ export function SettingsProvider({
 		if (!preload) return;
 		refresh();
 	}, [preload, refresh]);
+
+	// Auto-refresh when the trainer (or another tab) changes the profile/zones.
+	// Only refetch after the initial load so we don't churn before we've loaded
+	// the first time on a non-preload mount.
+	useEffect(() => {
+		if (!preload) return;
+		return subscribeProfileChanged(() => {
+			fetchUserSettings()
+				.then(setData)
+				.catch(() => {
+					/* swallow — next manual refresh surfaces errors */
+				});
+		});
+	}, [preload]);
 
 	const value = useMemo(
 		() => ({ data, loading, error, refresh }),

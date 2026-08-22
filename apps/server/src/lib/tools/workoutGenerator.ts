@@ -1,6 +1,12 @@
 import { computeAllTimeEstimates } from "../athleteStats.js";
+import {
+	POWER_ZONE_BANDS,
+	resolveZones,
+	applyZoneOverrides,
+} from "@fit-analyzer/shared";
 import type { ToolDefinition } from "@fit-analyzer/shared";
 import type { ToolHandler } from "./registry.js";
+import { athleteZonesRepo } from "../athleteZones.js";
 
 type Focus =
 	| "endurance"
@@ -39,6 +45,87 @@ interface PhaseSpec {
 const WARMUP_DURATION = 600;
 const COOLDOWN_DURATION = 300;
 
+/**
+ * Resolved power zones with override info. When overridden, the workout
+ * generator targets the actual zone boundaries the athlete sees instead of
+ * a flat % of FTP, so "Zone 2" targets always match the athlete's Z2.
+ */
+interface ResolvedPowerZones {
+	zones: { name: string; lower: number; upper: number }[];
+	overridden: boolean;
+	ftp: number;
+}
+
+function resolvePowerZonesForUser(
+	userId: string,
+	ftp: number,
+): ResolvedPowerZones {
+	const overrides = athleteZonesRepo.get(userId);
+	const derived = resolveZones(POWER_ZONE_BANDS, ftp);
+	const merged = applyZoneOverrides(derived, overrides.powerZonesOverride);
+	return { zones: merged.zones, overridden: merged.anyOverridden, ftp };
+}
+
+/**
+ * Pick a target wattage for a focus based on resolved zones. Each focus maps
+ * to a "primary zone" (the zone the main intervals live in). When zones are
+ * overridden, target the midpoint of that zone's boundaries. When derived,
+ * fall back to the historical % of FTP so the output matches prior behavior.
+ */
+function targetForFocus(
+	focus: Focus,
+	resolved: ResolvedPowerZones,
+): { watts: number; percent: number } {
+	// Each focus maps to a zone index and a position within that zone (0=lower
+	// bound, 1=upper bound). sweet_spot sits low in Z4 (91% vs threshold's 100%),
+	// so it uses position 0.1 while threshold uses 0.67 to preserve the
+	// distinction under overridden zones.
+	const zoneIndexForFocus: Record<Focus, number> = {
+		recovery: 0,
+		endurance: 1,
+		tempo: 2,
+		sweet_spot: 3,
+		threshold: 3,
+		vo2max: 4,
+		anaerobic: 5,
+		sprint: 6,
+	};
+	const positionInZone: Record<Focus, number> = {
+		recovery: 0.5,
+		endurance: 0.5,
+		tempo: 0.5,
+		sweet_spot: 0.1,
+		threshold: 0.67,
+		vo2max: 0.5,
+		anaerobic: 0.5,
+		sprint: 0.5,
+	};
+	const idx = zoneIndexForFocus[focus];
+	const zone = resolved.zones[idx];
+	const ftp = resolved.ftp;
+	if (resolved.overridden && zone) {
+		const lower = zone.lower;
+		const upper =
+			zone.upper === Number.POSITIVE_INFINITY ? zone.lower * 1.1 : zone.upper;
+		const pos = positionInZone[focus];
+		const target = Math.round(lower + (upper - lower) * pos);
+		const percent = ftp > 0 ? Math.round((target / ftp) * 100) : 0;
+		return { watts: target, percent };
+	}
+	const percentForFocus: Record<Focus, number> = {
+		recovery: 50,
+		endurance: 65,
+		tempo: 81,
+		sweet_spot: 91,
+		threshold: 100,
+		vo2max: 115,
+		anaerobic: 140,
+		sprint: 180,
+	};
+	const pct = percentForFocus[focus];
+	return { watts: Math.round((ftp * pct) / 100), percent: pct };
+}
+
 function resolvePhase(eventDate: string | null): string {
 	if (!eventDate) return "Build";
 	const target = new Date(`${eventDate}T00:00:00`);
@@ -54,7 +141,7 @@ function resolvePhase(eventDate: string | null): string {
 
 function buildWorkout(
 	focus: Focus,
-	ftp: number,
+	resolved: ResolvedPowerZones,
 	totalDurationSec: number,
 ): {
 	intervals: IntervalSpec[];
@@ -72,13 +159,14 @@ function buildWorkout(
 	};
 
 	if (focus === "recovery") {
+		const target = targetForFocus("recovery", resolved);
 		return {
 			intervals: [
 				{
 					description: "Zone 1 recovery",
 					duration: totalDurationSec - WARMUP_DURATION - COOLDOWN_DURATION,
-					targetPower: Math.round(ftp * 0.5),
-					targetPowerPercent: 50,
+					targetPower: target.watts,
+					targetPowerPercent: target.percent,
 					restDuration: 0,
 				},
 			],
@@ -87,7 +175,7 @@ function buildWorkout(
 		};
 	}
 
-	const p = (pct: number) => Math.round((ftp * pct) / 100);
+	const p = (pct: number) => Math.round((resolved.ftp * pct) / 100);
 	let reps: number;
 	let onDuration: number;
 	let offDuration: number;
@@ -168,13 +256,17 @@ function buildWorkout(
 	const maxReps = Math.floor(availableMain / repDuration);
 	const actualReps = Math.max(0, Math.min(reps, maxReps));
 
+	// When zones are overridden, the "on" target comes from the actual zone
+	// boundary (targetForFocus). Rest stays a fixed % of FTP (Z1) regardless.
+	const onTarget = targetForFocus(focus, resolved);
+
 	const intervals: IntervalSpec[] = [];
 	for (let i = 0; i < actualReps; i++) {
 		intervals.push({
 			description: `${desc} interval ${i + 1}/${actualReps}`,
 			duration: onDuration,
-			targetPower: p(onPercent),
-			targetPowerPercent: onPercent,
+			targetPower: resolved.overridden ? onTarget.watts : p(onPercent),
+			targetPowerPercent: resolved.overridden ? onTarget.percent : onPercent,
 			restDuration: i < actualReps - 1 ? offDuration : 0,
 		});
 	}
@@ -258,10 +350,12 @@ export const workoutGeneratorHandler: ToolHandler = async (args, context) => {
 		typeof args.eventDate === "string" ? args.eventDate.trim() : null;
 	const phase = resolvePhase(eventDateRaw);
 
+	const resolved = resolvePowerZonesForUser(userId, ftp);
+
 	const totalDurationSec = durationMin * 60;
 	const { intervals, warmup, cooldown } = buildWorkout(
 		focus,
-		ftp,
+		resolved,
 		totalDurationSec,
 	);
 

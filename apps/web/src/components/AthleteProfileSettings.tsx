@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { fetchAthleteEstimates, updateAthleteProfile } from "../lib/api";
 import { useSettings } from "../lib/settingsContext";
+import { notifyProfileChanged } from "../lib/profileStore";
 import { AnimatedButton } from "./AnimatedButton";
 import { SettingsCard } from "./SettingsCard";
 
@@ -115,6 +116,7 @@ export function AthleteProfileSettings() {
 			setDraft(next);
 			setInferredLocation(null);
 			setNotification({ type: "success", message: "Athlete profile updated." });
+			notifyProfileChanged();
 		} catch (error) {
 			setNotification({
 				type: "error",

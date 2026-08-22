@@ -14,6 +14,7 @@ import {
 	type ModelEntry,
 	type OpenwearablesSettings,
 	type ParsedActivity,
+	type ProfileChangeEntry,
 	type StravaClubEvent,
 	type StoredRecord,
 	type ToolStreamChunk,
@@ -21,9 +22,11 @@ import {
 	type TrainerMessage,
 	type TrainerThread,
 	type UpdateAthleteProfileBody,
+	type UpdateZoneOverridesBody,
 	type UIToolCall,
 	type WaxedChainReminderSettings,
 	type ZonesResponse,
+	type ZoneOverride,
 } from "@fit-analyzer/shared";
 
 const API_BASE = "/api";
@@ -105,7 +108,7 @@ export async function fetchAthleteEstimates(): Promise<AthleteEstimatesResponse>
 }
 
 export async function fetchZones(): Promise<ZonesResponse> {
-	const res = await fetch(`${API_BASE}/me/zones`);
+	const res = await fetch(`${API_BASE}/me/zones`, { cache: "no-store" });
 	if (!res.ok) throw new Error("Failed to fetch zones");
 	return res.json();
 }
@@ -917,4 +920,57 @@ export async function updateAthleteProfile(
 		);
 	}
 	return (data as UserSettingsResponse).athleteProfile;
+}
+
+// ─── Zone overrides ────────────────────────────────────────────────────────
+
+export async function updateZoneOverrides(
+	input: UpdateZoneOverridesBody,
+): Promise<ZonesResponse> {
+	const res = await fetch(`${API_BASE}/me/zones`, {
+		method: "PUT",
+		headers: { "Content-Type": "application/json" },
+		cache: "no-store",
+		body: JSON.stringify(input),
+	});
+	const data = await res
+		.json()
+		.catch(() => ({ error: "Failed to update zones" }));
+	if (!res.ok) {
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to update zones",
+		);
+	}
+	return data as ZonesResponse;
+}
+
+export async function resetZoneOverrides(): Promise<ZonesResponse> {
+	const res = await fetch(`${API_BASE}/me/zones/reset`, {
+		method: "POST",
+		cache: "no-store",
+	});
+	const data = await res
+		.json()
+		.catch(() => ({ error: "Failed to reset zones" }));
+	if (!res.ok) {
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to reset zones",
+		);
+	}
+	return data as ZonesResponse;
+}
+
+// ─── Profile changelog ─────────────────────────────────────────────────────
+
+export interface ProfileChangesResponse {
+	entries: ProfileChangeEntry[];
+}
+
+export async function fetchProfileChanges(): Promise<ProfileChangeEntry[]> {
+	const res = await fetch(`${API_BASE}/me/profile-changes`, {
+		cache: "no-store",
+	});
+	if (!res.ok) throw new Error("Failed to fetch profile changes");
+	const data = await res.json();
+	return (data as ProfileChangesResponse).entries;
 }

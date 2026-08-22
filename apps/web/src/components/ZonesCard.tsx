@@ -2,6 +2,7 @@ import { Gauge, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ZoneRange, ZonesResponse } from "@fit-analyzer/shared";
 import { fetchZones } from "../lib/api";
+import { subscribeProfileChanged } from "../lib/profileStore";
 
 const POWER_ZONE_COLORS = [
 	"rgb(147,197,253)",
@@ -110,6 +111,13 @@ export function ZonesCard() {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 
+	const [version, setVersion] = useState(0);
+
+	useEffect(() => {
+		return subscribeProfileChanged(() => setVersion((v) => v + 1));
+	}, []);
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: version is intentionally included to re-fetch on profile change notifications
 	useEffect(() => {
 		let cancelled = false;
 		(async () => {
@@ -130,7 +138,7 @@ export function ZonesCard() {
 		return () => {
 			cancelled = true;
 		};
-	}, []);
+	}, [version]);
 
 	const hasPower = zones != null && zones.powerZones.length > 0;
 	const hasHr = zones != null && zones.hrZones.length > 0;
@@ -154,6 +162,8 @@ export function ZonesCard() {
 						{zones != null && zones.source !== "none" && (
 							<p className="text-xs text-[#64748b]">
 								{zones.source === "profile" ? "From profile" : "Estimated"}
+								{(zones.powerZonesOverridden || zones.hrZonesOverridden) &&
+									" · Custom"}
 							</p>
 						)}
 					</div>

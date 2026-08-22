@@ -71,6 +71,9 @@ const BASE_SYSTEM_PROMPT =
 	"you are discussing. Call highlight_chart at most once per interval or section you discuss.\n\n" +
 	"When the athlete confirms a value you suggested (e.g. FTP, max HR, goal event), use the update_profile tool " +
 	"to persist it to their profile. Always ask for confirmation before updating their profile.\n\n" +
+	"You can also set custom power and heart-rate zone overrides directly with the set_zones tool (absolute watt/bpm " +
+	"ranges per zone), or clear them with reset_zones. update_profile does not touch custom zone overrides, so bumping " +
+	"FTP leaves hand-set zones intact. Always ask for confirmation before set_zones or reset_zones.\n\n" +
 	"Prefer making parallel calls in a single round rather than sequential rounds. " +
 	"Avoid redundant lookups — if you already retrieved activity data, do not fetch it again.";
 

@@ -11,6 +11,7 @@ import { renderCardiacDrift } from "./renderCardiacDrift";
 import { renderRideRecommendation } from "./renderRideRecommendation";
 import { renderHighlightChart } from "./renderHighlightChart";
 import { renderUpdateProfile } from "./renderUpdateProfile";
+import { renderSetZones, renderResetZones } from "./renderSetZones";
 
 const TOOL_RENDERERS: Record<string, (display: unknown) => ReactNode | null> = {
 	training_load: renderTrainingLoad,
@@ -25,6 +26,8 @@ const TOOL_RENDERERS: Record<string, (display: unknown) => ReactNode | null> = {
 	ride_recommendation: renderRideRecommendation,
 	highlight_chart: renderHighlightChart,
 	update_profile: renderUpdateProfile,
+	set_zones: renderSetZones,
+	reset_zones: renderResetZones,
 };
 
 export function renderToolDisplay(

@@ -1,3 +1,5 @@
+import type { ZoneOverride } from "./zones.js";
+
 // --- Core activity types ---
 
 export interface ActivityRecord {
@@ -391,9 +393,11 @@ export interface HealthHistoryEntry {
 // --- Tool system types ---
 
 export interface ToolParameter {
-	type: "string" | "number" | "boolean";
+	type: "string" | "number" | "boolean" | "array" | "object";
 	description: string;
 	enum?: string[];
+	items?: ToolParameter;
+	properties?: Record<string, ToolParameter>;
 }
 
 export interface ToolDefinition {
@@ -477,4 +481,44 @@ export interface UpdateAthleteProfileBody {
 	weeklyHours?: number | null;
 	focusAreas?: string[];
 	location?: string | null;
+}
+
+// --- Zone override types ---
+
+/** Body for PUT /me/zones — replace the full override array for one side. */
+export interface UpdateZoneOverridesBody {
+	powerZones?: ZoneOverride[];
+	hrZones?: ZoneOverride[];
+}
+
+// --- Profile changelog types ---
+
+/** Who or what authored a profile/zone change. */
+export type ProfileChangeSource =
+	| "manual"
+	| "update_profile"
+	| "set_zones"
+	| "reset_zones";
+
+/** Human-readable label for a change source, shown in the changelog UI. */
+export const PROFILE_CHANGE_SOURCE_LABELS: Record<ProfileChangeSource, string> =
+	{
+		manual: "You",
+		update_profile: "Trainer",
+		set_zones: "Trainer (zones)",
+		reset_zones: "Trainer (reset)",
+	};
+
+/**
+ * One logical update event (per Q16b). `changes` is a JSON diff keyed by field
+ * name with `{old, new}` entries. `source` identifies who/what authored it.
+ */
+export interface ProfileChangeEntry {
+	id: string;
+	/** ISO timestamp of the change. */
+	createdAt: string;
+	/** Who/what authored the change. */
+	source: ProfileChangeSource;
+	/** JSON diff like `{ ftp: { old: 250, new: 260 }, powerZones: { old: [...], new: [...] } }`. */
+	changes: Record<string, { old: unknown; new: unknown }>;
 }

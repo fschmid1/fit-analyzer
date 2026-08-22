@@ -2,12 +2,13 @@ import { Hono } from "hono";
 import type {
 	UpdateWaxedChainReminderSettingsBody,
 	UpdateAthleteProfileBody,
-	ZonesResponse,
+	UpdateZoneOverridesBody,
+	ZoneOverride,
+	ProfileChangeEntry,
 } from "@fit-analyzer/shared";
 import {
-	POWER_ZONE_BANDS,
-	HR_ZONE_BANDS,
-	resolveZones,
+	isZoneOverrideArray,
+	normalizeZoneOverrides,
 } from "@fit-analyzer/shared";
 import {
 	getCoachModelSettings,
@@ -34,54 +35,18 @@ import {
 	getAthleteProfile,
 	updateAthleteProfile,
 } from "../lib/athleteProfile.js";
+import { inferLocationFromActivities } from "../lib/athleteStats.js";
+import { athleteZonesRepo } from "../lib/athleteZones.js";
 import {
-	computeAllTimeEstimates,
-	inferLocationFromActivities,
-} from "../lib/athleteStats.js";
+	profileChangesRepo,
+	buildProfileDiff,
+	buildZoneDiff,
+} from "../lib/profileChanges.js";
+import { buildUserZones, getUserEstimates } from "../lib/zonesService.js";
 import { db } from "../db.js";
 import { getUserId } from "../lib/getUserId.js";
 
 const me = new Hono();
-
-const maxHrStmt = db.prepare(
-	`SELECT MAX(CAST(json_extract(summary, '$.maxHeartRate') AS INTEGER)) as maxHr
-     FROM activities WHERE user_id = ? AND json_extract(summary, '$.maxHeartRate') IS NOT NULL`,
-);
-
-function getUserEstimates(userId: string) {
-	const { estimatedFtp } = computeAllTimeEstimates(userId, null);
-	const row = maxHrStmt.get(userId) as { maxHr: number | null } | undefined;
-	return { estimatedFtp, estimatedMaxHr: row?.maxHr ?? null };
-}
-
-function buildZonesResponse(
-	profile: { ftp: number | null; maxHr: number | null },
-	estimates: { estimatedFtp: number | null; estimatedMaxHr: number | null },
-): ZonesResponse {
-	const ftp = profile.ftp ?? estimates.estimatedFtp;
-	const maxHr = profile.maxHr ?? estimates.estimatedMaxHr;
-
-	if (ftp == null && maxHr == null) {
-		return {
-			ftp: null,
-			maxHr: null,
-			source: "none",
-			powerZones: [],
-			hrZones: [],
-		};
-	}
-
-	const source: ZonesResponse["source"] =
-		profile.ftp != null || profile.maxHr != null ? "profile" : "estimated";
-
-	return {
-		ftp,
-		maxHr,
-		source,
-		powerZones: ftp != null ? resolveZones(POWER_ZONE_BANDS, ftp) : [],
-		hrZones: maxHr != null ? resolveZones(HR_ZONE_BANDS, maxHr) : [],
-	};
-}
 
 // GET /me/athlete-estimates — heavy derived athlete data used by the settings page.
 // Kept separate from /me/settings so the settings page can load fast and only
@@ -95,15 +60,17 @@ me.get("/athlete-estimates", (c) => {
 	}
 
 	const profile = getAthleteProfile(userId);
+	const estimates = getUserEstimates(userId);
 	return c.json({
 		inferredLocation: profile.location
 			? null
 			: inferLocationFromActivities(userId),
-		...getUserEstimates(userId),
+		...estimates,
 	});
 });
 
 // GET /me/zones — resolved power and heart-rate zones for the current athlete.
+// Applies per-user overrides on top of derived defaults when present.
 me.get("/zones", (c) => {
 	let userId: string;
 	try {
@@ -113,8 +80,103 @@ me.get("/zones", (c) => {
 	}
 
 	const profile = getAthleteProfile(userId);
-	const estimates = getUserEstimates(userId);
-	return c.json(buildZonesResponse(profile, estimates));
+	const zones = buildUserZones(userId, profile, athleteZonesRepo);
+	return c.json(zones, 200, { "Cache-Control": "no-store" });
+});
+
+// PUT /me/zones — replace the full override array for power and/or HR zones.
+// Omitting a side leaves it unchanged. Passing null clears that side back to
+// derived defaults.
+me.put("/zones", async (c) => {
+	let userId: string;
+	try {
+		userId = getUserId(c);
+	} catch {
+		return c.json({ error: "Not authenticated" }, 401);
+	}
+
+	const body = await c.req.json<UpdateZoneOverridesBody>();
+
+	// `undefined` = leave unchanged, `null` = clear, array = replace
+	const hasPower = body.powerZones !== undefined;
+	const hasHr = body.hrZones !== undefined;
+	const clearPower = body.powerZones === null;
+	const clearHr = body.hrZones === null;
+
+	if (
+		body.powerZones !== undefined &&
+		body.powerZones !== null &&
+		!isZoneOverrideArray(body.powerZones)
+	) {
+		return c.json({ error: "powerZones must be an array of zone ranges" }, 400);
+	}
+	if (
+		body.hrZones !== undefined &&
+		body.hrZones !== null &&
+		!isZoneOverrideArray(body.hrZones)
+	) {
+		return c.json({ error: "hrZones must be an array of zone ranges" }, 400);
+	}
+
+	const before = athleteZonesRepo.get(userId);
+	const nextPower = clearPower
+		? null
+		: hasPower
+			? normalizeZoneOverrides(body.powerZones as ZoneOverride[])
+			: before.powerZonesOverride;
+	const nextHr = clearHr
+		? null
+		: hasHr
+			? normalizeZoneOverrides(body.hrZones as ZoneOverride[])
+			: before.hrZonesOverride;
+	const after = athleteZonesRepo.upsert(userId, nextPower, nextHr);
+
+	const diff = buildZoneDiff(before, after, hasPower, hasHr);
+	profileChangesRepo.append(userId, "manual", diff);
+
+	const profile = getAthleteProfile(userId);
+	const zones = buildUserZones(userId, profile, athleteZonesRepo);
+	return c.json(zones, 200, { "Cache-Control": "no-store" });
+});
+
+// POST /me/zones/reset — clear all zone overrides, return to pure derivation.
+me.post("/zones/reset", (c) => {
+	let userId: string;
+	try {
+		userId = getUserId(c);
+	} catch {
+		return c.json({ error: "Not authenticated" }, 401);
+	}
+
+	const before = athleteZonesRepo.get(userId);
+	athleteZonesRepo.reset(userId);
+
+	const hasPower = before.powerZonesOverride != null;
+	const hasHr = before.hrZonesOverride != null;
+	const diff = buildZoneDiff(
+		before,
+		{ powerZonesOverride: null, hrZonesOverride: null },
+		hasPower,
+		hasHr,
+	);
+	profileChangesRepo.append(userId, "manual", diff);
+
+	const profile = getAthleteProfile(userId);
+	const zones = buildUserZones(userId, profile, athleteZonesRepo);
+	return c.json(zones, 200, { "Cache-Control": "no-store" });
+});
+
+// GET /me/profile-changes — recent changelog entries (profile + zones).
+me.get("/profile-changes", (c) => {
+	let userId: string;
+	try {
+		userId = getUserId(c);
+	} catch {
+		return c.json({ error: "Not authenticated" }, 401);
+	}
+
+	const entries: ProfileChangeEntry[] = profileChangesRepo.list(userId, 50);
+	return c.json({ entries });
 });
 
 // GET /me — return the current user info from Authentik proxy headers
@@ -241,6 +303,7 @@ me.patch("/settings", async (c) => {
 			return c.json({ error: "Invalid athleteProfile payload" }, 400);
 		}
 
+		const before = getAthleteProfile(userId);
 		updateAthleteProfile(userId, {
 			ftp: body.ftp,
 			maxHr: body.maxHr,
@@ -251,6 +314,12 @@ me.patch("/settings", async (c) => {
 			focusAreas: body.focusAreas,
 			location: body.location,
 		});
+		const after = getAthleteProfile(userId);
+		const diff = buildProfileDiff(
+			before as unknown as Record<string, unknown>,
+			after as unknown as Record<string, unknown>,
+		);
+		profileChangesRepo.append(userId, "manual", diff);
 	}
 
 	if (typeof body.owUserId === "string") {
