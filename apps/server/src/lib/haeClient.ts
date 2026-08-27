@@ -4,6 +4,15 @@ import type {
 	HealthMetricStatus,
 	HealthHistoryEntry,
 } from "@fit-analyzer/shared";
+import {
+	type HaeSleepData,
+	type HaeSleepEntry,
+	type HaeSleepSession,
+	combineSleepSessions,
+	mergeSleepData,
+	parseSleepEntry,
+	sleepNightDate,
+} from "./haeSleep.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -23,22 +32,6 @@ interface HaeHeartRateData extends HaeQuantityData {
 	Max?: number;
 }
 
-interface HaeSleepEntry {
-	date: string;
-	qty?: number;
-	units?: string;
-	totalSleep?: number;
-	asleep?: number;
-	core?: number;
-	deep?: number;
-	rem?: number;
-	sleepStart?: string;
-	sleepEnd?: string;
-	inBed?: number;
-	inBedStart?: string;
-	inBedEnd?: string;
-}
-
 interface HaeMetric {
 	name: string;
 	units?: string;
@@ -50,19 +43,6 @@ interface HaePayload {
 }
 
 // ─── Daily Snapshot Shape (stored in DB) ─────────────────────────────────────
-
-interface HaeSleepData {
-	durationMinutes: number;
-	efficiencyPercent: number | null;
-	stages: {
-		awakeMinutes: number;
-		lightMinutes: number;
-		deepMinutes: number;
-		remMinutes: number;
-	} | null;
-	sleepStart: string | null;
-	sleepEnd: string | null;
-}
 
 interface HaeHeartRateReading {
 	date: string;
@@ -163,7 +143,7 @@ function mergeSnapshots(
 		respiratoryRate: incoming.respiratoryRate ?? existing.respiratoryRate,
 		spo2: incoming.spo2 ?? existing.spo2,
 		temperature: incoming.temperature ?? existing.temperature,
-		sleep: incoming.sleep ?? existing.sleep,
+		sleep: mergeSleepData(existing.sleep, incoming.sleep),
 		heartRateReadings: mergeHeartRateReadings(
 			existing.heartRateReadings,
 			incoming.heartRateReadings,
@@ -260,17 +240,26 @@ function convertHeightToCm(qty: number, units: string | undefined): number {
 }
 
 function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
+	type SleepSessions = HaeSleepSession[];
 	const byDate = new Map<
 		string,
-		Partial<HaeDailySnapshot> & { heartRateReadings: HaeHeartRateReading[] }
+		Partial<HaeDailySnapshot> & {
+			heartRateReadings: HaeHeartRateReading[];
+			sleepSessions: SleepSessions;
+		}
 	>();
+	// Sleep sessions keyed by night (wake) date, kept separate from byDate so
+	// a session starting the evening before doesn't spawn an empty snapshot
+	// for the wrong day.
+	const sleepSessionsByNight = new Map<string, SleepSessions>();
 
-	function ensureDate(
-		date: string,
-	): Partial<HaeDailySnapshot> & { heartRateReadings: HaeHeartRateReading[] } {
+	function ensureDate(date: string): Partial<HaeDailySnapshot> & {
+		heartRateReadings: HaeHeartRateReading[];
+		sleepSessions: SleepSessions;
+	} {
 		let snap = byDate.get(date);
 		if (!snap) {
-			snap = { heartRateReadings: [] };
+			snap = { heartRateReadings: [], sleepSessions: [] };
 			byDate.set(date, snap);
 		}
 		return snap;
@@ -428,39 +417,18 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 				}
 				case "sleep_analysis": {
 					const entry = raw as HaeSleepEntry;
-					// HAE exports the total sleep value under the generic `qty` field
-					// when no dedicated `totalSleep`/`asleep` keys are present.
-					const totalHours =
-						entry.totalSleep ?? entry.asleep ?? entry.qty ?? null;
-					if (totalHours != null && totalHours > 0) {
-						const durationMinutes = Math.round(totalHours * 60);
-
-						// Compute efficiency if possible
-						let efficiencyPercent: number | null = null;
-						if (entry.inBed != null && entry.inBed > 0 && totalHours > 0) {
-							efficiencyPercent = Math.round((totalHours / entry.inBed) * 100);
+					// One night is often split into multiple sleep sessions (e.g.
+					// after a mid-night awakening); collect them all, attributed to
+					// the wake date, instead of letting each entry overwrite the last.
+					const session = parseSleepEntry(entry);
+					if (session) {
+						const night = sleepNightDate(entry);
+						const sessions = sleepSessionsByNight.get(night);
+						if (sessions) {
+							sessions.push(session);
+						} else {
+							sleepSessionsByNight.set(night, [session]);
 						}
-
-						let stages: HaeSleepData["stages"] = null;
-						if (entry.core != null || entry.deep != null || entry.rem != null) {
-							const totalStageHours =
-								(entry.core ?? 0) + (entry.deep ?? 0) + (entry.rem ?? 0);
-							const awakeHours = Math.max(0, totalHours - totalStageHours);
-							stages = {
-								awakeMinutes: Math.round(awakeHours * 60),
-								lightMinutes: Math.round((entry.core ?? 0) * 60),
-								deepMinutes: Math.round((entry.deep ?? 0) * 60),
-								remMinutes: Math.round((entry.rem ?? 0) * 60),
-							};
-						}
-
-						snap.sleep = {
-							durationMinutes,
-							efficiencyPercent,
-							stages,
-							sleepStart: entry.sleepStart ?? null,
-							sleepEnd: entry.sleepEnd ?? null,
-						};
 					}
 					break;
 				}
@@ -478,30 +446,49 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 
 	// Normalize: ensure every date has all fields
 	const result = new Map<string, HaeDailySnapshot>();
-	for (const [date, snap] of byDate) {
+	const allDates = new Set([...byDate.keys(), ...sleepSessionsByNight.keys()]);
+	for (const date of allDates) {
+		const snap = byDate.get(date);
 		// Sort heart rate readings chronologically
-		snap.heartRateReadings.sort(
+		snap?.heartRateReadings.sort(
 			(a, b) =>
 				parseHaeDateTime(a.date).getTime() - parseHaeDateTime(b.date).getTime(),
 		);
-		const body = snap.bodyComposition ?? {
-			heightCm: null,
-			weightKg: null,
-			bodyFatPercent: null,
-			leanBodyMassKg: null,
-			bmi: null,
-			waistCircumferenceCm: null,
-		};
+		// Combine the night's sleep sessions (durations sum across segments).
+		const sleep = combineSleepSessions(sleepSessionsByNight.get(date) ?? []);
+		if (
+			sleep == null &&
+			snap?.heartRateReadings.length === 0 &&
+			(snap == null ||
+				(snap.rhr == null &&
+					snap.hrv == null &&
+					snap.respiratoryRate == null &&
+					snap.spo2 == null &&
+					snap.temperature == null &&
+					snap.bloodPressure == null &&
+					snap.bodyComposition == null))
+		) {
+			// Nothing but the sleep record's pre-midnight date landed here;
+			// don't persist an empty snapshot.
+			continue;
+		}
 		result.set(date, {
-			rhr: snap.rhr ?? null,
-			hrv: snap.hrv ?? null,
-			respiratoryRate: snap.respiratoryRate ?? null,
-			spo2: snap.spo2 ?? null,
-			temperature: snap.temperature ?? null,
-			sleep: snap.sleep ?? null,
-			heartRateReadings: snap.heartRateReadings,
-			bloodPressure: snap.bloodPressure ?? null,
-			bodyComposition: body,
+			rhr: snap?.rhr ?? null,
+			hrv: snap?.hrv ?? null,
+			respiratoryRate: snap?.respiratoryRate ?? null,
+			spo2: snap?.spo2 ?? null,
+			temperature: snap?.temperature ?? null,
+			sleep,
+			heartRateReadings: snap?.heartRateReadings ?? [],
+			bloodPressure: snap?.bloodPressure ?? null,
+			bodyComposition: snap?.bodyComposition ?? {
+				heightCm: null,
+				weightKg: null,
+				bodyFatPercent: null,
+				leanBodyMassKg: null,
+				bmi: null,
+				waistCircumferenceCm: null,
+			},
 		});
 	}
 	return result;
