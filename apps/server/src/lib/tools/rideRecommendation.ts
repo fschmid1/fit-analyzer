@@ -2,6 +2,7 @@ import { computeAllTimeEstimates } from "../athleteStats.js";
 import { db } from "../../db.js";
 import type { ActivitySummary, ToolDefinition } from "@fit-analyzer/shared";
 import type { ToolHandler } from "./registry.js";
+import { parseUtcMidnight } from "./activityUtils.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -74,8 +75,8 @@ async function fetchWeather(
 
 function resolvePhase(eventDate: string | null): string | null {
 	if (!eventDate || !DATE_RE.test(eventDate)) return null;
-	const target = new Date(`${eventDate}T00:00:00`);
-	if (Number.isNaN(target.getTime())) return null;
+	const target = parseUtcMidnight(eventDate);
+	if (target === null) return null;
 	const diffDays = Math.round((target.getTime() - Date.now()) / 86400000);
 	if (diffDays > 84) return "Base";
 	if (diffDays > 56) return "Build";

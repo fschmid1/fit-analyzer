@@ -26,7 +26,7 @@ const listByDateStmt = db.prepare(
 export const activityLookupDefinition: ToolDefinition = {
 	name: "activity_lookup",
 	description:
-		"Fetch detailed data for a past activity by date (e.g. '2024-06-12') or activity ID. Returns power, heart rate, cadence, intervals, and peak powers. If the user mentions a relative date (yesterday, last week, etc.), call current_time first to get the actual date before using this tool.",
+		"Fetch detailed data for a past activity by date (e.g. '2024-06-12') or activity ID. Returns power, heart rate, cadence, intervals, and peak powers. The date must be an absolute YYYY-MM-DD date.",
 	parameters: {
 		type: "object",
 		properties: {

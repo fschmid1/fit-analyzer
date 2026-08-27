@@ -6,6 +6,7 @@ import {
 } from "@fit-analyzer/shared";
 import type { ToolDefinition } from "@fit-analyzer/shared";
 import type { ToolHandler } from "./registry.js";
+import { parseUtcMidnight } from "./activityUtils.js";
 import { athleteZonesRepo } from "../athleteZones.js";
 
 type Focus =
@@ -128,8 +129,8 @@ function targetForFocus(
 
 function resolvePhase(eventDate: string | null): string {
 	if (!eventDate) return "Build";
-	const target = new Date(`${eventDate}T00:00:00`);
-	if (Number.isNaN(target.getTime())) return "Build";
+	const target = parseUtcMidnight(eventDate);
+	if (target === null) return "Build";
 	const now = new Date();
 	const diffDays = Math.round((target.getTime() - now.getTime()) / 86400000);
 	if (diffDays > 84) return "Base";

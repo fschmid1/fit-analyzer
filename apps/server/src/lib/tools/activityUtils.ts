@@ -19,6 +19,11 @@ const threadActivityStmt = db.prepare(
 	"SELECT activity_id FROM trainer_chats WHERE id = ? AND user_id = ?",
 );
 
+export function parseUtcMidnight(dateStr: string): Date | null {
+	const target = new Date(`${dateStr}T00:00:00Z`);
+	return Number.isNaN(target.getTime()) ? null : target;
+}
+
 export interface ActivityRow {
 	id: string;
 	date: string;

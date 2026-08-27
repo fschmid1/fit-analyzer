@@ -62,10 +62,7 @@ const BASE_SYSTEM_PROMPT =
 	"explained by a hot/humid day rather than a fitness change. Pull the weather first, then interpret power, heart rate " +
 	"and cardiac-drift data in that context and call out any heat/humidity-related effects in your feedback. " +
 	"If the activity has a location, derive lat/lng from its records; otherwise ask the user where they rode. " +
-	"Resolve the activity date to an absolute YYYY-MM-DD via current_time if it was given relatively.\n\n" +
-	"When the user refers to a date or time (e.g. yesterday, last week, a specific day), you MUST call the current_time tool FIRST " +
-	"before any other tool, then compute the absolute YYYY-MM-DD date from the current time before calling date-based tools. " +
-	"Never guess the current date.\n\n" +
+	"Resolve the activity date to an absolute YYYY-MM-DD if it was given relatively, using the current date and time stated in this prompt.\n\n" +
 	"When you reference a specific section of a ride, use the highlight_chart tool to draw the user's attention " +
 	"to that time range on the chart. This creates a visual overlay so the user can see exactly which portion " +
 	"you are discussing. Call highlight_chart at most once per interval or section you discuss.\n\n" +
@@ -77,11 +74,27 @@ const BASE_SYSTEM_PROMPT =
 	"Prefer making parallel calls in a single round rather than sequential rounds. " +
 	"Avoid redundant lookups — if you already retrieved activity data, do not fetch it again.";
 
+function buildCurrentTimeText(now: Date): string {
+	const iso = now.toISOString();
+	const utcDate = iso.split("T")[0];
+	const utcTime = iso.split("T")[1].split(".")[0];
+	const dayOfWeek = [
+		"Sunday",
+		"Monday",
+		"Tuesday",
+		"Wednesday",
+		"Thursday",
+		"Friday",
+		"Saturday",
+	][now.getUTCDay()];
+	return `Current date and time: ${dayOfWeek} ${utcDate}, ${utcTime} UTC (${iso}). All dates the user mentions are relative to this moment.`;
+}
+
 async function buildSystemPrompt(
 	_userId: string,
 	_activityId?: string,
 ): Promise<string> {
-	return BASE_SYSTEM_PROMPT;
+	return `${BASE_SYSTEM_PROMPT}\n\n${buildCurrentTimeText(new Date())}`;
 }
 
 // Active compaction requests by user/thread. Prevents duplicate concurrent

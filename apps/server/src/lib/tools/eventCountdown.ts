@@ -1,4 +1,5 @@
 import type { ToolDefinition, ToolResult } from "@fit-analyzer/shared";
+import { parseUtcMidnight } from "./activityUtils.js";
 import type { ToolHandler } from "./registry.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -88,8 +89,8 @@ export const eventCountdownHandler: ToolHandler = async (args) => {
 			};
 		}
 
-		const target = new Date(`${eventDate}T00:00:00`);
-		if (Number.isNaN(target.getTime())) {
+		const target = parseUtcMidnight(eventDate);
+		if (target === null) {
 			return {
 				id: "",
 				name: "event_countdown",
@@ -103,15 +104,8 @@ export const eventCountdownHandler: ToolHandler = async (args) => {
 		const startOfToday = new Date(
 			Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
 		);
-		const targetUtc = new Date(
-			Date.UTC(
-				target.getUTCFullYear(),
-				target.getUTCMonth(),
-				target.getUTCDate(),
-			),
-		);
 		const msPerWeek = 7 * 24 * 60 * 60 * 1000;
-		const diffMs = targetUtc.getTime() - startOfToday.getTime();
+		const diffMs = target.getTime() - startOfToday.getTime();
 		const weeksRemaining = Math.round((diffMs / msPerWeek) * 10) / 10;
 		const daysRemaining = Math.round(diffMs / (24 * 60 * 60 * 1000));
 

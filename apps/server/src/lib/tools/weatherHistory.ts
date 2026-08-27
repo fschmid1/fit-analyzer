@@ -1,4 +1,5 @@
 import type { ToolDefinition, ToolResult } from "@fit-analyzer/shared";
+import { parseUtcMidnight } from "./activityUtils.js";
 import type { ToolHandler } from "./registry.js";
 
 interface OpenMeteoDaily {
@@ -25,8 +26,8 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function isValidDateString(s: string): boolean {
 	if (!DATE_RE.test(s)) return false;
-	const d = new Date(`${s}T00:00:00Z`);
-	return !Number.isNaN(d.getTime());
+	const d = parseUtcMidnight(s);
+	return d !== null;
 }
 
 function isValidLat(v: unknown): v is number {
@@ -40,14 +41,14 @@ function isValidLng(v: unknown): v is number {
 export const weatherHistoryDefinition: ToolDefinition = {
 	name: "weather_history",
 	description:
-		"Look up weather conditions (temperature, apparent temperature, humidity, dew point, precipitation, wind) for a specific date and location. Works for both past dates (historical archive) and future dates up to 16 days ahead (forecast). Useful for contextualizing ride performance — heat and humidity strongly affect cardiac drift, perceived exertion and hydration — and for planning upcoming rides. If the user mentions a relative date, call current_time first to resolve the absolute date.",
+		"Look up weather conditions (temperature, apparent temperature, humidity, dew point, precipitation, wind) for a specific date and location. Works for both past dates (historical archive) and future dates up to 16 days ahead (forecast). Useful for contextualizing ride performance — heat and humidity strongly affect cardiac drift, perceived exertion and hydration — and for planning upcoming rides.",
 	parameters: {
 		type: "object",
 		properties: {
 			date: {
 				type: "string",
 				description:
-					"Date in YYYY-MM-DD format (past or future up to 16 days). Must be absolute — resolve via current_time first if unsure.",
+					"Date in YYYY-MM-DD format (past or future up to 16 days). Must be absolute.",
 			},
 			lat: {
 				type: "number",

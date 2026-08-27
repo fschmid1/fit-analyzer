@@ -75,7 +75,7 @@ function computeDiff(
 export const compareActivitiesDefinition: ToolDefinition = {
 	name: "compare_activities",
 	description:
-		"Compare two activities side-by-side. Returns a diff table of key metrics. If using dates, resolve them via current_time first.",
+		"Compare two activities side-by-side. Returns a diff table of key metrics.",
 	parameters: {
 		type: "object",
 		properties: {
@@ -90,12 +90,12 @@ export const compareActivitiesDefinition: ToolDefinition = {
 			date1: {
 				type: "string",
 				description:
-					"First activity date (YYYY-MM-DD). Must be an absolute date — resolve via current_time first if needed.",
+					"First activity date (YYYY-MM-DD). Must be an absolute date.",
 			},
 			date2: {
 				type: "string",
 				description:
-					"Second activity date (YYYY-MM-DD). Must be an absolute date — resolve via current_time first if needed.",
+					"Second activity date (YYYY-MM-DD). Must be an absolute date.",
 			},
 		},
 		required: [],

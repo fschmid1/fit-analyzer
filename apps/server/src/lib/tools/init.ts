@@ -45,7 +45,6 @@ import {
 	workoutGeneratorHandler,
 } from "./workoutGenerator.js";
 import { zoneAnalysisDefinition, zoneAnalysisHandler } from "./zoneAnalysis.js";
-import { currentTimeDefinition, currentTimeHandler } from "./currentTime.js";
 import {
 	updateProfileDefinition,
 	updateProfileHandler,
@@ -62,7 +61,6 @@ let initialized = false;
 export function initTools(): void {
 	if (initialized) return;
 	initialized = true;
-	registerTool(currentTimeDefinition, currentTimeHandler);
 	registerTool(webFetchDefinition, webFetchHandler);
 	registerTool(activityLookupDefinition, activityLookupHandler);
 	registerTool(trainingLoadDefinition, trainingLoadHandler);
