@@ -4,8 +4,15 @@ import {
 	getModelProvider,
 	type ModelEntry,
 } from "@fit-analyzer/shared";
-import { ChevronDown, Search, Star } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Check, ChevronDown, Search, Star } from "lucide-react";
+import {
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { createPortal } from "react-dom";
 
 interface ModelPickerProps {
@@ -79,6 +86,95 @@ const providerIcons: Record<string, React.ReactNode> = {
 	),
 };
 
+interface ModelRowProps {
+	model: ModelEntry;
+	index: number;
+	highlightedIndex: number;
+	activeModel: string;
+	showProviderIcon: boolean;
+	favorites: string[];
+	onHighlight: (index: number) => void;
+	onSelect: (modelId: string) => void;
+	onToggleFavorite: (modelId: string) => void;
+}
+
+const LIST_SCROLL_CLASSES =
+	"flex-1 py-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/20 hover:[&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/35";
+
+function ModelRow({
+	model,
+	index,
+	highlightedIndex,
+	activeModel,
+	showProviderIcon,
+	favorites,
+	onHighlight,
+	onSelect,
+	onToggleFavorite,
+}: ModelRowProps) {
+	const rowRef = useRef<HTMLDivElement>(null);
+	const isHighlighted = index === highlightedIndex;
+	const isActive = model.id === activeModel;
+
+	useEffect(() => {
+		if (isHighlighted) {
+			rowRef.current?.scrollIntoView({ block: "nearest" });
+		}
+	}, [isHighlighted]);
+
+	return (
+		<div
+			ref={rowRef}
+			className={`flex items-center gap-1.5 pr-1.5 ${
+				isHighlighted ? "bg-[#8b5cf6]/15" : ""
+			}`}
+		>
+			<button
+				type="button"
+				onMouseEnter={() => onHighlight(index)}
+				onClick={() => onSelect(model.id)}
+				className={`flex-1 flex items-center gap-2.5 px-3 py-2 text-xs transition-colors cursor-pointer ${
+					isHighlighted
+						? "text-[#e2d9f3]"
+						: isActive
+							? "text-[#e2d9f3]"
+							: "text-[#c4b5fd]"
+				}`}
+				role="menuitem"
+				aria-current={isActive ? "true" : undefined}
+			>
+				<span className="flex-1 text-left truncate flex items-center gap-1.5">
+					{showProviderIcon && providerIcons[model.provider]}
+					{model.name}
+					{isActive && <Check className="w-3 h-3 shrink-0 text-[#c4b5fd]" />}
+				</span>
+			</button>
+			<button
+				type="button"
+				onClick={(e) => {
+					e.stopPropagation();
+					onToggleFavorite(model.id);
+				}}
+				className={`shrink-0 p-0.5 rounded transition-colors cursor-pointer ${
+					favorites.includes(model.id)
+						? "text-[#eab308] hover:text-[#fbbf24]"
+						: "text-[#475569] hover:text-[#eab308]"
+				}`}
+				title={
+					favorites.includes(model.id)
+						? "Remove from favorites"
+						: "Add to favorites"
+				}
+			>
+				<Star
+					className="w-3.5 h-3.5"
+					fill={favorites.includes(model.id) ? "currentColor" : "none"}
+				/>
+			</button>
+		</div>
+	);
+}
+
 const providerLabels: Record<string, string> = {
 	openrouter: "OpenRouter",
 	"ollama-cloud": "Ollama Cloud",
@@ -97,9 +193,11 @@ export function ModelPicker({
 	const [search, setSearch] = useState("");
 	const [showPortal, setShowPortal] = useState(false);
 	const [measuredHeight, setMeasuredHeight] = useState(0);
+	const [highlightedIndex, setHighlightedIndex] = useState(0);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const contentRef = useRef<HTMLDivElement>(null);
 	const measureRef = useRef<HTMLDivElement>(null);
+	const searchInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
 		if (!open) return;
@@ -113,16 +211,125 @@ export function ModelPicker({
 			}
 			setOpen(false);
 		};
-		const handleKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") setOpen(false);
-		};
 		window.addEventListener("pointerdown", handleClick);
-		window.addEventListener("keydown", handleKey);
 		return () => {
 			window.removeEventListener("pointerdown", handleClick);
-			window.removeEventListener("keydown", handleKey);
 		};
 	}, [open]);
+
+	useEffect(() => {
+		if (open) {
+			setShowPortal(true);
+			setHighlightedIndex(0);
+		} else {
+			setSearch("");
+			setMeasuredHeight(0);
+			const timeout = setTimeout(() => setShowPortal(false), 400);
+			return () => clearTimeout(timeout);
+		}
+	}, [open]);
+
+	useEffect(() => {
+		if (open && showPortal) {
+			searchInputRef.current?.focus();
+		}
+	}, [open, showPortal]);
+
+	const activeModel =
+		currentModel ??
+		defaultModel ??
+		availableModels[0]?.id ??
+		AVAILABLE_MODELS[0].id;
+	const activeModelInfo = availableModels.find((m) => m.id === activeModel);
+	const activeName =
+		activeModelInfo?.name ?? getCoachModelDisplayName(activeModel);
+	const activeProvider =
+		activeModelInfo?.provider ?? getModelProvider(activeModel);
+
+	const groupedByProvider = useMemo(() => {
+		const groups = new Map<string, ModelEntry[]>();
+		for (const model of availableModels) {
+			const arr = groups.get(model.provider);
+			if (arr) {
+				arr.push(model);
+			} else {
+				groups.set(model.provider, [model]);
+			}
+		}
+		return groups;
+	}, [availableModels]);
+
+	const visibleModels = useMemo(() => {
+		if (search) {
+			const q = search.toLowerCase();
+			return availableModels.filter((m) => m.name.toLowerCase().includes(q));
+		}
+		const effectiveProvider =
+			selectedProvider ??
+			activeProvider ??
+			Array.from(groupedByProvider.keys())[0];
+		if (effectiveProvider === FAVORITES_GROUP) {
+			return availableModels.filter((m) => favorites.includes(m.id));
+		}
+		return groupedByProvider.get(effectiveProvider) ?? [];
+	}, [
+		search,
+		availableModels,
+		selectedProvider,
+		activeProvider,
+		favorites,
+		groupedByProvider,
+	]);
+
+	const selectModel = useCallback(
+		(modelId: string) => {
+			onChange(modelId);
+			setOpen(false);
+			setSearch("");
+		},
+		[onChange],
+	);
+
+	const moveHighlight = useCallback(
+		(delta: number) => {
+			setHighlightedIndex((i) =>
+				visibleModels.length > 0
+					? (i + delta + visibleModels.length) % visibleModels.length
+					: 0,
+			);
+		},
+		[visibleModels.length],
+	);
+
+	useEffect(() => {
+		if (!open) return;
+		const handleKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				setOpen(false);
+				return;
+			}
+			if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Enter") {
+				return;
+			}
+			const target = e.target as Node;
+			if (!contentRef.current?.contains(target)) return;
+			e.preventDefault();
+			if (e.key === "ArrowDown") {
+				moveHighlight(1);
+			} else if (e.key === "ArrowUp") {
+				moveHighlight(-1);
+			} else {
+				const model = visibleModels[highlightedIndex];
+				if (model) {
+					selectModel(model.id);
+				}
+			}
+		};
+		window.addEventListener("keydown", handleKey);
+		return () => {
+			window.removeEventListener("keydown", handleKey);
+		};
+	}, [open, moveHighlight, visibleModels, highlightedIndex, selectModel]);
 
 	useLayoutEffect(() => {
 		if (contentRef.current && showPortal) {
@@ -138,27 +345,6 @@ export function ModelPicker({
 			setMeasuredHeight(Math.min(height, 380));
 		}
 	}, [showPortal, selectedProvider]);
-
-	useEffect(() => {
-		if (open) {
-			setShowPortal(true);
-		} else {
-			setMeasuredHeight(0);
-			const timeout = setTimeout(() => setShowPortal(false), 400);
-			return () => clearTimeout(timeout);
-		}
-	}, [open]);
-
-	const activeModel =
-		currentModel ??
-		defaultModel ??
-		availableModels[0]?.id ??
-		AVAILABLE_MODELS[0].id;
-	const activeModelInfo = availableModels.find((m) => m.id === activeModel);
-	const activeName =
-		activeModelInfo?.name ?? getCoachModelDisplayName(activeModel);
-	const activeProvider =
-		activeModelInfo?.provider ?? getModelProvider(activeModel);
 
 	return (
 		<div ref={containerRef} className="relative">
@@ -223,114 +409,59 @@ export function ModelPicker({
 							<div className="flex items-center gap-2 px-3 py-2 border-b border-[rgba(139,92,246,0.1)]">
 								<Search className="w-3.5 h-3.5 shrink-0 text-[#64748b]" />
 								<input
+									ref={searchInputRef}
 									type="text"
 									value={search}
-									onChange={(e) => setSearch(e.target.value)}
+									onChange={(e) => {
+										setSearch(e.target.value);
+										setHighlightedIndex(0);
+									}}
 									placeholder="Search models..."
 									className="flex-1 bg-transparent text-xs text-[#f1f5f9] placeholder-[#4a4468] outline-none"
 								/>
 							</div>
 							{search ? (
-								(() => {
-									const q = search.toLowerCase();
-									const results = availableModels.filter((m) =>
-										m.name.toLowerCase().includes(q),
-									);
-									return (
-										<div className="flex-1 py-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/20 hover:[&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/35">
-											{results.length === 0 ? (
-												<p className="px-3 py-4 text-xs text-[#64748b] text-center">
-													No models found.
-												</p>
-											) : (
-												results.map((model) => (
-													<div
-														key={model.id}
-														className={`flex items-center gap-1.5 pr-1.5 ${
-															model.id === activeModel ? "bg-[#8b5cf6]/15" : ""
-														}`}
-													>
-														<button
-															type="button"
-															onClick={() => {
-																onChange(model.id);
-																setOpen(false);
-																setSearch("");
-															}}
-															className={`flex-1 flex items-center gap-2.5 px-3 py-2 text-xs transition-colors cursor-pointer ${
-																model.id === activeModel
-																	? "text-[#e2d9f3]"
-																	: "text-[#c4b5fd] hover:bg-[#8b5cf6]/15"
-															}`}
-															role="menuitem"
-														>
-															<span className="flex-1 text-left truncate flex items-center gap-1.5">
-																{providerIcons[model.provider]}
-																{model.name}
-															</span>
-														</button>
-														<button
-															type="button"
-															onClick={(e) => {
-																e.stopPropagation();
-																onToggleFavorite(model.id);
-															}}
-															className={`shrink-0 p-0.5 rounded transition-colors cursor-pointer ${
-																favorites.includes(model.id)
-																	? "text-[#eab308] hover:text-[#fbbf24]"
-																	: "text-[#475569] hover:text-[#eab308]"
-															}`}
-															title={
-																favorites.includes(model.id)
-																	? "Remove from favorites"
-																	: "Add to favorites"
-															}
-														>
-															<Star
-																className="w-3.5 h-3.5"
-																fill={
-																	favorites.includes(model.id)
-																		? "currentColor"
-																		: "none"
-																}
-															/>
-														</button>
-													</div>
-												))
-											)}
-										</div>
-									);
-								})()
+								<div className={LIST_SCROLL_CLASSES}>
+									{visibleModels.length === 0 ? (
+										<p className="px-3 py-4 text-xs text-[#64748b] text-center">
+											No models found.
+										</p>
+									) : (
+										visibleModels.map((model, index) => (
+											<ModelRow
+												key={model.id}
+												model={model}
+												index={index}
+												highlightedIndex={highlightedIndex}
+												activeModel={activeModel}
+												showProviderIcon
+												favorites={favorites}
+												onHighlight={setHighlightedIndex}
+												onSelect={selectModel}
+												onToggleFavorite={onToggleFavorite}
+											/>
+										))
+									)}
+								</div>
 							) : (
 								<div className="flex flex-1 min-h-0">
 									{(() => {
-										const groups = new Map<string, ModelEntry[]>();
-										for (const model of availableModels) {
-											const arr = groups.get(model.provider);
-											if (arr) {
-												arr.push(model);
-											} else {
-												groups.set(model.provider, [model]);
-											}
-										}
-
-										const providers = Array.from(groups.keys());
+										const providers = Array.from(groupedByProvider.keys());
 										const effectiveProvider =
 											selectedProvider ?? activeProvider ?? providers[0];
 										const isFavorites = effectiveProvider === FAVORITES_GROUP;
-										const visibleModels = isFavorites
-											? availableModels.filter((m) => favorites.includes(m.id))
-											: (groups.get(effectiveProvider) ?? []);
+										const hasFavorites = favorites.length > 0;
 
 										return (
 											<>
 												<div className="flex flex-col border-r border-[rgba(139,92,246,0.1)] py-2">
-													{favorites.length > 0 && (
+													{hasFavorites && (
 														<button
 															type="button"
-															onClick={() =>
-																setSelectedProvider(FAVORITES_GROUP)
-															}
+															onClick={() => {
+																setSelectedProvider(FAVORITES_GROUP);
+																setHighlightedIndex(0);
+															}}
 															className={`flex items-center justify-center w-10 h-10 mx-1 rounded-lg transition-colors cursor-pointer ${
 																isFavorites
 																	? "text-[#eab308] bg-[#eab308]/10"
@@ -348,7 +479,10 @@ export function ModelPicker({
 														<button
 															key={provider}
 															type="button"
-															onClick={() => setSelectedProvider(provider)}
+															onClick={() => {
+																setSelectedProvider(provider);
+																setHighlightedIndex(0);
+															}}
 															className={`flex items-center justify-center w-10 h-10 mx-1 rounded-lg transition-colors cursor-pointer ${
 																provider === effectiveProvider
 																	? "text-[#c4b5fd] bg-[#8b5cf6]/15"
@@ -360,7 +494,7 @@ export function ModelPicker({
 														</button>
 													))}
 												</div>
-												<div className="flex-1 py-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/20 hover:[&::-webkit-scrollbar-thumb]:bg-[#8b5cf6]/35">
+												<div className={LIST_SCROLL_CLASSES}>
 													{isFavorites ? (
 														<div className="px-3 py-1.5 text-[10px] font-semibold text-[#64748b] uppercase tracking-wider flex items-center gap-1.5">
 															<Star className="w-3 h-3" />
@@ -379,61 +513,19 @@ export function ModelPicker({
 															here.
 														</p>
 													) : (
-														visibleModels.map((model) => (
-															<div
+														visibleModels.map((model, index) => (
+															<ModelRow
 																key={model.id}
-																className={`flex items-center gap-1.5 pr-1.5 ${
-																	model.id === activeModel
-																		? "bg-[#8b5cf6]/15"
-																		: ""
-																}`}
-															>
-																<button
-																	type="button"
-																	onClick={() => {
-																		onChange(model.id);
-																		setOpen(false);
-																	}}
-																	className={`flex-1 flex items-center gap-2.5 px-3 py-2 text-xs transition-colors cursor-pointer ${
-																		model.id === activeModel
-																			? "text-[#e2d9f3]"
-																			: "text-[#c4b5fd] hover:bg-[#8b5cf6]/15"
-																	}`}
-																	role="menuitem"
-																>
-																	<span className="flex-1 text-left truncate flex items-center gap-1.5">
-																		{isFavorites &&
-																			providerIcons[model.provider]}
-																		{model.name}
-																	</span>
-																</button>
-																<button
-																	type="button"
-																	onClick={(e) => {
-																		e.stopPropagation();
-																		onToggleFavorite(model.id);
-																	}}
-																	className={`shrink-0 p-0.5 rounded transition-colors cursor-pointer ${
-																		favorites.includes(model.id)
-																			? "text-[#eab308] hover:text-[#fbbf24]"
-																			: "text-[#475569] hover:text-[#eab308]"
-																	}`}
-																	title={
-																		favorites.includes(model.id)
-																			? "Remove from favorites"
-																			: "Add to favorites"
-																	}
-																>
-																	<Star
-																		className="w-3.5 h-3.5"
-																		fill={
-																			favorites.includes(model.id)
-																				? "currentColor"
-																				: "none"
-																		}
-																	/>
-																</button>
-															</div>
+																model={model}
+																index={index}
+																highlightedIndex={highlightedIndex}
+																activeModel={activeModel}
+																showProviderIcon={isFavorites}
+																favorites={favorites}
+																onHighlight={setHighlightedIndex}
+																onSelect={selectModel}
+																onToggleFavorite={onToggleFavorite}
+															/>
 														))
 													)}
 												</div>
