@@ -31,6 +31,11 @@ import {
 	resolveThreadModel,
 	sanitizeMessagesForModel,
 } from "../lib/providerConfig.js";
+import {
+	hydrateAttachmentSources,
+	stripImageParts,
+} from "../lib/attachmentPayload.js";
+import { isKnownTextOnlyModel } from "@fit-analyzer/shared";
 import { messageRepo, serializeToolCalls } from "../lib/messageRepo.js";
 import { threadRepo } from "../lib/threadRepo.js";
 import { getToolDefinitions } from "../lib/tools/registry.js";
@@ -406,9 +411,6 @@ trainer.post("/chat", async (c) => {
 	}
 	const body: TrainerChatRequestBody = await c.req.json();
 	const streamId = getStringBodyValue(body.streamId) ?? crypto.randomUUID();
-	const modelMessages = convertMessagesToModelMessages(
-		sanitizeMessagesForModel(body.messages ?? []),
-	);
 
 	const threadId = getStringBodyValue(body.threadId);
 	const thread = threadId ? threadRepo.getById(userId, threadId) : null;
@@ -420,6 +422,19 @@ trainer.post("/chat", async (c) => {
 			{ error: `${providerConfig.apiKeyEnvName} is not configured` },
 			500,
 		);
+	}
+
+	// Attachment travel rule (ADR-0001 + apps/server/CONTEXT.md): resolve
+	// attachment URL refs to inline base64 so providers receive bytes they
+	// can't fetch (the attachment endpoint is auth-gated). For known
+	// text-only models, strip image parts entirely — the user still sees
+	// them (persisted refs + UI chip), the provider never does.
+	let modelMessages = convertMessagesToModelMessages(
+		sanitizeMessagesForModel(body.messages ?? []),
+	);
+	modelMessages = hydrateAttachmentSources(modelMessages, db, userId);
+	if (isKnownTextOnlyModel(model) === true) {
+		modelMessages = stripImageParts(modelMessages);
 	}
 
 	if (hasActiveTrainerStream(streamId)) {

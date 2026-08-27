@@ -2,8 +2,8 @@ import { Database } from "bun:sqlite";
 
 /**
  * Create an in-memory SQLite database with the trainer_chats, trainer_messages,
- * athlete_zones, and profile_changes schema. Used by repo tests so they never
- * touch disk.
+ * trainer_attachments, athlete_zones, and profile_changes schema. Used by repo
+ * tests so they never touch disk.
  */
 export function createTestDb(): Database {
 	const database = new Database(":memory:");
@@ -25,12 +25,27 @@ export function createTestDb(): Database {
 			role TEXT NOT NULL,
 			content TEXT NOT NULL,
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
-			tool_calls TEXT
+			tool_calls TEXT,
+			attachments TEXT
 		);
 		CREATE INDEX idx_trainer_messages_chat_id
 			ON trainer_messages(chat_id);
 		CREATE INDEX idx_trainer_messages_chat_created
 			ON trainer_messages(chat_id, created_at, id);
+		CREATE TABLE trainer_attachments (
+			id         TEXT PRIMARY KEY,
+			user_id    TEXT NOT NULL,
+			kind       TEXT NOT NULL,
+			name       TEXT NOT NULL,
+			media_type TEXT NOT NULL,
+			bytes      INTEGER NOT NULL,
+			width      INTEGER NOT NULL,
+			height     INTEGER NOT NULL,
+			data       BLOB NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+		CREATE INDEX idx_trainer_attachments_user
+			ON trainer_attachments(user_id);
 		CREATE TABLE athlete_zones (
 			user_id TEXT PRIMARY KEY,
 			power_zones_override TEXT,

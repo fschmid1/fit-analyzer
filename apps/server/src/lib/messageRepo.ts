@@ -1,6 +1,15 @@
-import type { TrainerMessage, UIToolCall } from "@fit-analyzer/shared";
+import type {
+	TrainerAttachmentRef,
+	TrainerMessage,
+	UIToolCall,
+} from "@fit-analyzer/shared";
 import type { Database } from "bun:sqlite";
 import { db } from "../db.js";
+import {
+	createAttachmentRepo,
+	parseAttachmentRefs,
+	serializeAttachmentRefs,
+} from "./attachmentRepo.js";
 
 // ─── Row shapes ───────────────────────────────────────────────────────────────
 
@@ -10,6 +19,7 @@ interface MessageRow {
 	content: string;
 	createdAt: string;
 	toolCalls: unknown;
+	attachments: unknown;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -33,6 +43,8 @@ export function serializeToolCalls(
 	return JSON.stringify(toolCalls);
 }
 
+export { serializeAttachmentRefs };
+
 function rowToTrainerMessage(row: MessageRow): TrainerMessage {
 	const msg: TrainerMessage = {
 		id: row.id,
@@ -43,6 +55,10 @@ function rowToTrainerMessage(row: MessageRow): TrainerMessage {
 	const toolCalls = parseToolCalls(row.toolCalls);
 	if (toolCalls && toolCalls.length > 0) {
 		msg.toolCalls = toolCalls;
+	}
+	const attachments = parseAttachmentRefs(row.attachments);
+	if (attachments && attachments.length > 0) {
+		msg.attachments = attachments;
 	}
 	return msg;
 }
@@ -71,14 +87,14 @@ export type MessageRepo = ReturnType<typeof createMessageRepo>;
  */
 export function createMessageRepo(database: Database) {
 	const getAllStmt = database.prepare(
-		`SELECT id, role, content, created_at as createdAt, tool_calls as toolCalls
+		`SELECT id, role, content, created_at as createdAt, tool_calls as toolCalls, attachments
 	      FROM trainer_messages
 	      WHERE chat_id = ?
 	      ORDER BY created_at ASC, id ASC`,
 	);
 
 	const getPageStmt = database.prepare(
-		`SELECT id, role, content, created_at as createdAt, tool_calls as toolCalls
+		`SELECT id, role, content, created_at as createdAt, tool_calls as toolCalls, attachments
 	      FROM trainer_messages
 	      WHERE chat_id = ?
 	        AND (created_at < ? OR (created_at = ? AND id < ?))
@@ -87,7 +103,7 @@ export function createMessageRepo(database: Database) {
 	);
 
 	const getLatestStmt = database.prepare(
-		`SELECT id, role, content, created_at as createdAt, tool_calls as toolCalls
+		`SELECT id, role, content, created_at as createdAt, tool_calls as toolCalls, attachments
 	      FROM trainer_messages
 	      WHERE chat_id = ?
 	      ORDER BY created_at DESC, id DESC
@@ -103,8 +119,8 @@ export function createMessageRepo(database: Database) {
 	);
 
 	const insertStmt = database.prepare(
-		`INSERT INTO trainer_messages (id, chat_id, role, content, created_at, tool_calls)
-	      VALUES (?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO trainer_messages (id, chat_id, role, content, created_at, tool_calls, attachments)
+	      VALUES (?, ?, ?, ?, ?, ?, ?)`,
 	);
 
 	// Bump the parent thread's updated_at inside the replace transaction.
@@ -169,9 +185,11 @@ export function createMessageRepo(database: Database) {
 		/**
 		 * Replace all messages for a thread with `messages` in a single
 		 * transaction: deletes existing rows, bumps the thread's `updated_at`,
-		 * then inserts the new rows.
+		 * inserts the new rows, then runs attachment GC so blobs whose last
+		 * reference disappeared are removed in the same commit.
 		 */
 		replaceAll(threadId: string, messages: TrainerMessage[]): void {
+			const attachments = createAttachmentRepo(database);
 			database.transaction(() => {
 				deleteAllStmt.run(threadId);
 				touchThreadStmt.run(threadId);
@@ -183,15 +201,18 @@ export function createMessageRepo(database: Database) {
 						m.content,
 						m.createdAt,
 						serializeToolCalls(m.toolCalls),
+						serializeAttachmentRefs(m.attachments),
 					);
 				}
+				attachments.deleteUnreferenced();
 			})();
 		},
 
 		/**
 		 * Insert many messages for a thread in a single transaction. Used by
 		 * compaction forks and imports where the thread row is created
-		 * separately by the caller.
+		 * separately by the caller. Does not run GC: the fork shares blob
+		 * rows with the source thread by reference.
 		 */
 		insertMany(threadId: string, messages: TrainerMessage[]): void {
 			database.transaction(() => {
@@ -203,6 +224,7 @@ export function createMessageRepo(database: Database) {
 						m.content,
 						m.createdAt,
 						serializeToolCalls(m.toolCalls),
+						serializeAttachmentRefs(m.attachments),
 					);
 				}
 			})();

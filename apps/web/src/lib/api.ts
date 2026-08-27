@@ -18,6 +18,7 @@ import {
 	type StravaClubEvent,
 	type StoredRecord,
 	type ToolStreamChunk,
+	type TrainerAttachment,
 	type TrainerChatHistory,
 	type TrainerMessage,
 	type TrainerThread,
@@ -807,6 +808,35 @@ export async function fetchAvailableModels(): Promise<ModelEntry[]> {
 	if (!res.ok) return [...AVAILABLE_MODELS];
 	const data = (await res.json()) as { models?: ModelEntry[] };
 	return data.models ?? [...AVAILABLE_MODELS];
+}
+
+export async function uploadTrainerAttachment(
+	file: Blob,
+	name: string,
+	width: number,
+	height: number,
+	mediaType: string,
+	signal?: AbortSignal,
+): Promise<TrainerAttachment> {
+	const form = new FormData();
+	form.append("file", file, name || "image");
+	form.append("width", String(Math.round(width)));
+	form.append("height", String(Math.round(height)));
+	const res = await fetch(`${API_BASE}/trainer/attachments`, {
+		method: "POST",
+		body: form,
+		signal,
+	});
+	if (!res.ok) {
+		const err = (await res.json().catch(() => ({}))) as { error?: string };
+		throw new Error(err.error ?? `Upload failed (${res.status})`);
+	}
+	const data = (await res.json()) as { attachment: TrainerAttachment };
+	return data.attachment;
+}
+
+export function trainerAttachmentUrl(id: string): string {
+	return `${API_BASE}/trainer/attachments/${id}`;
 }
 
 export async function importTrainerChat(

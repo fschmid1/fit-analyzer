@@ -2,6 +2,7 @@ import type { TrainerThread } from "@fit-analyzer/shared";
 import { APPROX_CHARS_PER_TOKEN } from "@fit-analyzer/shared";
 import type { Database } from "bun:sqlite";
 import { db } from "../db.js";
+import { createAttachmentRepo } from "./attachmentRepo.js";
 
 // ─── Row shapes ───────────────────────────────────────────────────────────────
 
@@ -177,9 +178,12 @@ export function createThreadRepo(database: Database) {
 
 		/** Delete a thread and all of its messages, in a transaction. */
 		delete(userId: string, threadId: string): void {
+			const attachments = createAttachmentRepo(database);
 			database.transaction(() => {
 				deleteMessagesStmt.run(threadId);
 				deleteStmt.run(threadId, userId);
+				// GC attachments that no message references anymore.
+				attachments.deleteUnreferenced();
 			})();
 		},
 

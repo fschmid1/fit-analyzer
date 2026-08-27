@@ -299,9 +299,31 @@ export interface HeatmapResponse {
 // Approximate characters per token used for quick context-size budgeting.
 export const APPROX_CHARS_PER_TOKEN = 4;
 
+/** Rough token cost of one image attachment in a provider payload. */
+export const APPROX_TOKENS_PER_IMAGE = 1000;
+
 /** Estimate the number of tokens in a text string using a simple heuristic. */
 export function estimateContextTokens(text: string): number {
 	return Math.ceil(text.length / APPROX_CHARS_PER_TOKEN);
+}
+
+/** The kinds of attachments a trainer chat message may reference. */
+export type TrainerAttachmentKind = "image";
+
+/**
+ * A lightweight reference from a chat message to an attachment.
+ * Never carries the bytes — those live server-side (see ADR-0001).
+ */
+export interface TrainerAttachmentRef {
+	id: string;
+	kind: TrainerAttachmentKind;
+	name: string;
+	/** Byte size of the stored attachment. */
+	bytes: number;
+	/** Pixel dimensions, for aspect-ratio-safe rendering before load. */
+	width: number;
+	height: number;
+	mediaType: string;
 }
 
 /** A single persisted trainer chat message */
@@ -312,6 +334,8 @@ export interface TrainerMessage {
 	createdAt: string; // ISO-8601
 	/** Tool calls attached to this message (only present for assistant messages with tool usage) */
 	toolCalls?: UIToolCall[];
+	/** Attachment refs on this message (only user messages carry these) */
+	attachments?: TrainerAttachmentRef[];
 }
 
 /** A thread (conversation) within a trainer chat for an activity */
@@ -338,6 +362,17 @@ export interface TrainerChatHistory {
 	hasMore: boolean;
 	/** Total number of messages persisted for the thread (useful to detect partial windows). */
 	total: number;
+}
+
+/** Body returned by POST /api/trainer/attachments */
+export interface TrainerAttachment {
+	id: string;
+	kind: TrainerAttachmentKind;
+	name: string;
+	bytes: number;
+	width: number;
+	height: number;
+	mediaType: string;
 }
 
 /** PUT body for saving chat history */

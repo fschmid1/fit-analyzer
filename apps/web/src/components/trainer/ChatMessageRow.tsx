@@ -2,17 +2,21 @@ import { memo } from "react";
 import type { UIMessage } from "@tanstack/ai-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { EyeOff } from "lucide-react";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { DotsLoader } from "./DotsLoader";
 import { MessageActions } from "./MessageActions";
 import { ToolCallCard } from "./ToolCallCard";
+import { AttachmentGrid } from "./AttachmentGrid";
 import {
+	getAttachmentRefs,
 	getTextContent,
 	getThinkingContent,
 	getToolCallsFromParts,
 	formatTime,
 } from "./trainerHelpers";
-import type { UIToolCall } from "@fit-analyzer/shared";
+import type { TrainerAttachmentRef, UIToolCall } from "@fit-analyzer/shared";
+import { trainerAttachmentUrl } from "../../lib/api";
 import { mdComponents } from "./markdownComponents";
 
 interface ChatMessageRowProps {
@@ -23,6 +27,9 @@ interface ChatMessageRowProps {
 	externalToolCalls?: UIToolCall[];
 	onDelete: (messageId: string) => void;
 	onRetry: (msgIndex: number) => void;
+	/** When false, the thread's model can't see images — show a chip. */
+	attachmentsBlindToModel?: boolean;
+	onOpenAttachment?: (refs: TrainerAttachmentRef[], index: number) => void;
 }
 
 function ChatMessageRowInner({
@@ -32,6 +39,8 @@ function ChatMessageRowInner({
 	externalToolCalls,
 	onDelete,
 	onRetry,
+	attachmentsBlindToModel,
+	onOpenAttachment,
 }: ChatMessageRowProps) {
 	const isUser = msg.role === "user";
 	const text = getTextContent(msg);
@@ -44,12 +53,25 @@ function ChatMessageRowInner({
 	const toolCalls = toolCallsFromParts.map(
 		(tc) => externalById.get(tc.id) ?? tc,
 	);
+	const attachments = getAttachmentRefs(msg);
 
 	if (isUser) {
-		if (!text) return null;
+		if (!text && attachments.length === 0) return null;
 		return (
 			<div className="flex flex-col items-end gap-1">
 				<div className="min-w-0 max-w-[calc(100%-1rem)] overflow-hidden rounded-lg px-3 py-2.5 text-sm leading-relaxed break-words bg-[#8b5cf6]/20 border border-[#8b5cf6]/30 text-[#e2d9f3] whitespace-pre-wrap [overflow-wrap:anywhere] sm:max-w-[80%] sm:px-4 sm:py-3 sm:text-base">
+					{attachments.length > 0 && (
+						<AttachmentGrid
+							attachments={attachments}
+							onOpen={onOpenAttachment}
+						/>
+					)}
+					{attachmentsBlindToModel && attachments.length > 0 && (
+						<div className="flex items-center gap-1 mt-1.5 mb-1 text-[11px] text-amber-400/80">
+							<EyeOff className="w-3 h-3" />
+							<span>Not visible to this model</span>
+						</div>
+					)}
 					{text}
 				</div>
 				<div className="flex items-center gap-2 pr-1">

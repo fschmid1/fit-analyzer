@@ -171,6 +171,33 @@ try {
 	/* column already exists */
 }
 
+// Trainer chat attachments (ADR-0001): metadata row + image bytes in SQLite.
+// `data` is a BLOB; referenced by trainer_messages via JSON ref lists.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS trainer_attachments (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    media_type TEXT NOT NULL,
+    bytes      INTEGER NOT NULL,
+    width      INTEGER NOT NULL,
+    height     INTEGER NOT NULL,
+    data       BLOB NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_trainer_attachments_user
+    ON trainer_attachments(user_id);
+`);
+
+// Migration: add attachments column to trainer_messages (JSON array of
+// TrainerAttachmentRef — ids only, never the bytes).
+try {
+	db.exec("ALTER TABLE trainer_messages ADD COLUMN attachments TEXT");
+} catch {
+	/* column already exists */
+}
+
 // OAuth2 CSRF state store — shared by Strava and Wahoo flows.
 // Replaces the previous in-memory `pendingStates` Maps, which were lost on
 // every server restart and aborted any user mid-OAuth. Persisting states in

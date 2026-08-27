@@ -2,10 +2,15 @@ import type { UIMessage } from "@tanstack/ai-react";
 import type { StreamChunk } from "@tanstack/ai";
 import type {
 	ToolStreamChunk,
+	TrainerAttachmentRef,
 	TrainerMessage,
 	UIToolCall,
 } from "@fit-analyzer/shared";
-import { estimateContextTokens } from "@fit-analyzer/shared";
+import {
+	APPROX_TOKENS_PER_IMAGE,
+	estimateContextTokens,
+} from "@fit-analyzer/shared";
+import { trainerAttachmentUrl } from "../../lib/api";
 import { randomUUID } from "../../lib/randomUUID";
 
 export function getTextContent(msg: UIMessage): string {
@@ -160,6 +165,20 @@ export function toUIMessage(m: TrainerMessage): UIMessage {
 	const parts: UIMessage["parts"] = [
 		{ type: "text" as const, content: m.content },
 	];
+	if (m.attachments && m.attachments.length > 0) {
+		for (const a of m.attachments) {
+			parts.push({
+				type: "image" as const,
+				source: {
+					type: "url" as const,
+					value: trainerAttachmentUrl(a.id),
+				},
+				// Stash the ref on the part so toTrainerMessage can recover it
+				// without re-fetching; tanstack passes `metadata` through.
+				metadata: { attachment: a },
+			} as UIMessage["parts"][number]);
+		}
+	}
 	if (m.toolCalls && m.toolCalls.length > 0) {
 		for (const tc of m.toolCalls) {
 			parts.push({
@@ -193,8 +212,21 @@ export function toUIMessage(m: TrainerMessage): UIMessage {
 	};
 }
 
+/** Extract attachment refs from a UIMessage's image parts (metadata stashed by toUIMessage). */
+export function getAttachmentRefs(msg: UIMessage): TrainerAttachmentRef[] {
+	const refs: TrainerAttachmentRef[] = [];
+	for (const part of msg.parts) {
+		if (part.type !== "image") continue;
+		const meta = (part as { metadata?: { attachment?: TrainerAttachmentRef } })
+			.metadata;
+		if (meta?.attachment) refs.push(meta.attachment);
+	}
+	return refs;
+}
+
 export function toTrainerMessage(m: UIMessage): TrainerMessage {
 	const toolCalls = getToolCallsFromParts(m);
+	const attachments = getAttachmentRefs(m);
 	const msg: TrainerMessage = {
 		id: m.id,
 		role: m.role as "user" | "assistant",
@@ -204,7 +236,19 @@ export function toTrainerMessage(m: UIMessage): TrainerMessage {
 	if (toolCalls.length > 0) {
 		msg.toolCalls = toolCalls;
 	}
+	if (attachments.length > 0) {
+		msg.attachments = attachments;
+	}
 	return msg;
+}
+
+/** True for a message worth persisting: has text, attachments, or tool calls. */
+export function isPersistableTrainerMessage(m: TrainerMessage): boolean {
+	return (
+		!!m.content ||
+		(m.attachments != null && m.attachments.length > 0) ||
+		(m.role === "assistant" && m.toolCalls != null && m.toolCalls.length > 0)
+	);
 }
 
 export function reconstructToolCalls(messages: TrainerMessage[]): UIToolCall[] {
@@ -228,6 +272,9 @@ export function reconstructToolCalls(messages: TrainerMessage[]): UIToolCall[] {
 export function countContextTokens(messages: TrainerMessage[]): number {
 	return messages.reduce((sum, m) => {
 		let tokens = estimateContextTokens(m.content);
+		if (m.attachments && m.attachments.length > 0) {
+			tokens += m.attachments.length * APPROX_TOKENS_PER_IMAGE;
+		}
 		if (m.toolCalls) {
 			for (const tc of m.toolCalls) {
 				tokens += estimateContextTokens(tc.name);

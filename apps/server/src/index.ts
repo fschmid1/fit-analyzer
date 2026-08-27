@@ -3,6 +3,7 @@ import { serveStatic } from "hono/bun";
 import { logger } from "hono/logger";
 import { env } from "./env.js";
 import { activities } from "./routes/activities.js";
+import { attachments } from "./routes/attachments.js";
 import { health } from "./routes/health.js";
 import { healthAutoExport } from "./routes/healthAutoExport.js";
 import { heatmap } from "./routes/heatmap.js";
@@ -21,6 +22,7 @@ app.use("*", logger());
 
 // API routes
 app.route("/api/activities", activities);
+app.route("/api/trainer/attachments", attachments);
 app.route("/api/health", health);
 app.route("/api/health-auto-export", healthAutoExport);
 app.route("/api/heatmap", heatmap);

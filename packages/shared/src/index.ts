@@ -18,6 +18,9 @@ export type {
 	UpdateFavoriteModelsBody,
 	TrainerMessage,
 	TrainerThread,
+	TrainerAttachment,
+	TrainerAttachmentKind,
+	TrainerAttachmentRef,
 	TrainerChatHistory,
 	SaveTrainerHistoryBody,
 	OpenwearablesSettings,
@@ -56,6 +59,7 @@ export type {
 
 export {
 	APPROX_CHARS_PER_TOKEN,
+	APPROX_TOKENS_PER_IMAGE,
 	estimateContextTokens,
 	PROFILE_CHANGE_SOURCE_LABELS,
 } from "./types.js";
@@ -64,6 +68,7 @@ export {
 	AVAILABLE_MODELS,
 	getCoachModelDisplayName,
 	getModelProvider,
+	isKnownTextOnlyModel,
 } from "./coachModels.js";
 export type { AvailableModelId, ModelEntry, Provider } from "./coachModels.js";
 

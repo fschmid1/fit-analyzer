@@ -39,6 +39,40 @@ function messageContentToString(
 	return text || null;
 }
 
+/**
+ * Attachment travel rule (see apps/server/CONTEXT.md): image parts ride with
+ * their message as-is. Ollama wants text plus a parallel base64 `images`
+ * array (no data-URI prefix).
+ */
+function toOllamaContent(content: ModelMessage["content"]): {
+	text: string | null;
+	images: string[];
+} {
+	if (typeof content === "string") return { text: content, images: [] };
+	if (!Array.isArray(content)) return { text: null, images: [] };
+
+	const images: string[] = [];
+	const textParts: string[] = [];
+	for (const part of content) {
+		if (part.type === "text") {
+			textParts.push(part.content);
+		} else if (part.type === "image") {
+			const source = part.source as
+				| { type: string; value: string; mimeType?: string }
+				| undefined;
+			if (!source?.value) continue;
+			images.push(
+				source.type === "url" && source.value.startsWith("data:")
+					? source.value.slice(source.value.indexOf(",") + 1)
+					: source.value,
+			);
+		}
+	}
+
+	const text = textParts.length > 0 ? textParts.join("\n") : null;
+	return { text, images };
+}
+
 function toOllamaTool(tool: ToolDefinition) {
 	return {
 		type: "function" as const,
@@ -61,14 +95,19 @@ function parseToolCallArgs(args: unknown): unknown {
 	return args;
 }
 
-function toOllamaMessages(systemPrompt: string, messages: ModelMessage[]) {
+export function toOllamaMessages(
+	systemPrompt: string,
+	messages: ModelMessage[],
+) {
 	const mapped = messages
 		.map((message) => {
-			const content = messageContentToString(message.content);
-			if (content == null && !message.toolCalls) return null;
+			const { text, images } = toOllamaContent(message.content);
+			if (text == null && !message.toolCalls && images.length === 0)
+				return null;
 			return {
 				role: message.role,
-				content: content ?? "",
+				content: text ?? "",
+				...(images.length > 0 ? { images } : {}),
 				...(message.toolCalls
 					? {
 							tool_calls: message.toolCalls.map((tc) => ({
@@ -85,10 +124,7 @@ function toOllamaMessages(systemPrompt: string, messages: ModelMessage[]) {
 					: {}),
 			};
 		})
-		.filter(
-			(message): message is { role: ModelMessage["role"]; content: string } =>
-				message !== null,
-		);
+		.filter((message) => message !== null);
 
 	return [{ role: "system", content: systemPrompt }, ...mapped];
 }

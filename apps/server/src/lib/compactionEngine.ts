@@ -1,5 +1,8 @@
 import type { TrainerMessage, UIToolCall } from "@fit-analyzer/shared";
-import { APPROX_CHARS_PER_TOKEN } from "@fit-analyzer/shared";
+import {
+	APPROX_CHARS_PER_TOKEN,
+	APPROX_TOKENS_PER_IMAGE,
+} from "@fit-analyzer/shared";
 
 // ─── Budget constants ─────────────────────────────────────────────────────────
 
@@ -164,6 +167,9 @@ export async function compactMessages(
 
 export function messageTokenLength(m: TrainerMessage): number {
 	let n = Math.ceil(m.content.length / APPROX_CHARS_PER_TOKEN);
+	if (m.attachments && m.attachments.length > 0) {
+		n += m.attachments.length * APPROX_TOKENS_PER_IMAGE;
+	}
 	if (m.toolCalls && m.toolCalls.length > 0) {
 		for (const tc of m.toolCalls) {
 			n += Math.ceil(tc.name.length / APPROX_CHARS_PER_TOKEN);

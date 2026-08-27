@@ -2,17 +2,20 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useChat } from "@tanstack/ai-react";
 import type { UIMessage } from "@tanstack/ai-react";
-import type { StreamChunk } from "@tanstack/ai";
+import type { MultimodalContent } from "@tanstack/ai-client";
+import type { StreamChunk, ContentPart } from "@tanstack/ai";
 import type {
 	ToolStreamChunk,
 	UIToolCall,
 	ChartHighlight,
+	TrainerAttachmentRef,
 } from "@fit-analyzer/shared";
 import {
 	ArrowDown,
 	ArrowUp,
 	Loader2,
 	Menu,
+	Paperclip,
 	Send,
 	Square,
 	Upload,
@@ -21,13 +24,20 @@ import {
 	AVAILABLE_MODELS,
 	getCoachModelDisplayName,
 	getModelProvider,
+	isKnownTextOnlyModel,
 	type ModelEntry,
 } from "@fit-analyzer/shared";
 import {
 	fetchTrainerHistory,
 	importTrainerChat,
 	saveTrainerHistory,
+	trainerAttachmentUrl,
+	uploadTrainerAttachment,
 } from "../../lib/api";
+import {
+	MAX_ATTACHMENTS_PER_MESSAGE,
+	processAttachmentImage,
+} from "../../lib/attachmentUpload";
 import { createTrainerStreamConnection } from "../../lib/trainerStreamConnection";
 import {
 	clearActiveTrainerStream,
@@ -37,9 +47,16 @@ import {
 } from "../../lib/trainerStreamState";
 import { ModelPicker } from "./ModelPicker";
 import {
+	PendingAttachmentStrip,
+	type PendingAttachment,
+} from "./PendingAttachmentStrip";
+import { AttachmentLightbox } from "./AttachmentLightbox";
+import {
 	applyResumedChunk,
 	applyToolChunks,
+	getAttachmentRefs,
 	getTextContent,
+	isPersistableTrainerMessage,
 	isToolChunk,
 	patchMessagesWithToolCalls,
 	stripTrailingAssistant,
@@ -178,6 +195,7 @@ export function TrainerChat({
 	>("idle");
 	const [importError, setImportError] = useState<string | null>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
+	const imageInputRef = useRef<HTMLInputElement>(null);
 	const bottomRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const scrollRef = useRef<HTMLDivElement>(null);
@@ -186,6 +204,13 @@ export function TrainerChat({
 	const [confirmDeleteMessageId, setConfirmDeleteMessageId] = useState<
 		string | null
 	>(null);
+	const [pendingAttachments, setPendingAttachments] = useState<
+		PendingAttachment[]
+	>([]);
+	const [lightbox, setLightbox] = useState<{
+		refs: TrainerAttachmentRef[];
+		index: number;
+	} | null>(null);
 	// `useChat`'s `setMessages` doesn't support the updater form, so we
 	// track the latest messages in a ref for safe async merging.
 	const messagesRef = useRef<UIMessage[]>(messages);
@@ -209,6 +234,9 @@ export function TrainerChat({
 	const coachModelName =
 		availableModels.find((m) => m.id === activeModel)?.name ??
 		getCoachModelDisplayName(activeModel);
+	// Q13: chip only when the model is *known* text-only (static list). Ollama
+	// and unknown models → undefined → no chip (fail open to silence).
+	const attachmentsBlindToModel = isKnownTextOnlyModel(activeModel) === true;
 
 	useEffect(() => {
 		const activeStream = loadActiveTrainerStream(threadId);
@@ -252,6 +280,17 @@ export function TrainerChat({
 	}, [initialMessages, setMessages, threadId]);
 
 	const autoSentRef = useRef(false);
+	const pendingAttachmentsRef = useRef(pendingAttachments);
+	pendingAttachmentsRef.current = pendingAttachments;
+
+	// Revoke any pending attachment preview URLs on unmount.
+	useEffect(
+		() => () => {
+			for (const p of pendingAttachmentsRef.current)
+				URL.revokeObjectURL(p.previewUrl);
+		},
+		[],
+	);
 
 	useEffect(() => {
 		if (!autoSend || autoSentRef.current) return;
@@ -453,16 +492,119 @@ export function TrainerChat({
 		ensureFullHistory,
 	);
 
+	const hasPendingUploads = pendingAttachments.some(
+		(p) => p.status === "processing" || p.status === "uploading",
+	);
+	const readyAttachments = pendingAttachments.filter(
+		(p): p is PendingAttachment & { ref: TrainerAttachmentRef } =>
+			p.status === "ready" && p.ref != null,
+	);
+
+	const uploadOne = useCallback(async (entry: PendingAttachment) => {
+		setPendingAttachments((prev) =>
+			prev.map((p) => (p.id === entry.id ? { ...p, status: "uploading" } : p)),
+		);
+		try {
+			const processed = await processAttachmentImage(entry.file);
+			const ref = await uploadTrainerAttachment(
+				processed.blob,
+				entry.file.name,
+				processed.width,
+				processed.height,
+				processed.mediaType,
+			);
+			setPendingAttachments((prev) =>
+				prev.map((p) =>
+					p.id === entry.id ? { ...p, status: "ready", ref } : p,
+				),
+			);
+		} catch (err) {
+			setPendingAttachments((prev) =>
+				prev.map((p) =>
+					p.id === entry.id
+						? {
+								...p,
+								status: "error",
+								error: err instanceof Error ? err.message : "Upload failed",
+							}
+						: p,
+				),
+			);
+		}
+	}, []);
+
+	const startAttachmentFiles = useCallback(
+		(files: File[]) => {
+			const images = files.filter((f) => f.type.startsWith("image/"));
+			if (images.length === 0) return;
+			setPendingAttachments((prev) => {
+				const room = MAX_ATTACHMENTS_PER_MESSAGE - prev.length;
+				const toAdd = images.slice(0, Math.max(0, room));
+				const newEntries: PendingAttachment[] = toAdd.map((file) => ({
+					id: crypto.randomUUID(),
+					file,
+					previewUrl: URL.createObjectURL(file),
+					status: "processing",
+				}));
+				for (const entry of newEntries) {
+					void uploadOne(entry);
+				}
+				return [...prev, ...newEntries];
+			});
+		},
+		[uploadOne],
+	);
+
+	const removePending = useCallback((id: string) => {
+		setPendingAttachments((prev) => {
+			const removed = prev.find((p) => p.id === id);
+			if (removed) URL.revokeObjectURL(removed.previewUrl);
+			return prev.filter((p) => p.id !== id);
+		});
+	}, []);
+
+	const retryPending = useCallback(
+		(id: string) => {
+			const entry = pendingAttachments.find((p) => p.id === id);
+			if (entry) void uploadOne(entry);
+		},
+		[pendingAttachments, uploadOne],
+	);
+
 	const handleSend = useCallback(async () => {
 		const text = inputRef.current.trim();
-		if (!text || isLoading) return;
+		if (isLoading) return;
+		if (hasPendingUploads) return;
+		if (!text && readyAttachments.length === 0) return;
 		inputRef.current = "";
 		if (textareaRef.current) textareaRef.current.value = "";
 		setHasInput(false);
-		// Optimistic total so the next save recognises the new tail.
-		setTotalServerMessages((n) => n + 2);
-		await sendMessage(text);
-	}, [isLoading, sendMessage]);
+
+		if (readyAttachments.length > 0) {
+			const parts: ContentPart[] = [];
+			if (text) parts.push({ type: "text", content: text });
+			for (const p of readyAttachments) {
+				parts.push({
+					type: "image",
+					source: { type: "url", value: trainerAttachmentUrl(p.ref.id) },
+					metadata: { attachment: p.ref },
+				});
+			}
+			for (const p of pendingAttachments) URL.revokeObjectURL(p.previewUrl);
+			setPendingAttachments([]);
+			setTotalServerMessages((n) => n + 2);
+			await sendMessage({ content: parts });
+		} else {
+			setTotalServerMessages((n) => n + 2);
+			await sendMessage(text);
+		}
+	}, [
+		isLoading,
+		sendMessage,
+		hasPendingUploads,
+		readyAttachments,
+		pendingAttachments,
+	]);
 
 	const handleKeyDown = useCallback(
 		(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -487,7 +629,7 @@ export function TrainerChat({
 				const toSave = full
 					.filter((m) => m.role === "user" || m.role === "assistant")
 					.map(toTrainerMessage)
-					.filter((m) => m.content);
+					.filter(isPersistableTrainerMessage);
 				saveTrainerHistory(threadId, toSave).catch(console.error);
 			})();
 			clearTrainerDraft(threadId);
@@ -501,6 +643,17 @@ export function TrainerChat({
 		<div
 			className="flex-1 flex flex-col min-h-0 min-w-0"
 			style={{ touchAction: "manipulation" }}
+			onDragOver={(e) => {
+				if (e.dataTransfer?.types?.includes("Files")) {
+					e.preventDefault();
+				}
+			}}
+			onDrop={(e) => {
+				if (e.dataTransfer?.files?.length) {
+					e.preventDefault();
+					startAttachmentFiles(Array.from(e.dataTransfer.files));
+				}
+			}}
 		>
 			<input
 				ref={fileInputRef}
@@ -508,6 +661,18 @@ export function TrainerChat({
 				accept=".md,text/markdown,text/plain"
 				className="hidden"
 				onChange={handleFileChange}
+			/>
+			<input
+				ref={imageInputRef}
+				type="file"
+				accept="image/*"
+				multiple
+				className="hidden"
+				onChange={(e) => {
+					const files = e.target.files;
+					if (files) startAttachmentFiles(Array.from(files));
+					e.target.value = "";
+				}}
 			/>
 
 			{/* Sub-header */}
@@ -609,6 +774,27 @@ export function TrainerChat({
 
 						const handleRetry = async () => {
 							const msgText = getTextContent(msg);
+							const msgRefs = getAttachmentRefs(msg);
+							const buildContent = (
+								text: string,
+								refs: TrainerAttachmentRef[],
+							): string | MultimodalContent => {
+								if (refs.length === 0) return text;
+								const parts: ContentPart[] = [];
+								if (text) parts.push({ type: "text", content: text });
+								for (const r of refs) {
+									parts.push({
+										type: "image",
+										source: {
+											type: "url",
+											value: trainerAttachmentUrl(r.id),
+										},
+										metadata: { attachment: r },
+									});
+								}
+								return { content: parts };
+							};
+							const sendContent = buildContent(msgText, msgRefs);
 							if (msg.role === "user") {
 								if (isLoading) stop();
 								const truncated = messages.slice(0, msgIndex);
@@ -619,10 +805,10 @@ export function TrainerChat({
 								const toSave = full
 									.filter((m) => m.role === "user" || m.role === "assistant")
 									.map(toTrainerMessage)
-									.filter((m) => m.content);
+									.filter(isPersistableTrainerMessage);
 								saveTrainerHistory(threadId, toSave).catch(console.error);
 								setTotalServerMessages((n) => Math.max(0, n - 1));
-								await sendMessage(msgText);
+								await sendMessage(sendContent);
 								return;
 							}
 							const isLastAssistant =
@@ -638,6 +824,8 @@ export function TrainerChat({
 							if (lastUserIndex === -1) return;
 							const userMsg = messages[lastUserIndex];
 							const userText = getTextContent(userMsg);
+							const userRefs = getAttachmentRefs(userMsg);
+							const userContent = buildContent(userText, userRefs);
 							if (isLoading) stop();
 							const truncated = messages.slice(0, lastUserIndex);
 							setMessages(truncated);
@@ -647,10 +835,10 @@ export function TrainerChat({
 							const toSave = full
 								.filter((m) => m.role === "user" || m.role === "assistant")
 								.map(toTrainerMessage)
-								.filter((m) => m.content);
+								.filter(isPersistableTrainerMessage);
 							saveTrainerHistory(threadId, toSave).catch(console.error);
 							setTotalServerMessages((n) => Math.max(0, n - 1));
-							await sendMessage(userText);
+							await sendMessage(userContent);
 						};
 
 						return (
@@ -663,6 +851,8 @@ export function TrainerChat({
 								externalToolCalls={toolCalls}
 								onDelete={() => setConfirmDeleteMessageId(msg.id)}
 								onRetry={handleRetry}
+								attachmentsBlindToModel={attachmentsBlindToModel}
+								onOpenAttachment={(refs, i) => setLightbox({ refs, index: i })}
 							/>
 						);
 					})}
@@ -742,6 +932,11 @@ export function TrainerChat({
 			{/* Input bar */}
 			<div className="px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-6 sm:pb-6 sm:pt-3 border-t border-[rgba(139,92,246,0.1)] bg-[#0f0b1a] shrink-0">
 				<div className="flex flex-col gap-2 bg-[#1a1533]/60 border border-[rgba(139,92,246,0.15)] rounded-lg px-3 py-2.5 sm:px-4 sm:py-3">
+					<PendingAttachmentStrip
+						pending={pendingAttachments}
+						onRemove={removePending}
+						onRetry={retryPending}
+					/>
 					<textarea
 						ref={textareaRef}
 						defaultValue={initialInput}
@@ -751,12 +946,38 @@ export function TrainerChat({
 							if (next !== hasInput) setHasInput(next);
 						}}
 						onKeyDown={handleKeyDown}
+						onPaste={(e) => {
+							const files = Array.from(e.clipboardData?.files ?? []);
+							const images = files.filter((f) => f.type.startsWith("image/"));
+							if (images.length > 0) {
+								e.preventDefault();
+								startAttachmentFiles(images);
+							}
+						}}
 						placeholder="Ask your trainer..."
 						rows={1}
 						className="w-full resize-none bg-transparent text-base sm:text-sm text-[#f1f5f9] placeholder-[#4a4468] outline-none leading-relaxed"
 						style={{ maxHeight: "200px", fieldSizing: "content" }}
 					/>
 					<div className="flex items-center gap-2">
+						<button
+							type="button"
+							onClick={() => imageInputRef.current?.click()}
+							disabled={
+								isLoading ||
+								pendingAttachments.length >= MAX_ATTACHMENTS_PER_MESSAGE
+							}
+							title={
+								pendingAttachments.length >= MAX_ATTACHMENTS_PER_MESSAGE
+									? "Max 4 images per message"
+									: isLoading
+										? "Wait for the response to finish"
+										: "Attach images"
+							}
+							className="flex items-center justify-center w-8 h-8 rounded-lg bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 text-[#c4b5fd] transition-all duration-200 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+						>
+							<Paperclip className="w-4 h-4" />
+						</button>
 						<ModelPicker
 							currentModel={threadModel}
 							defaultModel={defaultModel}
@@ -782,17 +1003,32 @@ export function TrainerChat({
 								<button
 									type="button"
 									onClick={handleSend}
-									disabled={!hasInput}
-									title="Send message"
+									disabled={
+										(!hasInput && readyAttachments.length === 0) ||
+										hasPendingUploads
+									}
+									title={hasPendingUploads ? "Uploading…" : "Send message"}
 									className="flex items-center justify-center w-8 h-8 rounded-lg bg-[#8b5cf6]/20 hover:bg-[#8b5cf6]/30 border border-[#8b5cf6]/30 text-[#8b5cf6] transition-all duration-200 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
 								>
-									<Send className="w-3.5 h-3.5" />
+									{hasPendingUploads ? (
+										<Loader2 className="w-3.5 h-3.5 animate-spin" />
+									) : (
+										<Send className="w-3.5 h-3.5" />
+									)}
 								</button>
 							)}
 						</div>
 					</div>
 				</div>
 			</div>
+			{lightbox && (
+				<AttachmentLightbox
+					attachments={lightbox.refs}
+					index={lightbox.index}
+					onClose={() => setLightbox(null)}
+					onIndexChange={(index) => setLightbox({ ...lightbox, index })}
+				/>
+			)}
 		</div>
 	);
 }

@@ -46,6 +46,49 @@ function messageContentToString(
 	return text || null;
 }
 
+/**
+ * Attachment travel rule (see apps/server/CONTEXT.md): image parts ride with
+ * their message as-is. Map tanstack content parts to the OpenAI wire format;
+ * messages with no image parts stay plain strings so tool messages and
+ * legacy text keep their exact shape.
+ */
+function toOpenAiContent(
+	content: ModelMessage["content"],
+): string | Array<Record<string, unknown>> | null {
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return null;
+
+	const hasImage = content.some((part) => part.type === "image");
+	if (!hasImage) {
+		return messageContentToString(content);
+	}
+
+	return content.map((part) => {
+		if (part.type === "text") {
+			return { type: "text", text: part.content };
+		}
+		if (part.type === "image") {
+			const source = part.source as
+				| { type: string; value: string; mimeType?: string }
+				| undefined;
+			if (source?.type === "url") {
+				return {
+					type: "image_url",
+					image_url: { url: source.value },
+				};
+			}
+			return {
+				type: "image_url",
+				image_url: {
+					url: `data:${source?.mimeType ?? "image/jpeg"};base64,${source?.value ?? ""}`,
+				},
+			};
+		}
+		// Audio/video/document parts aren't produced by this app; degrade to text.
+		return { type: "text", text: "" };
+	});
+}
+
 function toOpenAiTool(tool: ToolDefinition) {
 	return {
 		type: "function" as const,
@@ -57,22 +100,22 @@ function toOpenAiTool(tool: ToolDefinition) {
 	};
 }
 
-function toOpenAiMessages(systemPrompt: string, messages: ModelMessage[]) {
+export function toOpenAiMessages(
+	systemPrompt: string,
+	messages: ModelMessage[],
+) {
 	const mapped = messages
 		.map((message) => {
-			const content = messageContentToString(message.content);
+			const content = toOpenAiContent(message.content);
 			if (content == null && !message.toolCalls) return null;
 			return {
 				role: message.role,
-				content: content ?? "",
+				content,
 				...(message.toolCalls ? { tool_calls: message.toolCalls } : {}),
 				...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
 			};
 		})
-		.filter(
-			(message): message is { role: ModelMessage["role"]; content: string } =>
-				message !== null,
-		);
+		.filter((message) => message !== null);
 
 	return [{ role: "system", content: systemPrompt }, ...mapped];
 }

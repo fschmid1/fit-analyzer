@@ -102,7 +102,14 @@ export function serializeCoachingMarkdown(
 	const body = messages
 		.map((m) => {
 			const heading = m.role === "user" ? "### User" : assistantLabel;
-			return `${heading}\n${m.content.trim()}`;
+			let block = m.content.trim();
+			if (m.role === "user" && m.attachments && m.attachments.length > 0) {
+				const links = m.attachments
+					.map((a) => `![${a.name}](/api/trainer/attachments/${a.id})`)
+					.join("\n");
+				block = block ? `${block}\n\n${links}` : links;
+			}
+			return `${heading}\n${block}`;
 		})
 		.join("\n---\n");
 

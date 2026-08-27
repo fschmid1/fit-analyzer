@@ -6,7 +6,11 @@ import {
 	clearTrainerDraft,
 	saveTrainerDraft,
 } from "../../lib/trainerStreamState";
-import { toTrainerMessage, patchMessagesWithToolCalls } from "./trainerHelpers";
+import {
+	isPersistableTrainerMessage,
+	patchMessagesWithToolCalls,
+	toTrainerMessage,
+} from "./trainerHelpers";
 
 type ChatStatus = "submitted" | "streaming" | "ready" | "error";
 
@@ -14,11 +18,7 @@ function persistable(messages: UIMessage[]): TrainerMessage[] {
 	return messages
 		.filter((m) => m.role === "user" || m.role === "assistant")
 		.map(toTrainerMessage)
-		.filter(
-			(m) =>
-				m.content ||
-				(m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0),
-		);
+		.filter(isPersistableTrainerMessage);
 }
 
 export function useTrainerHistoryPersist(
