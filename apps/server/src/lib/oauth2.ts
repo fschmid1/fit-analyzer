@@ -207,7 +207,12 @@ export class OAuth2Flow {
 		console.log(
 			`[${this.provider.name}] Token ${kind} completed in ${Date.now() - startedAt}ms with status ${res.status}`,
 		);
-		if (!res.ok) throw new Error(`Token ${kind} failed: ${res.status}`);
+		if (!res.ok) {
+			const body = await res.text().catch(() => "");
+			throw new Error(
+				`Token ${kind} failed: ${res.status}${body ? ` — ${body.slice(0, 300)}` : ""}`,
+			);
+		}
 		return res;
 	}
 }

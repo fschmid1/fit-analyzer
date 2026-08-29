@@ -115,6 +115,11 @@ export const googleProvider: OAuth2Provider = {
 		access_type: "offline",
 		prompt: "consent",
 	},
+	// Google validates the exchange redirect_uri against both the GCP console
+	// and the authorize request — it must be echoed here or the exchange 400s.
+	extraExchangeParams: {
+		redirect_uri: env.GOOGLE_REDIRECT_URI ?? "",
+	},
 	parseTokenResponse: (body) => {
 		const b = body as {
 			access_token: string;
