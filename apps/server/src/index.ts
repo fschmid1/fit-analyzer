@@ -11,6 +11,7 @@ import { me } from "./routes/me.js";
 import { strava } from "./routes/strava.js";
 import { trainer } from "./routes/trainer.js";
 import { wahoo } from "./routes/wahoo.js";
+import { google } from "./routes/google.js";
 import { initTools } from "./lib/tools/init.js";
 
 initTools();
@@ -28,6 +29,7 @@ app.route("/api/health-auto-export", healthAutoExport);
 app.route("/api/heatmap", heatmap);
 app.route("/api/me", me);
 app.route("/api/strava", strava);
+app.route("/api/google", google);
 app.route("/api/trainer", trainer);
 app.route("/api/wahoo", wahoo);
 

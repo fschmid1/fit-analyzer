@@ -215,6 +215,19 @@ db.exec(
 	"CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states(expires_at)",
 );
 
+// Provider-scoped callback metadata (e.g. the browser-captured training
+// timezone for the Google flow). Same TTL discipline as oauth_states.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS oauth_state_meta (
+    state      TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    value      TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (state, key)
+  )
+`);
+
 // Strava OAuth token storage
 db.exec(`
   CREATE TABLE IF NOT EXISTS strava_tokens (
@@ -238,6 +251,22 @@ db.exec(`
     expires_at     INTEGER NOT NULL,
     wahoo_user_id  INTEGER,
     scope          TEXT NOT NULL DEFAULT '',
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
+// Google OAuth token storage for the training calendar. calendar_id / tz are
+// denormalized here so calendar status only ever touches this table.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS google_tokens (
+    user_id        TEXT PRIMARY KEY,
+    access_token   TEXT NOT NULL,
+    refresh_token  TEXT NOT NULL,
+    expires_at     INTEGER NOT NULL,
+    scope          TEXT NOT NULL DEFAULT '',
+    calendar_id    TEXT,
+    tz             TEXT,
     created_at     TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
   )

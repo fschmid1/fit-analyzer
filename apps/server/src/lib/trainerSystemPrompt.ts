@@ -6,6 +6,7 @@ import {
 	computeAllTimeEstimates,
 } from "./athleteStats.js";
 import { getActivityById } from "./tools/activityUtils.js";
+import { getGoogleConnection } from "./googleCalendarConnection.js";
 import { getHaeHealthContext } from "./haeClient.js";
 import {
 	getOwBodySummary,
@@ -148,6 +149,18 @@ function formatBodyComposition(
 		? `${body.source.provider} (${body.source.device})`
 		: body.source.provider;
 	return `\n## Athlete Body Composition\nUse these baseline metrics when discussing training load, weight management, or aerobic capacity. Sourced from ${source}.\n${parts.join("\n")}\n`;
+}
+
+/**
+ * Tell the coach about the Training calendar connection when one exists, so
+ * it knows add_workouts_to_calendar will actually work and which timezone
+ * places workouts in the athlete's day.
+ */
+function formatCalendarContext(userId: string): string {
+	const connection = getGoogleConnection(userId);
+	if (!connection?.calendarId || !connection.tz) return "";
+
+	return `\n## Training Calendar\nThe athlete's Google Calendar is connected. A dedicated "Training" calendar exists for planned workouts; use add_workouts_to_calendar to push whole plans (always the complete forward plan — it upserts), and remove_workouts_from_calendar to clear entries. Workouts default to 17:00 when you omit a start time; infer better times from the athlete's activity history when it suggests one. The athlete's day is in the ${connection.tz} timezone.\n`;
 }
 
 function formatAthleteProfile(
@@ -311,6 +324,9 @@ export async function buildTrainerAthleteContext(
 
 	const profileText = formatAthleteProfile(profile);
 	if (profileText) sections.push(profileText);
+
+	const calendarText = formatCalendarContext(userId);
+	if (calendarText) sections.push(calendarText);
 
 	if (context) {
 		sections.push(formatHealthContext(context, sourceLabel));

@@ -5,6 +5,7 @@ import {
 	type AthleteProfile,
 	type CoachModelSettings,
 	type CompareSettings,
+	type GoogleCalendarStatus,
 	type HealthData,
 	type HealthHistoryEntry,
 	type HeatmapResponse,
@@ -23,6 +24,7 @@ import {
 	type TrainerMessage,
 	type TrainerThread,
 	type UpdateAthleteProfileBody,
+	type UpdateCalendarTimezoneBody,
 	type UpdateZoneOverridesBody,
 	type UIToolCall,
 	type WaxedChainReminderSettings,
@@ -698,6 +700,45 @@ export async function unregisterStravaWebhook(): Promise<void> {
 		const data = await res.json().catch(() => ({ error: "Failed" }));
 		throw new Error(
 			(data as { error?: string }).error ?? "Failed to remove webhook",
+		);
+	}
+}
+
+// ─── Google Calendar ──────────────────────────────────────────────────────────
+
+export async function fetchGoogleCalendarStatus(): Promise<GoogleCalendarStatus> {
+	const res = await fetch(`${API_BASE}/google/status`);
+	if (!res.ok)
+		return {
+			connected: false,
+			calendarId: null,
+			timezone: null,
+			calendarUrl: null,
+		};
+	return res.json();
+}
+
+/** Start the Calendar connection flow, carrying the browser-detected
+ * training timezone through to the callback. */
+export function connectGoogleCalendar(): void {
+	const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+	window.location.href = `${API_BASE}/google/connect?tz=${encodeURIComponent(timezone)}`;
+}
+
+export async function disconnectGoogleCalendar(): Promise<void> {
+	await fetch(`${API_BASE}/google/disconnect`, { method: "DELETE" });
+}
+
+export async function updateCalendarTimezone(timezone: string): Promise<void> {
+	const res = await fetch(`${API_BASE}/google/timezone`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ timezone } satisfies UpdateCalendarTimezoneBody),
+	});
+	if (!res.ok) {
+		const data = await res.json().catch(() => ({ error: "Failed" }));
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to update timezone",
 		);
 	}
 }

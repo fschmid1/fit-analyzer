@@ -1,5 +1,6 @@
 import { AthleteProfileSettings } from "../components/AthleteProfileSettings";
 import { CoachModelSettings } from "../components/CoachModelSettings";
+import { GoogleCalendarConnect } from "../components/GoogleCalendarConnect";
 import { HealthAutoExportSettings } from "../components/HealthAutoExportSettings";
 import { OpenwearablesSettings } from "../components/OpenwearablesSettings";
 import { ProfileChangelogCard } from "../components/ProfileChangelogCard";
@@ -30,6 +31,7 @@ export function SettingsPage({ onActivitiesChanged }: SettingsPageProps) {
 						</h3>
 						<StravaConnect onSynced={onActivitiesChanged} />
 						<WahooConnect onSynced={onActivitiesChanged} />
+						<GoogleCalendarConnect />
 						<OpenwearablesSettings />
 						<HealthAutoExportSettings />
 					</section>

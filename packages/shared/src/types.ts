@@ -494,6 +494,73 @@ export interface ChartHighlight {
 
 export type TrainerStreamChunk = ToolStreamChunk;
 
+// --- Training calendar types ---
+
+/** Connection status of the user's Google Calendar (Calendar connection). */
+export interface GoogleCalendarStatus {
+	connected: boolean;
+	/** The dedicated Training calendar id, once created. */
+	calendarId: string | null;
+	/** IANA training timezone carried by the Calendar connection. */
+	timezone: string | null;
+	/** Google Calendar web link to the Training calendar. */
+	calendarUrl: string | null;
+}
+
+/** One workout in a plan the coach emits for Plan sync. */
+export interface PlannedWorkout {
+	/** YYYY-MM-DD in the training timezone. */
+	date: string;
+	/** "HH:MM" wall time in the training timezone; omit for the default. */
+	startTime: string | null;
+	/** Session length in minutes. */
+	durationMinutes: number;
+	/** Short label, used as the event title. */
+	focus: string;
+	/** Optional longer notes shown in the event body. */
+	description: string | null;
+}
+
+/** One row in a Plan sync result, shown in the tool display. */
+export interface CalendarSyncRow {
+	date: string;
+	startTime: string;
+	focus: string;
+}
+
+/** Display payload for the add-workouts-to-calendar tool. */
+export interface CalendarSyncResult {
+	created: CalendarSyncRow[];
+	updated: CalendarSyncRow[];
+	/** Plan workouts left untouched because the user edited the event in Google. */
+	skipped: CalendarSyncRow[];
+	/** Plan workouts not scheduled because their start time already passed. */
+	notScheduled?: CalendarSyncRow[];
+	/** App events deleted because the new plan no longer contains them. */
+	deleted: number;
+	/** The deleted events themselves, for display. */
+	deletedRows?: CalendarSyncRow[];
+	/** App events not deleted because the user edited them. */
+	skippedEdits: number;
+	errors: string[];
+}
+
+/** Display payload for the remove-workouts-from-calendar tool. */
+export interface CalendarRemovalResult {
+	removed: CalendarSyncRow[];
+	/** App events not removed because the user edited them. */
+	skipped: number;
+	filters: {
+		fromDate: string | null;
+		toDate: string | null;
+		focus: string | null;
+	};
+}
+
+export interface UpdateCalendarTimezoneBody {
+	timezone: string;
+}
+
 // --- Athlete profile types ---
 
 export interface AthleteProfile {

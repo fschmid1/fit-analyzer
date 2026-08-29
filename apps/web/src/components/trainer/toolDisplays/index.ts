@@ -12,6 +12,10 @@ import { renderRideRecommendation } from "./renderRideRecommendation";
 import { renderHighlightChart } from "./renderHighlightChart";
 import { renderUpdateProfile } from "./renderUpdateProfile";
 import { renderSetZones, renderResetZones } from "./renderSetZones";
+import {
+	renderCalendarSync,
+	renderCalendarRemoval,
+} from "./renderCalendarSync";
 
 const TOOL_RENDERERS: Record<string, (display: unknown) => ReactNode | null> = {
 	training_load: renderTrainingLoad,
@@ -28,6 +32,8 @@ const TOOL_RENDERERS: Record<string, (display: unknown) => ReactNode | null> = {
 	update_profile: renderUpdateProfile,
 	set_zones: renderSetZones,
 	reset_zones: renderResetZones,
+	add_workouts_to_calendar: renderCalendarSync,
+	remove_workouts_from_calendar: renderCalendarRemoval,
 };
 
 export function renderToolDisplay(

@@ -17,3 +17,13 @@ _Avoid_: embed, inline image (in the message model)
 **Attachment travel rule**:
 When building a provider payload, attachments ride with the history slice as-is: every included message carries its own attachments, and compaction ages them out together with the text they belong to. There is no separate image window or replay policy.
 _Avoid_: image memory, re-sending images
+
+### Training calendar
+
+**Planned workout**:
+A future training session the coach prescribes: date, start time, duration, focus, and description. Distinct from an **Activity**, which is a recorded ride. Planned workouts exist as events on the training calendar; the app keeps no separate plan store.
+_Avoid_: scheduled ride, appointment, training plan (the plan as a whole)
+
+**Training timezone**:
+The IANA time zone that places planned workouts in the user's day. Captured when the Calendar connection is made; coach scheduling and Plan sync both use it.
+_Avoid_: locale, server time, UTC offset

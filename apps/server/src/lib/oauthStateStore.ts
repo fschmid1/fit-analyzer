@@ -72,3 +72,35 @@ function consume(provider: string, state: string): string | null {
 }
 
 export const oauthStateStore: OAuthStateStore = { create, consume };
+
+// ─── Provider-scoped callback metadata ────────────────────────────────────────
+
+/**
+ * Small side-channel for data the browser captures before the flow starts
+ * (e.g. the training timezone for Google) but the OAuth callback carries in a
+ * separate round-trip. Keyed by the state token, TTL'd like the states
+ * themselves, and consumed independently of the CSRF state.
+ */
+export function setOAuthStateMeta(
+	state: string,
+	key: string,
+	value: string,
+): void {
+	const now = Date.now();
+	db.prepare("DELETE FROM oauth_state_meta WHERE expires_at < ?").run(now);
+	db.prepare(
+		"INSERT OR REPLACE INTO oauth_state_meta (state, key, value, expires_at) VALUES (?, ?, ?, ?)",
+	).run(state, key, value, now + STATE_TTL_MS);
+}
+
+export function consumeOAuthStateMeta(
+	state: string,
+	key: string,
+): string | null {
+	const row = db
+		.prepare<{ value: string }, [string, string, number]>(
+			"DELETE FROM oauth_state_meta WHERE state = ? AND key = ? AND expires_at > ? RETURNING value",
+		)
+		.get(state, key, Date.now());
+	return row?.value ?? null;
+}
