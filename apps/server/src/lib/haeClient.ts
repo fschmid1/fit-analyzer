@@ -421,6 +421,9 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 					// after a mid-night awakening); collect them all, attributed to
 					// the wake date, instead of letting each entry overwrite the last.
 					const session = parseSleepEntry(entry);
+					console.log(
+						`[hae][sleep] raw entry: ${JSON.stringify(entry)} -> session: ${session ? JSON.stringify(session) : "DISCARDED (no positive duration)"}`,
+					);
 					if (session) {
 						const night = sleepNightDate(entry);
 						const sessions = sleepSessionsByNight.get(night);
@@ -456,6 +459,11 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 		);
 		// Combine the night's sleep sessions (durations sum across segments).
 		const sleep = combineSleepSessions(sleepSessionsByNight.get(date) ?? []);
+		if (sleep) {
+			console.log(
+				`[hae][sleep] night ${date}: ${sleepSessionsByNight.get(date)?.length ?? 0} raw session(s) -> combined durationMinutes=${sleep.durationMinutes} start=${sleep.sleepStart} end=${sleep.sleepEnd}`,
+			);
+		}
 		if (
 			sleep == null &&
 			snap?.heartRateReadings.length === 0 &&
@@ -523,6 +531,17 @@ export function ingestHaePayload(
 					final = mergeSnapshots(existing, snapshot);
 				} catch {
 					/* ignore parse errors, fall back to incoming snapshot */
+				}
+			}
+			if (final.sleep) {
+				console.log(
+					`[hae][sleep] storing ${date}: durationMinutes=${final.sleep.durationMinutes} efficiency=${final.sleep.efficiencyPercent} start=${final.sleep.sleepStart} end=${final.sleep.sleepEnd} (stored had ${existingRow ? "existing sleep" : "no existing row"})`,
+				);
+				if (existingRow) {
+					const existingSleep = JSON.parse(existingRow.data as string).sleep;
+					console.log(
+						`[hae][sleep]   merge detail: incoming=${snapshot.sleep ? `${snapshot.sleep.durationMinutes}m (${snapshot.sleep.sessions?.length ?? 0} sessions)` : "none"} + stored=${existingSleep ? `${existingSleep.durationMinutes}m (${existingSleep.sessions?.length ?? 0} sessions)` : "none"}`,
+					);
 				}
 			}
 			upsertHistoryStmt.run(userId, date, JSON.stringify(final));
