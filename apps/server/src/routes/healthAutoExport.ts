@@ -59,6 +59,16 @@ healthAutoExport.post("/", async (c) => {
 			(payload as { metrics?: Array<{ name: string }> }).metrics ?? [];
 		const metricNames = metrics.map((m) => m.name);
 		console.log(`[hae] Received metric names: ${metricNames.join(", ")}`);
+		// [DEBUG-slp] temporary sleep-import instrumentation
+		const sleepMetric = (
+			metrics as Array<{ name: string; units?: string; data?: unknown[] }>
+		).find((m) => m.name === "sleep_analysis");
+		if (sleepMetric?.data) {
+			console.log(
+				`[DEBUG-slp] webhook sleep_analysis entries=${sleepMetric.data.length} units=${sleepMetric.units ?? "none"}`,
+				JSON.stringify(sleepMetric.data.slice(0, 3)),
+			);
+		}
 		const result = ingestHaePayload(
 			userId,
 			payload as {

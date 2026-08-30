@@ -9,6 +9,7 @@ import {
 	type HaeSleepEntry,
 	type HaeSleepSession,
 	combineSleepSessions,
+	dedupeSleepSessions,
 	mergeSleepData,
 	parseSleepEntry,
 	sleepNightDate,
@@ -422,7 +423,7 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 					// the wake date, instead of letting each entry overwrite the last.
 					const session = parseSleepEntry(entry);
 					console.log(
-						`[hae][sleep] raw entry: ${JSON.stringify(entry)} -> session: ${session ? JSON.stringify(session) : "DISCARDED (no positive duration)"}`,
+						`[DEBUG-slp] raw entry: ${JSON.stringify(entry)} -> session: ${session ? JSON.stringify(session) : "DISCARDED (no positive duration)"}`,
 					);
 					if (session) {
 						const night = sleepNightDate(entry);
@@ -460,8 +461,10 @@ function parseMetrics(metrics: HaeMetric[]): Map<string, HaeDailySnapshot> {
 		// Combine the night's sleep sessions (durations sum across segments).
 		const sleep = combineSleepSessions(sleepSessionsByNight.get(date) ?? []);
 		if (sleep) {
+			const nightSessions = sleepSessionsByNight.get(date) ?? [];
+			const deduped = dedupeSleepSessions(nightSessions);
 			console.log(
-				`[hae][sleep] night ${date}: ${sleepSessionsByNight.get(date)?.length ?? 0} raw session(s) -> combined durationMinutes=${sleep.durationMinutes} start=${sleep.sleepStart} end=${sleep.sleepEnd}`,
+				`[DEBUG-slp] night ${date}: ${nightSessions.length} raw session(s), ${deduped.length} after dedupe -> combined durationMinutes=${sleep.durationMinutes} start=${sleep.sleepStart} end=${sleep.sleepEnd}`,
 			);
 		}
 		if (
@@ -535,12 +538,12 @@ export function ingestHaePayload(
 			}
 			if (final.sleep) {
 				console.log(
-					`[hae][sleep] storing ${date}: durationMinutes=${final.sleep.durationMinutes} efficiency=${final.sleep.efficiencyPercent} start=${final.sleep.sleepStart} end=${final.sleep.sleepEnd} (stored had ${existingRow ? "existing sleep" : "no existing row"})`,
+					`[DEBUG-slp] storing ${date}: durationMinutes=${final.sleep.durationMinutes} efficiency=${final.sleep.efficiencyPercent} start=${final.sleep.sleepStart} end=${final.sleep.sleepEnd} (stored had ${existingRow ? "existing sleep" : "no existing row"})`,
 				);
 				if (existingRow) {
 					const existingSleep = JSON.parse(existingRow.data as string).sleep;
 					console.log(
-						`[hae][sleep]   merge detail: incoming=${snapshot.sleep ? `${snapshot.sleep.durationMinutes}m (${snapshot.sleep.sessions?.length ?? 0} sessions)` : "none"} + stored=${existingSleep ? `${existingSleep.durationMinutes}m (${existingSleep.sessions?.length ?? 0} sessions)` : "none"}`,
+						`[DEBUG-slp]   merge detail: incoming=${snapshot.sleep ? `${snapshot.sleep.durationMinutes}m (${snapshot.sleep.sessions?.length ?? 0} sessions)` : "none"} + stored=${existingSleep ? `${existingSleep.durationMinutes}m (${existingSleep.sessions?.length ?? 0} sessions)` : "none"}`,
 					);
 				}
 			}
@@ -712,6 +715,12 @@ function computeHaeHealthContext(
 			stages: r.sleep?.stages ?? null,
 			sleepEnd: r.sleep?.sleepEnd ?? null,
 		}));
+	// [DEBUG-slp] temporary sleep-import instrumentation: what the coach sees
+	for (const n of nights) {
+		console.log(
+			`[DEBUG-slp] context night ${n.date}: durationMinutes=${n.durationMinutes} end=${n.sleepEnd}`,
+		);
+	}
 
 	if (nights.length > 0) {
 		const durations = nights.map((n) => n.durationMinutes).filter((d) => d > 0);
@@ -914,6 +923,14 @@ export async function getHaeHistory(
 		date: row.date,
 		snap: JSON.parse(row.data) as HaeDailySnapshot,
 	}));
+	// [DEBUG-slp] temporary sleep-import instrumentation: what the charts read
+	for (const { date, snap } of parsed) {
+		if (snap.sleep) {
+			console.log(
+				`[DEBUG-slp] history serve ${date}: durationMinutes=${snap.sleep.durationMinutes} sessions=${snap.sleep.sessions?.length ?? "legacy"} start=${snap.sleep.sleepStart} end=${snap.sleep.sleepEnd}`,
+			);
+		}
+	}
 	const datedSnaps = parsed.map(({ date, snap }) => ({ date, ...snap }));
 	const morningHrByDate = computeMorningHeartRateByDate(datedSnaps);
 	const sleepAvgHrByDate = computeSleepAverageHrByDate(datedSnaps);
