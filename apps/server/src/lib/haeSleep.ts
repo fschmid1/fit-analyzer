@@ -105,13 +105,51 @@ function sessionKey(s: HaeSleepSession): string {
  * Remove duplicate sessions. Sessions sharing the same sleep window are the
  * same HealthKit sample re-delivered (later wins, e.g. corrected stage data);
  * sessions without timestamps are deduped by duration + stage signature.
+ *
+ * Nested windows are also dropped: HAE's background syncs re-deliver a
+ * cumulative window with the start creeping later while the wake-time end
+ * stays fixed (00:14→09:08 = 493m, 03:09→09:08 = 343m, 05:05→09:08 = 237m).
+ * Each is a truncated re-delivery of the same night, so any window fully
+ * contained in another is subsumed by it; only distinct segments sum.
  */
 export function dedupeSleepSessions(
 	sessions: HaeSleepSession[],
 ): HaeSleepSession[] {
 	const byKey = new Map<string, HaeSleepSession>();
 	for (const s of sessions) byKey.set(sessionKey(s), s);
-	return Array.from(byKey.values());
+	const deduped = Array.from(byKey.values());
+	const windowed = deduped.filter(
+		(s) => s.sleepStart != null && s.sleepEnd != null,
+	);
+	const timestampless = deduped.filter(
+		(s) => s.sleepStart == null || s.sleepEnd == null,
+	);
+
+	const kept: HaeSleepSession[] = [];
+	const bounds = windowed.map((s) => ({
+		start: Date.parse(s.sleepStart as string),
+		end: Date.parse(s.sleepEnd as string),
+	}));
+	for (let i = 0; i < windowed.length; i++) {
+		const { start, end } = bounds[i];
+		if (start > end) {
+			// Unparseable window; keep — don't discard data on a parsing hunch.
+			kept.push(windowed[i]);
+			continue;
+		}
+		const nested = bounds.some(
+			(o, j) =>
+				i !== j &&
+				o.start <= start &&
+				end <= o.end &&
+				// A same-second equal window is dedupe's job, not nesting's; both
+				// survive here so "later wins" still applies to them.
+				!(o.start === start && end === o.end),
+		);
+		if (!nested) kept.push(windowed[i]);
+	}
+
+	return [...kept, ...timestampless];
 }
 
 /**

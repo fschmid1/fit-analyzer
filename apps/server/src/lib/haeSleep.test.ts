@@ -201,6 +201,79 @@ describe("dedupeSleepSessions", () => {
 		]);
 		expect(deduped).toHaveLength(2);
 	});
+
+	it("drops nested truncated re-deliveries of a cumulative window", () => {
+		// HAE background syncs deliver progressively truncated cumulative
+		// windows (same wake-time end, start creeping later). The longest
+		// window subsumes the rest — only it survives.
+		const deduped = dedupeSleepSessions([
+			session({
+				durationMinutes: 493,
+				stages: {
+					awakeMinutes: 0,
+					lightMinutes: 299,
+					deepMinutes: 68,
+					remMinutes: 126,
+				},
+				sleepStart: "2026-08-30 00:14:04 +0200",
+				sleepEnd: "2026-08-30 09:08:41 +0200",
+			}),
+			session({
+				durationMinutes: 343,
+				sleepStart: "2026-08-30 03:09:07 +0200",
+				sleepEnd: "2026-08-30 09:08:41 +0200",
+			}),
+			session({
+				durationMinutes: 237,
+				sleepStart: "2026-08-30 05:05:29 +0200",
+				sleepEnd: "2026-08-30 09:08:41 +0200",
+			}),
+		]);
+		expect(deduped).toHaveLength(1);
+		expect(deduped[0]?.durationMinutes).toBe(493);
+	});
+
+	it("keeps genuinely adjacent split-night segments (not nested)", () => {
+		const deduped = dedupeSleepSessions([
+			session({
+				durationMinutes: 252,
+				sleepStart: "2026-08-25 23:00:00 +0200",
+				sleepEnd: "2026-08-26 03:12:00 +0200",
+			}),
+			session({
+				durationMinutes: 258,
+				sleepStart: "2026-08-26 03:20:00 +0200",
+				sleepEnd: "2026-08-26 07:38:00 +0200",
+			}),
+		]);
+		expect(deduped).toHaveLength(2);
+	});
+
+	it("sums split segments but drops their nested subsets", () => {
+		const combined = combineSleepSessions([
+			session({
+				durationMinutes: 390,
+				sleepStart: "2026-08-27 22:54:07 +0200",
+				sleepEnd: "2026-08-28 06:56:00 +0200",
+			}),
+			session({
+				durationMinutes: 355,
+				sleepStart: "2026-08-28 01:01:25 +0200",
+				sleepEnd: "2026-08-28 06:56:00 +0200",
+			}),
+			session({
+				durationMinutes: 180,
+				sleepStart: "2026-08-26 03:20:00 +0200",
+				sleepEnd: "2026-08-26 07:38:00 +0200",
+			}),
+			session({
+				durationMinutes: 76,
+				sleepStart: "2026-08-28 05:34:57 +0200",
+				sleepEnd: "2026-08-28 06:56:00 +0200",
+			}),
+		]);
+		expect(combined?.durationMinutes).toBe(390 + 180);
+	});
 });
 
 describe("mergeSleepData", () => {
