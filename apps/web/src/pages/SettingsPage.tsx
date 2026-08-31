@@ -8,14 +8,54 @@ import { StravaConnect } from "../components/StravaConnect";
 import { WahooConnect } from "../components/WahooConnect";
 import { WaxedChainReminderSettings } from "../components/WaxedChainReminderSettings";
 import { ZoneOverrideSettings } from "../components/ZoneOverrideSettings";
-import type { UserInfo } from "../lib/api";
+import { IntegrationsStatusProvider } from "./settings/integrationsStatus";
+import { EmbeddedSettingsProvider } from "./settings/settingsShared";
+import { BoardVariant } from "./settings/BoardVariant";
+import { HeadUnitVariant } from "./settings/HeadUnitVariant";
 
-interface SettingsPageProps {
-	user?: UserInfo | null;
-	onActivitiesChanged?: () => void;
+/** Map a settings domain id to its control body. */
+function DomainBody({
+	id,
+	onSynced,
+}: {
+	id: string;
+	onSynced?: () => void;
+}) {
+	switch (id) {
+		case "strava":
+			return <StravaConnect onSynced={onSynced} />;
+		case "wahoo":
+			return <WahooConnect onSynced={onSynced} />;
+		case "calendar":
+			return <GoogleCalendarConnect />;
+		case "openwearables":
+			return <OpenwearablesSettings />;
+		case "hae":
+			return <HealthAutoExportSettings />;
+		case "profile":
+			return <AthleteProfileSettings />;
+		case "zones":
+			return <ZoneOverrideSettings />;
+		case "coachModel":
+			return <CoachModelSettings />;
+		case "waxed":
+			return <WaxedChainReminderSettings />;
+		case "changelog":
+			return <ProfileChangelogCard />;
+		default:
+			return null;
+	}
 }
 
-export function SettingsPage({ onActivitiesChanged }: SettingsPageProps) {
+function SettingsPageInner({
+	onActivitiesChanged,
+}: {
+	onActivitiesChanged?: () => void;
+}) {
+	const renderDomain = (id: string): React.ReactNode => (
+		<DomainBody id={id} onSynced={onActivitiesChanged} />
+	);
+
 	return (
 		<div className="flex-1 overflow-y-auto p-3 animate-[fadeIn_0.4s_ease-out]">
 			<div className="max-w-full mx-2 sm:mx-4 lg:mx-6">
@@ -23,37 +63,25 @@ export function SettingsPage({ onActivitiesChanged }: SettingsPageProps) {
 				<p className="text-sm text-[#94a3b8] mb-3">
 					Manage integrations and preferences
 				</p>
-
-				<div className="grid gap-3 md:gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 xl:items-start">
-					<section className="flex flex-col gap-3">
-						<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8]">
-							Integrations
-						</h3>
-						<StravaConnect onSynced={onActivitiesChanged} />
-						<WahooConnect onSynced={onActivitiesChanged} />
-						<GoogleCalendarConnect />
-						<OpenwearablesSettings />
-						<HealthAutoExportSettings />
-					</section>
-
-					<section className="flex flex-col gap-4">
-						<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8]">
-							Maintenance
-						</h3>
-						<WaxedChainReminderSettings />
-					</section>
-
-					<section className="flex flex-col gap-4">
-						<h3 className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8]">
-							Trainer
-						</h3>
-						<AthleteProfileSettings />
-						<ZoneOverrideSettings />
-						<CoachModelSettings />
-						<ProfileChangelogCard />
-					</section>
-				</div>
+				{/* Mobile: flat status rows; desktop: head-unit rail + pane */}
+				<BoardVariant renderDomain={renderDomain} />
+				<HeadUnitVariant renderDomain={renderDomain} />
 			</div>
 		</div>
+	);
+}
+
+export function SettingsPage({
+	onActivitiesChanged,
+}: {
+	user?: unknown;
+	onActivitiesChanged?: () => void;
+}) {
+	return (
+		<IntegrationsStatusProvider>
+			<EmbeddedSettingsProvider value>
+				<SettingsPageInner onActivitiesChanged={onActivitiesChanged} />
+			</EmbeddedSettingsProvider>
+		</IntegrationsStatusProvider>
 	);
 }

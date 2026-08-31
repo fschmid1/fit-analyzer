@@ -4,8 +4,6 @@ import {
 	Link2,
 	Link2Off,
 	RefreshCw,
-	CheckCircle2,
-	AlertCircle,
 	Webhook,
 	WebhookOff,
 } from "lucide-react";
@@ -19,6 +17,8 @@ import {
 	type WahooStatus,
 } from "../lib/api";
 import { AnimatedButton } from "./AnimatedButton";
+import { ConnectCard } from "./ConnectCard";
+import { SettingsBanner } from "../pages/settings/settingsShared";
 
 interface WahooConnectProps {
 	onSynced?: () => void;
@@ -153,168 +153,140 @@ export function WahooConnect({ onSynced }: WahooConnectProps) {
 	};
 
 	return (
-		<div className="flex flex-col gap-4">
-			{/* Notification banner */}
-			{notification && (
-				<div
-					className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium ${
-						notification.type === "success"
-							? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
-							: "bg-red-500/10 border border-red-500/20 text-red-400"
-					}`}
+		<ConnectCard
+			title="Wahoo"
+			accent="#1ba9d5"
+			loading={loading}
+			connected={status?.connected ?? null}
+			statusText={
+				loading
+					? "Checking connection…"
+					: status?.connected
+						? `Connected · User #${status.wahooUserId}`
+						: "Not connected"
+			}
+			icon={
+				<svg
+					viewBox="0 0 24 24"
+					className="w-5 h-5 fill-[#1ba9d5]"
+					aria-hidden="true"
 				>
-					{notification.type === "success" ? (
-						<CheckCircle2 className="w-4 h-4 shrink-0" />
-					) : (
-						<AlertCircle className="w-4 h-4 shrink-0" />
-					)}
-					{notification.message}
-				</div>
-			)}
+					<title>Wahoo</title>
+					<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-3-11.5l-2 5.5-2-5.5h-2l3 7h2l3-7h-2zm8 0h-4v7h2v-2.5h2c1.1 0 2-.9 2-2v-.5c0-1.1-.9-2-2-2zm0 2.5h-2v-1h2v1z" />
+				</svg>
+			}
+		>
+			{notification && <SettingsBanner notification={notification} />}
+			{!loading &&
+				(!status?.connected ? (
+					<AnimatedButton
+						onClick={handleConnect}
+						className="flex items-center justify-center gap-2 w-full px-4 py-2.5 text-sm font-medium text-white bg-[#1ba9d5] hover:bg-[#1899bf] rounded-xl transition-colors duration-200 cursor-pointer"
+					>
+						<Link2 className="w-4 h-4" />
+						Connect with Wahoo
+					</AnimatedButton>
+				) : (
+					<div className="flex flex-col gap-3">
+						{/* Sync controls */}
+						<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+							<select
+								value={daysBack}
+								onChange={(e) => {
+									const val = e.target.value;
+									setDaysBack(
+										val === "all" ? "all" : (Number(val) as DaysBack),
+									);
+								}}
+								className="px-3 py-2 text-sm bg-[#0f0b1a] border border-[rgba(139,92,246,0.2)] text-[#f1f5f9] rounded-xl focus:outline-none focus:border-[rgba(139,92,246,0.5)] cursor-pointer"
+								disabled={syncing}
+							>
+								<option value={1}>Last day</option>
+								<option value={7}>Last 7 days</option>
+								<option value={30}>Last 30 days</option>
+								<option value={90}>Last 90 days</option>
+								<option value="all">All time</option>
+							</select>
 
-			{/* Main card */}
-			<div className="p-5 bg-[#1a1533]/70 border border-[rgba(139,92,246,0.15)] rounded-xl flex flex-col gap-4">
-				{/* Header row */}
-				<div className="flex items-center gap-3">
-					{/* Wahoo logo-ish icon */}
-					<div className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#1ba9d5]/10 shrink-0">
-						<svg
-							viewBox="0 0 24 24"
-							className="w-5 h-5 fill-[#1ba9d5]"
-							aria-hidden="true"
-						>
-							<title>Wahoo</title>
-							<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-3-11.5l-2 5.5-2-5.5h-2l3 7h2l3-7h-2zm8 0h-4v7h2v-2.5h2c1.1 0 2-.9 2-2v-.5c0-1.1-.9-2-2-2zm0 2.5h-2v-1h2v1z" />
-						</svg>
-					</div>
-					<div>
-						<p className="text-sm font-semibold text-[#f1f5f9]">Wahoo</p>
+							<AnimatedButton
+								onClick={handleSync}
+								disabled={syncing}
+								className="flex items-center gap-2 justify-center px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-[color,background-color,border-color] duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{syncing ? (
+									<>
+										<Loader2 className="w-4 h-4 animate-spin" />
+										Syncing…
+									</>
+								) : (
+									<>
+										<RefreshCw className="w-4 h-4" />
+										Sync Rides
+									</>
+								)}
+							</AnimatedButton>
+						</div>
+
 						<p className="text-xs text-[#94a3b8]">
-							{loading
-								? "Checking connection…"
-								: status?.connected
-									? `Connected · User #${status.wahooUserId}`
-									: "Not connected"}
+							Syncs biking workouts (road, indoor, trainer, virtual, e-bike).
+							Previously synced rides are updated with the latest data.
 						</p>
-					</div>
 
-					{loading && (
-						<Loader2 className="w-4 h-4 text-[#8b5cf6] animate-spin ml-auto" />
-					)}
-				</div>
-
-				{/* Actions */}
-				{!loading &&
-					(!status?.connected ? (
-						<AnimatedButton
-							onClick={handleConnect}
-							className="flex items-center justify-center gap-2 w-full px-4 py-2.5 text-sm font-medium text-white bg-[#1ba9d5] hover:bg-[#1899bf] rounded-xl transition-colors duration-200 cursor-pointer"
-						>
-							<Link2 className="w-4 h-4" />
-							Connect with Wahoo
-						</AnimatedButton>
-					) : (
-						<div className="flex flex-col gap-3">
-							{/* Sync controls */}
-							<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-								<select
-									value={daysBack}
-									onChange={(e) => {
-										const val = e.target.value;
-										setDaysBack(
-											val === "all" ? "all" : (Number(val) as DaysBack),
-										);
-									}}
-									className="px-3 py-2 text-sm bg-[#0f0b1a] border border-[rgba(139,92,246,0.2)] text-[#f1f5f9] rounded-xl focus:outline-none focus:border-[rgba(139,92,246,0.5)] cursor-pointer"
-									disabled={syncing}
-								>
-									<option value={1}>Last day</option>
-									<option value={7}>Last 7 days</option>
-									<option value={30}>Last 30 days</option>
-									<option value={90}>Last 90 days</option>
-									<option value="all">All time</option>
-								</select>
-
-								<AnimatedButton
-									onClick={handleSync}
-									disabled={syncing}
-									className="flex items-center gap-2 justify-center px-4 py-2 text-sm font-medium text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40 rounded-xl transition-[color,background-color,border-color] duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-								>
-									{syncing ? (
-										<>
-											<Loader2 className="w-4 h-4 animate-spin" />
-											Syncing…
-										</>
-									) : (
-										<>
-											<RefreshCw className="w-4 h-4" />
-											Sync Rides
-										</>
-									)}
-								</AnimatedButton>
-							</div>
-
-							<p className="text-xs text-[#94a3b8]">
-								Syncs biking workouts (road, indoor, trainer, virtual, e-bike).
-								Previously synced rides are updated with the latest data.
-							</p>
-
-							{/* Webhook auto-sync */}
-							<div className="pt-2 border-t border-[rgba(139,92,246,0.1)] flex flex-col gap-2">
-								<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-									<div>
-										<p className="text-xs font-medium text-[#f1f5f9]">
-											Auto-sync new rides
-										</p>
-										<p className="text-xs text-[#94a3b8] mt-0.5">
-											{webhookRegistered
-												? "Active — new rides are imported automatically."
-												: "Register a webhook to import rides the moment they sync to the Wahoo cloud."}
-										</p>
-									</div>
-									<AnimatedButton
-										onClick={
-											webhookRegistered
-												? handleUnregisterWebhook
-												: handleRegisterWebhook
-										}
-										disabled={webhookLoading}
-										className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-[color,background-color,border-color] duration-200 cursor-pointer disabled:opacity-50 shrink-0 sm:ml-3 ${
-											webhookRegistered
-												? "text-[#94a3b8] hover:text-red-400 bg-transparent hover:bg-red-500/10"
-												: "text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
-										}`}
-									>
-										{webhookLoading ? (
-											<Loader2 className="w-3.5 h-3.5 animate-spin" />
-										) : webhookRegistered ? (
-											<WebhookOff className="w-3.5 h-3.5" />
-										) : (
-											<Webhook className="w-3.5 h-3.5" />
-										)}
-										{webhookRegistered ? "Disable" : "Enable"}
-									</AnimatedButton>
+						{/* Webhook auto-sync */}
+						<div className="pt-2 border-t border-[rgba(139,92,246,0.1)] flex flex-col gap-2">
+							<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+								<div>
+									<p className="text-xs font-medium text-[#f1f5f9]">
+										Auto-sync new rides
+									</p>
+									<p className="text-xs text-[#94a3b8] mt-0.5">
+										{webhookRegistered
+											? "Active — new rides are imported automatically."
+											: "Register a webhook to import rides the moment they sync to the Wahoo cloud."}
+									</p>
 								</div>
-							</div>
-
-							{/* Disconnect */}
-							<div className="pt-1 border-t border-[rgba(139,92,246,0.1)]">
 								<AnimatedButton
-									onClick={handleDisconnect}
-									disabled={disconnecting}
-									className="flex items-center gap-1.5 text-xs text-[#94a3b8] hover:text-red-400 transition-colors duration-200 cursor-pointer disabled:opacity-50"
+									onClick={
+										webhookRegistered
+											? handleUnregisterWebhook
+											: handleRegisterWebhook
+									}
+									disabled={webhookLoading}
+									className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-[color,background-color,border-color] duration-200 cursor-pointer disabled:opacity-50 shrink-0 sm:ml-3 ${
+										webhookRegistered
+											? "text-[#94a3b8] hover:text-red-400 bg-transparent hover:bg-red-500/10"
+											: "text-[#c4b5fd] bg-[#8b5cf6]/10 hover:bg-[#8b5cf6]/20 border border-[#8b5cf6]/20 hover:border-[#8b5cf6]/40"
+									}`}
 								>
-									{disconnecting ? (
-										<Loader2 className="w-3 h-3 animate-spin" />
+									{webhookLoading ? (
+										<Loader2 className="w-3.5 h-3.5 animate-spin" />
+									) : webhookRegistered ? (
+										<WebhookOff className="w-3.5 h-3.5" />
 									) : (
-										<Link2Off className="w-3 h-3" />
+										<Webhook className="w-3.5 h-3.5" />
 									)}
-									Disconnect Wahoo
+									{webhookRegistered ? "Disable" : "Enable"}
 								</AnimatedButton>
 							</div>
 						</div>
-					))}
-			</div>
-		</div>
+
+						{/* Disconnect */}
+						<div className="pt-1 border-t border-[rgba(139,92,246,0.1)]">
+							<AnimatedButton
+								onClick={handleDisconnect}
+								disabled={disconnecting}
+								className="flex items-center gap-1.5 text-xs text-[#94a3b8] hover:text-red-400 transition-colors duration-200 cursor-pointer disabled:opacity-50"
+							>
+								{disconnecting ? (
+									<Loader2 className="w-3 h-3 animate-spin" />
+								) : (
+									<Link2Off className="w-3 h-3" />
+								)}
+								Disconnect Wahoo
+							</AnimatedButton>
+						</div>
+					</div>
+				))}
+		</ConnectCard>
 	);
 }
