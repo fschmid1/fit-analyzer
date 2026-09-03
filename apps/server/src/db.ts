@@ -396,6 +396,11 @@ try {
 } catch {
 	/* column already exists */
 }
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN ow_last_sync_at TEXT");
+} catch {
+	/* column already exists */
+}
 
 // Migration: add athlete profile columns to user_settings
 try {
@@ -454,6 +459,34 @@ db.exec(`
 db.exec(
 	"CREATE INDEX IF NOT EXISTS idx_hae_health_user_date ON hae_health_history(user_id, date)",
 );
+
+// Shared per-source daily health-snapshot history. Existing HAE rows are
+// migrated in with source = 'health_auto_export'; OpenWearables polls write
+// their own snapshots under source = 'openwearables'.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS health_daily_history (
+    user_id TEXT NOT NULL,
+    source TEXT NOT NULL,
+    date TEXT NOT NULL,
+    data TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, source, date)
+  )
+`);
+db.exec(
+	"CREATE INDEX IF NOT EXISTS idx_health_daily_user_source_date ON health_daily_history(user_id, source, date)",
+);
+try {
+	db.exec(`
+    INSERT INTO health_daily_history (user_id, source, date, data, updated_at)
+    SELECT user_id, 'health_auto_export', date, data, updated_at
+    FROM hae_health_history
+    WHERE true
+    ON CONFLICT(user_id, source, date) DO NOTHING
+  `);
+} catch {
+	/* migration already applied */
+}
 
 // Athlete zone overrides — per-user custom zone boundaries that replace the
 // derived (FTP / max HR) defaults. Stored as JSON arrays of ZoneRange

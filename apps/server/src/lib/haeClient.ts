@@ -14,6 +14,15 @@ import {
 	parseSleepEntry,
 	sleepNightDate,
 } from "./haeSleep.js";
+import {
+	clearSourceHistory,
+	getDailySnapshots,
+	getLastHistoryUpdate,
+	upsertDailySnapshot,
+	type HealthHistorySource,
+} from "./healthHistory.js";
+
+const HAE_SOURCE: HealthHistorySource = "health_auto_export";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -100,10 +109,6 @@ function pruneCache() {
 
 // ─── DB Statements ────────────────────────────────────────────────────────────
 
-const getExistingDataStmt = db.prepare(
-	"SELECT data FROM hae_health_history WHERE user_id = ? AND date = ?",
-);
-
 function mergeHeartRateReadings(
 	existing: HaeHeartRateReading[],
 	incoming: HaeHeartRateReading[],
@@ -156,28 +161,6 @@ function mergeSnapshots(
 		),
 	};
 }
-
-const upsertHistoryStmt = db.prepare(
-	`INSERT INTO hae_health_history (user_id, date, data, updated_at)
-   VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-   ON CONFLICT(user_id, date) DO UPDATE SET
-     data = excluded.data,
-     updated_at = excluded.updated_at`,
-);
-
-const getHistoryStmt = db.prepare<
-	{ user_id: string; date: string; data: string; updated_at: string },
-	[string, string, string]
->(
-	`SELECT user_id, date, data, updated_at FROM hae_health_history
-   WHERE user_id = ? AND date >= ? AND date <= ?
-   ORDER BY date ASC`,
-);
-
-const getLastSyncStmt = db.prepare<{ updated_at: string }, [string]>(
-	`SELECT updated_at FROM hae_health_history
-   WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1`,
-);
 
 const getTokenStmt = db.prepare<{ hae_api_token: string | null }, [string]>(
 	"SELECT hae_api_token FROM user_settings WHERE user_id = ?",
@@ -522,32 +505,13 @@ export function ingestHaePayload(
 
 	db.transaction(() => {
 		for (const [date, snapshot] of byDate) {
-			// Fetch existing data for this date so we can merge instead of
-			// overwrite (HAE sends partial updates per metric).
-			const existingRow = getExistingDataStmt.get(userId, date) as
-				| { data: string }
-				| undefined;
-			let final = snapshot;
-			if (existingRow) {
-				try {
-					const existing = JSON.parse(existingRow.data) as HaeDailySnapshot;
-					final = mergeSnapshots(existing, snapshot);
-				} catch {
-					/* ignore parse errors, fall back to incoming snapshot */
-				}
-			}
-			if (final.sleep) {
-				console.log(
-					`[DEBUG-slp] storing ${date}: durationMinutes=${final.sleep.durationMinutes} efficiency=${final.sleep.efficiencyPercent} start=${final.sleep.sleepStart} end=${final.sleep.sleepEnd} (stored had ${existingRow ? "existing sleep" : "no existing row"})`,
-				);
-				if (existingRow) {
-					const existingSleep = JSON.parse(existingRow.data as string).sleep;
-					console.log(
-						`[DEBUG-slp]   merge detail: incoming=${snapshot.sleep ? `${snapshot.sleep.durationMinutes}m (${snapshot.sleep.sessions?.length ?? 0} sessions)` : "none"} + stored=${existingSleep ? `${existingSleep.durationMinutes}m (${existingSleep.sessions?.length ?? 0} sessions)` : "none"}`,
-					);
-				}
-			}
-			upsertHistoryStmt.run(userId, date, JSON.stringify(final));
+			upsertDailySnapshot<HaeDailySnapshot>(
+				userId,
+				HAE_SOURCE,
+				date,
+				snapshot,
+				mergeSnapshots,
+			);
 		}
 		// Track successful webhook delivery on the user row
 		updateLastSyncStmt.run(userId);
@@ -682,16 +646,10 @@ function determineStatus(
 }
 
 function computeHaeHealthContext(
-	history: Array<{ date: string; data: string }>,
+	history: Array<{ date: string } & HaeDailySnapshot>,
 ): HealthContext {
-	// Parse all rows
-	const rows = history.map((row) => ({
-		date: row.date,
-		...JSON.parse(row.data),
-	})) as Array<{ date: string } & HaeDailySnapshot>;
-
-	// Sort newest first
-	rows.sort((a, b) => b.date.localeCompare(a.date));
+	// Rows arrive date ASC (from getDailySnapshots); sort newest first
+	const rows = history.slice().sort((a, b) => b.date.localeCompare(a.date));
 
 	let rhr: HealthContext["rhr"] = null;
 	let hrv: HealthContext["hrv"] = null;
@@ -912,17 +870,15 @@ export async function getHaeHistory(
 	startDate: string,
 	endDate: string,
 ): Promise<HealthHistoryEntry[]> {
-	const rows = getHistoryStmt.all(fitUserId, startDate, endDate) as Array<{
-		date: string;
-		data: string;
-	}>;
+	const parsed = getDailySnapshots<HaeDailySnapshot>(
+		fitUserId,
+		HAE_SOURCE,
+		startDate,
+		endDate,
+	);
 
-	if (rows.length === 0) return [];
+	if (parsed.length === 0) return [];
 
-	const parsed = rows.map((row) => ({
-		date: row.date,
-		snap: JSON.parse(row.data) as HaeDailySnapshot,
-	}));
 	// [DEBUG-slp] temporary sleep-import instrumentation: what the charts read
 	for (const { date, snap } of parsed) {
 		if (snap.sleep) {
@@ -987,17 +943,17 @@ export async function getHaeHealthContext(
 	start.setDate(start.getDate() - 7);
 	const startStr = start.toISOString().split("T")[0];
 
-	const rows = getHistoryStmt.all(fitUserId, startStr, endStr) as Array<{
-		user_id: string;
-		date: string;
-		data: string;
-		updated_at: string;
-	}>;
+	const rows = getDailySnapshots<HaeDailySnapshot>(
+		fitUserId,
+		HAE_SOURCE,
+		startStr,
+		endStr,
+	);
 
 	if (rows.length === 0) return null;
 
 	const ctx = computeHaeHealthContext(
-		rows.map((r) => ({ date: r.date, data: r.data })),
+		rows.map((r) => ({ date: r.date, ...r.snap })),
 	);
 
 	pruneCache();
@@ -1013,8 +969,7 @@ export function getHaeLastSync(userId: string): string | null {
 	if (userRow?.hae_last_sync_at) return userRow.hae_last_sync_at;
 
 	// Fallback: inspect the history table
-	const row = getLastSyncStmt.get(userId);
-	return row?.updated_at ?? null;
+	return getLastHistoryUpdate(userId, HAE_SOURCE);
 }
 
 export function clearHaeCache(userId: string): void {

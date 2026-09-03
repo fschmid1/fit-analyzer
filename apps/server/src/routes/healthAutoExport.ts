@@ -7,6 +7,7 @@ import {
 	getHaeLastSync,
 } from "../lib/haeClient.js";
 import { db } from "../db.js";
+import { clearSourceHistory } from "../lib/healthHistory.js";
 import { getUserId } from "../lib/getUserId.js";
 
 const healthAutoExport = new Hono();
@@ -152,7 +153,7 @@ healthAutoExport.delete("/", (c) => {
 	db.prepare(
 		"UPDATE user_settings SET hae_api_token = NULL, hae_last_sync_at = NULL WHERE user_id = ?",
 	).run(userId);
-	db.prepare("DELETE FROM hae_health_history WHERE user_id = ?").run(userId);
+	clearSourceHistory(userId, "health_auto_export");
 	clearHaeCache(userId);
 
 	console.log(`[hae] Cleared Health Auto Export data for user ${userId}`);

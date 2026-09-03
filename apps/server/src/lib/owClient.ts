@@ -1,64 +1,18 @@
 import { db } from "../db.js";
 import { env } from "../env.js";
-import type { HealthMetricStatus } from "@fit-analyzer/shared";
+import type {
+	HealthContext,
+	HealthHistoryEntry,
+	HealthMetricStatus,
+	SleepStages,
+} from "@fit-analyzer/shared";
+import {
+	getDailySnapshots,
+	upsertDailySnapshot,
+	type HealthHistorySource,
+} from "./healthHistory.js";
 
-export interface SleepStages {
-	awakeMinutes: number;
-	lightMinutes: number;
-	deepMinutes: number;
-	remMinutes: number;
-}
-
-export interface RecentNight {
-	date: string;
-	durationMinutes: number;
-	quality: string | null;
-	efficiencyPercent: number | null;
-	stages: SleepStages | null;
-}
-
-export interface HealthContext {
-	rhr: {
-		current: number | null;
-		trend7d: number | null;
-		status: HealthMetricStatus;
-	} | null;
-	hrv: {
-		current: number | null;
-		trend7d: number | null;
-		status: HealthMetricStatus;
-	} | null;
-	respiratoryRate: {
-		current: number | null;
-		trend7d: number | null;
-		status: HealthMetricStatus;
-	} | null;
-	spo2: {
-		current: number | null;
-		trend7d: number | null;
-		status: HealthMetricStatus;
-	} | null;
-	temperature: {
-		current: number | null;
-		trend7d: number | null;
-		status: HealthMetricStatus;
-	} | null;
-	morningHeartRate: {
-		current: number | null;
-		trend7d: number | null;
-		status: HealthMetricStatus;
-	} | null;
-	sleep: {
-		recentNights: RecentNight[];
-		avgDurationMinutes7d: number | null;
-		avgEfficiencyPercent7d: number | null;
-		avgStages7d: SleepStages | null;
-	} | null;
-	bodyComposition: {
-		weightKg: number | null;
-		asOf: string | null;
-	} | null;
-}
+const OW_SOURCE: HealthHistorySource = "openwearables";
 
 interface CacheEntry {
 	data: HealthContext;
@@ -101,6 +55,26 @@ function getOwUserId(fitUserId: string): string | null {
 
 function isConfigured(): boolean {
 	return !!(env.OW_BASE_URL && env.OW_API_KEY);
+}
+
+/**
+ * One day of OpenWearables data, as persisted in health_daily_history.
+ * Sleep summaries carry the vitals; the body summary rides on the most
+ * recent snapshot date.
+ */
+export interface OwDailySnapshot {
+	sleep?: {
+		durationMinutes: number;
+		efficiencyPercent: number | null;
+		stages: SleepStages | null;
+		avgHeartRateBpm: number | null;
+		avgHrvSdnnMs: number | null;
+		avgRespiratoryRate: number | null;
+		avgSpo2Percent: number | null;
+	} | null;
+	weightKg?: number | null;
+	/** Latest body temperature from the body summary, persisted with its date. */
+	bodyTemperatureC?: number | null;
 }
 
 interface SleepRecord {
@@ -254,10 +228,118 @@ function determineStatus(
 	}
 }
 
-function computeHealthContext(
-	sleepSummaries: SleepRecord[] | null,
+// ─── Snapshot persistence ────────────────────────────────────────────────────
+
+function sleepRecordToSnapshot(rec: SleepRecord): OwDailySnapshot {
+	const stages: SleepStages | null = rec.stages
+		? {
+				awakeMinutes: rec.stages.awake_minutes ?? 0,
+				lightMinutes: rec.stages.light_minutes ?? 0,
+				deepMinutes: rec.stages.deep_minutes ?? 0,
+				remMinutes: rec.stages.rem_minutes ?? 0,
+			}
+		: null;
+	return {
+		sleep: {
+			durationMinutes: rec.duration_minutes,
+			efficiencyPercent: rec.efficiency_percent ?? null,
+			stages,
+			avgHeartRateBpm: rec.avg_heart_rate_bpm ?? null,
+			avgHrvSdnnMs: rec.avg_hrv_sdnn_ms ?? null,
+			avgRespiratoryRate: rec.avg_respiratory_rate ?? null,
+			avgSpo2Percent: rec.avg_spo2_percent ?? null,
+		},
+	};
+}
+
+function mergeOwSnapshots(
+	existing: OwDailySnapshot,
+	incoming: OwDailySnapshot,
+): OwDailySnapshot {
+	return {
+		sleep: incoming.sleep ?? existing.sleep,
+		weightKg: incoming.weightKg ?? existing.weightKg,
+		bodyTemperatureC: incoming.bodyTemperatureC ?? existing.bodyTemperatureC,
+	};
+}
+
+function persistOwSnapshots(
+	fitUserId: string,
+	sleepSummaries: SleepRecord[],
 	bodySummary: BodySummaryResponse | null,
+): void {
+	try {
+		db.transaction(() => {
+			for (const rec of sleepSummaries) {
+				if (!/^\d{4}-\d{2}-\d{2}$/.test(rec.date)) continue;
+				upsertDailySnapshot<OwDailySnapshot>(
+					fitUserId,
+					OW_SOURCE,
+					rec.date,
+					sleepRecordToSnapshot(rec),
+					mergeOwSnapshots,
+				);
+			}
+			// Body summary is a current-only snapshot; ride weight + body
+			// temperature on the most recent night's date so they carry an asOf.
+			if (
+				bodySummary?.slow_changing?.weight_kg != null ||
+				bodySummary?.latest?.body_temperature_celsius != null
+			) {
+				const snapshots = getDailySnapshots<OwDailySnapshot>(
+					fitUserId,
+					OW_SOURCE,
+					"0000-01-01",
+					"9999-12-31",
+				);
+				const latestDate =
+					snapshots.length > 0
+						? snapshots[snapshots.length - 1].date
+						: new Date().toISOString().split("T")[0];
+				upsertDailySnapshot<OwDailySnapshot>(
+					fitUserId,
+					OW_SOURCE,
+					latestDate,
+					{
+						weightKg: bodySummary.slow_changing?.weight_kg ?? null,
+						bodyTemperatureC:
+							bodySummary.latest?.body_temperature_celsius ?? null,
+					},
+					mergeOwSnapshots,
+				);
+			}
+		})();
+		db.prepare(
+			"UPDATE user_settings SET ow_last_sync_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE user_id = ?",
+		).run(fitUserId);
+	} catch (err) {
+		console.warn("[ow] failed to persist daily snapshots:", err);
+	}
+}
+
+// ─── Context Building ────────────────────────────────────────────────────────
+
+function determineMetric(
+	rows: Array<{ value: number }>,
+	round: (v: number) => number,
+	metric: "rhr" | "hrv" | "respiratoryRate" | "spo2" | "temperature",
+): HealthContext["rhr"] {
+	if (rows.length === 0) return null;
+	const latest = rows[0].value; // rows are date-desc → most recent first
+	const avg = rows.reduce((a, b) => a + b.value, 0) / rows.length;
+	return {
+		current: round(latest),
+		trend7d: round(avg),
+		status: determineStatus(latest, avg, metric),
+	};
+}
+
+function computeHealthContext(
+	snapshots: Array<{ date: string; snap: OwDailySnapshot }>,
 ): HealthContext {
+	// getDailySnapshots returns date ASC; derivation wants newest first.
+	const rows = snapshots.slice().sort((a, b) => b.date.localeCompare(a.date));
+
 	let rhr: HealthContext["rhr"] = null;
 	let hrv: HealthContext["hrv"] = null;
 	let respiratoryRate: HealthContext["respiratoryRate"] = null;
@@ -266,29 +348,41 @@ function computeHealthContext(
 	const morningHeartRate: HealthContext["morningHeartRate"] = null;
 	let sleep: HealthContext["sleep"] = null;
 
-	if (sleepSummaries && sleepSummaries.length > 0) {
-		const recentNights: RecentNight[] = sleepSummaries
-			.map((n) => {
-				const stages: SleepStages | null = n.stages
-					? {
-							awakeMinutes: n.stages.awake_minutes ?? 0,
-							lightMinutes: n.stages.light_minutes ?? 0,
-							deepMinutes: n.stages.deep_minutes ?? 0,
-							remMinutes: n.stages.rem_minutes ?? 0,
-						}
-					: null;
-				return {
-					date: n.date,
-					durationMinutes: n.duration_minutes,
-					quality:
-						n.efficiency_percent != null
-							? `${n.efficiency_percent.toFixed(0)}% efficiency`
-							: null,
-					efficiencyPercent: n.efficiency_percent ?? null,
-					stages,
-				};
-			})
-			.sort((a, b) => b.date.localeCompare(a.date));
+	// Temperature from the most recent persisted body temperature
+	const latestTempRow = rows.find(
+		(r) => r.snap.bodyTemperatureC != null && r.snap.bodyTemperatureC > 0,
+	);
+	if (latestTempRow) {
+		const current = latestTempRow.snap.bodyTemperatureC as number;
+		temperature = {
+			current: Math.round(current * 10) / 10,
+			trend7d: null,
+			status: current > 37.5 ? "higher" : current < 36.0 ? "lower" : "normal",
+		};
+	}
+
+	const nights = rows.filter(
+		(
+			r,
+		): r is {
+			date: string;
+			snap: OwDailySnapshot & { sleep: NonNullable<OwDailySnapshot["sleep"]> };
+		} => r.snap.sleep != null,
+	);
+	if (nights.length > 0) {
+		const recentNights = nights.map((n) => {
+			const s = n.snap.sleep;
+			return {
+				date: n.date,
+				durationMinutes: s.durationMinutes,
+				quality:
+					s.efficiencyPercent != null
+						? `${s.efficiencyPercent.toFixed(0)}% efficiency`
+						: null,
+				efficiencyPercent: s.efficiencyPercent,
+				stages: s.stages,
+			};
+		});
 
 		const durations = recentNights
 			.map((n) => n.durationMinutes)
@@ -342,123 +436,51 @@ function computeHealthContext(
 		};
 
 		// RHR from sleep summaries (per-night avg HR during sleep)
-		const datedHrValues = sleepSummaries
-			.map((n) => ({
-				date: n.date,
-				value: n.avg_heart_rate_bpm,
-			}))
-			.filter(
-				(v): v is { date: string; value: number } =>
-					typeof v.value === "number" && v.value > 0,
-			)
-			.sort((a, b) => b.date.localeCompare(a.date));
-		if (datedHrValues.length > 0) {
-			const latest = datedHrValues[0].value;
-			const avg =
-				datedHrValues.reduce((a, b) => a + b.value, 0) / datedHrValues.length;
-			rhr = {
-				current: Math.round(latest),
-				trend7d: Math.round(avg),
-				status: determineStatus(latest, avg, "rhr"),
-			};
-		}
+		rhr = determineMetric(
+			nights
+				.map((n) => ({ value: n.snap.sleep.avgHeartRateBpm }))
+				.filter((v): v is { value: number } => v.value != null && v.value > 0),
+			Math.round,
+			"rhr",
+		);
 
 		// HRV from sleep summaries
-		const datedHrvValues = sleepSummaries
-			.map((n) => ({
-				date: n.date,
-				value: n.avg_hrv_sdnn_ms,
-			}))
-			.filter(
-				(v): v is { date: string; value: number } =>
-					typeof v.value === "number" && v.value > 0,
-			)
-			.sort((a, b) => b.date.localeCompare(a.date));
-		if (datedHrvValues.length > 0) {
-			const latest = datedHrvValues[0].value;
-			const avg =
-				datedHrvValues.reduce((a, b) => a + b.value, 0) / datedHrvValues.length;
-			hrv = {
-				current: Math.round(latest),
-				trend7d: Math.round(avg),
-				status: determineStatus(latest, avg, "hrv"),
-			};
-		}
+		hrv = determineMetric(
+			nights
+				.map((n) => ({ value: n.snap.sleep.avgHrvSdnnMs }))
+				.filter((v): v is { value: number } => v.value != null && v.value > 0),
+			Math.round,
+			"hrv",
+		);
 
 		// Respiratory rate from sleep summaries
-		const datedRrValues = sleepSummaries
-			.map((n) => ({
-				date: n.date,
-				value: n.avg_respiratory_rate,
-			}))
-			.filter(
-				(v): v is { date: string; value: number } =>
-					typeof v.value === "number" && v.value > 0,
-			)
-			.sort((a, b) => b.date.localeCompare(a.date));
-		if (datedRrValues.length > 0) {
-			const latest = datedRrValues[0].value;
-			const avg =
-				datedRrValues.reduce((a, b) => a + b.value, 0) / datedRrValues.length;
-			respiratoryRate = {
-				current: Math.round(latest * 10) / 10,
-				trend7d: Math.round(avg * 10) / 10,
-				status: determineStatus(latest, avg, "respiratoryRate"),
-			};
-		}
+		respiratoryRate = determineMetric(
+			nights
+				.map((n) => ({ value: n.snap.sleep.avgRespiratoryRate }))
+				.filter((v): v is { value: number } => v.value != null && v.value > 0),
+			(v) => Math.round(v * 10) / 10,
+			"respiratoryRate",
+		);
 
 		// SpO2 from sleep summaries
-		const datedSpo2Values = sleepSummaries
-			.map((n) => ({
-				date: n.date,
-				value: n.avg_spo2_percent,
-			}))
-			.filter(
-				(v): v is { date: string; value: number } =>
-					typeof v.value === "number" && v.value > 0,
-			)
-			.sort((a, b) => b.date.localeCompare(a.date));
-		if (datedSpo2Values.length > 0) {
-			const latest = datedSpo2Values[0].value;
-			const avg =
-				datedSpo2Values.reduce((a, b) => a + b.value, 0) /
-				datedSpo2Values.length;
-			spo2 = {
-				current: Math.round(latest * 10) / 10,
-				trend7d: Math.round(avg * 10) / 10,
-				status: determineStatus(latest, avg, "spo2"),
-			};
+		spo2 = determineMetric(
+			nights
+				.map((n) => ({ value: n.snap.sleep.avgSpo2Percent }))
+				.filter((v): v is { value: number } => v.value != null && v.value > 0),
+			(v) => Math.round(v * 10) / 10,
+			"spo2",
+		);
+	}
+
+	// Body composition from persisted weight snapshots — most recent
+	// non-null weight wins (same rule as HAE's pickLatestBodyComposition).
+	let bodyComposition: HealthContext["bodyComposition"] = null;
+	for (const row of rows) {
+		const weightKg = row.snap.weightKg ?? null;
+		if (weightKg != null && weightKg > 0) {
+			bodyComposition = { weightKg, asOf: row.date };
+			break;
 		}
-	}
-
-	// Temperature from body summary
-	if (bodySummary?.latest?.body_temperature_celsius != null) {
-		const current = bodySummary.latest.body_temperature_celsius;
-		temperature = {
-			current: Math.round(current * 10) / 10,
-			trend7d: null,
-			status: current > 37.5 ? "higher" : current < 36.0 ? "lower" : "normal",
-		};
-	}
-
-	// Override RHR/HRV from body summary if available (more accurate 7-day average)
-	if (bodySummary?.averaged?.resting_heart_rate_bpm != null) {
-		const current = bodySummary.averaged.resting_heart_rate_bpm;
-		const trend7d = current; // body summary already gives 7-day average
-		rhr = {
-			current: Math.round(current),
-			trend7d: Math.round(trend7d),
-			status: rhr?.status ?? "normal",
-		};
-	}
-
-	if (bodySummary?.averaged?.avg_hrv_sdnn_ms != null) {
-		const current = bodySummary.averaged.avg_hrv_sdnn_ms;
-		hrv = {
-			current: Math.round(current),
-			trend7d: Math.round(current),
-			status: hrv?.status ?? "normal",
-		};
 	}
 
 	return {
@@ -469,7 +491,7 @@ function computeHealthContext(
 		temperature,
 		morningHeartRate,
 		sleep,
-		bodyComposition: null,
+		bodyComposition,
 	};
 }
 
@@ -495,17 +517,36 @@ async function resolveHealthContext(
 		console.log(
 			`[ow] fetched ${sleepSummaries?.length} sleep summaries for user ${fitUserId} (OW ID: ${owUserId})`,
 		);
-		const ctx = computeHealthContext(sleepSummaries, bodySummary);
-		pruneCache();
-		cache.set(owUserId, { data: ctx, fetchedAt: Date.now() });
+		if (sleepSummaries && sleepSummaries.length > 0) {
+			persistOwSnapshots(fitUserId, sleepSummaries, bodySummary);
+			clearOwCaches(fitUserId);
+		}
 		if (bodySummary) {
 			bodyCache.set(owUserId, { data: bodySummary, fetchedAt: Date.now() });
+		}
+
+		const ctx = buildContextFromHistory(fitUserId);
+		if (ctx) {
+			pruneCache();
+			cache.set(owUserId, { data: ctx, fetchedAt: Date.now() });
 		}
 		return ctx;
 	} catch (err) {
 		console.warn("[ow] failed to fetch health context:", err);
 		return null;
 	}
+}
+
+function buildContextFromHistory(fitUserId: string): HealthContext | null {
+	const { startDate, endDate } = getDateRange();
+	const snapshots = getDailySnapshots<OwDailySnapshot>(
+		fitUserId,
+		OW_SOURCE,
+		startDate,
+		endDate,
+	);
+	if (snapshots.length === 0) return null;
+	return computeHealthContext(snapshots);
 }
 
 export async function getRawHealthContext(
@@ -553,6 +594,55 @@ export async function getOwBodySummary(
 	};
 }
 
+export function getOwLastSync(fitUserId: string): string | null {
+	// Fast path: check the dedicated user_settings column
+	const userRow = db
+		.prepare("SELECT ow_last_sync_at FROM user_settings WHERE user_id = ?")
+		.get(fitUserId) as { ow_last_sync_at: string | null } | undefined;
+	if (userRow?.ow_last_sync_at) return userRow.ow_last_sync_at;
+
+	// Fallback: inspect the history table
+	return getLastHistoryUpdate(fitUserId, OW_SOURCE);
+}
+
+export function getOwHistory(
+	fitUserId: string,
+	startDate: string,
+	endDate: string,
+): HealthHistoryEntry[] {
+	const snapshots = getDailySnapshots<OwDailySnapshot>(
+		fitUserId,
+		OW_SOURCE,
+		startDate,
+		endDate,
+	);
+	return snapshots.map(({ date, snap }) => ({
+		date,
+		rhr:
+			snap.sleep?.avgHeartRateBpm != null
+				? Math.round(snap.sleep.avgHeartRateBpm)
+				: null,
+		hrv:
+			snap.sleep?.avgHrvSdnnMs != null
+				? Math.round(snap.sleep.avgHrvSdnnMs)
+				: null,
+		respiratoryRate:
+			snap.sleep?.avgRespiratoryRate != null
+				? Math.round(snap.sleep.avgRespiratoryRate * 10) / 10
+				: null,
+		spo2:
+			snap.sleep?.avgSpo2Percent != null
+				? Math.round(snap.sleep.avgSpo2Percent * 10) / 10
+				: null,
+		temperature: null,
+		morningHeartRate: null,
+		sleepDurationMinutes: snap.sleep?.durationMinutes ?? null,
+		sleepEfficiencyPercent: snap.sleep?.efficiencyPercent ?? null,
+		deepMinutes: snap.sleep?.stages?.deepMinutes ?? null,
+		remMinutes: snap.sleep?.stages?.remMinutes ?? null,
+	}));
+}
+
 export function clearOwCaches(fitUserId: string): void {
 	const owUserId = getOwUserId(fitUserId);
 	if (!owUserId) return;
@@ -561,3 +651,17 @@ export function clearOwCaches(fitUserId: string): void {
 }
 
 export { getOwUserId };
+
+function getLastHistoryUpdate(
+	fitUserId: string,
+	source: HealthHistorySource,
+): string | null {
+	const rows = getDailySnapshots<unknown>(
+		fitUserId,
+		source,
+		"0000-01-01",
+		"9999-12-31",
+	);
+	if (rows.length === 0) return null;
+	return rows[rows.length - 1].updatedAt;
+}

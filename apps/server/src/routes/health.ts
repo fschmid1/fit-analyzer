@@ -5,7 +5,11 @@ import type {
 	HealthData,
 	HealthHistoryEntry,
 } from "@fit-analyzer/shared";
-import { getRawHealthContext } from "../lib/owClient.js";
+import {
+	getRawHealthContext,
+	getOwHistory,
+	getOwLastSync,
+} from "../lib/owClient.js";
 import {
 	getHaeHealthContext,
 	getHaeLastSync,
@@ -188,12 +192,15 @@ health.get("/", async (c) => {
 		healthData,
 	);
 
-	// Determine last sync timestamp from the active source
+	// Determine last sync timestamp + history from the active source
 	let lastSyncAt: string | null = null;
 	let history: HealthHistoryEntry[] = [];
 	if (sourceUsed === "health_auto_export") {
 		lastSyncAt = getHaeLastSync(userId);
 		history = await getHaeHistory(userId, startDate, endDate);
+	} else if (sourceUsed === "openwearables") {
+		lastSyncAt = getOwLastSync(userId);
+		history = getOwHistory(userId, startDate, endDate);
 	}
 
 	return c.json({
