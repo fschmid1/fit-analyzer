@@ -31,6 +31,13 @@ import {
 	updateWaxedChainReminderSettings,
 } from "../lib/waxedChainReminders.js";
 import { hasHaeToken, getHaeLastSync } from "../lib/haeClient.js";
+import { getGoogleConnection } from "../lib/googleCalendarConnection.js";
+import {
+	getPlanRefreshSettings,
+	updatePlanRefreshEnabled,
+} from "../lib/planRefreshSettings.js";
+import { getNtfyTopic, updateNtfyTopic } from "../lib/notificationSettings.js";
+import { sendNtfy } from "../lib/ntfy.js";
 import {
 	getAthleteProfile,
 	updateAthleteProfile,
@@ -217,6 +224,7 @@ me.get("/settings", async (c) => {
 		favoriteModels: getFavoriteModels(userId),
 		openwearables: { owUserId: getOwUserId(userId) },
 		compare: getCompareSettings(userId),
+		planRefresh: getPlanRefreshSettings(userId),
 		healthAutoExport: {
 			apiKey: haeConfigured ? "••••••••" : null,
 			configured: haeConfigured,
@@ -248,6 +256,8 @@ me.patch("/settings", async (c) => {
 				compareThreadIds?: string[];
 				compareEnabled?: boolean;
 				healthSource?: string;
+				ntfyTopic?: string;
+				planRefreshEnabled?: boolean;
 			}
 	>();
 
@@ -339,15 +349,36 @@ me.patch("/settings", async (c) => {
 		).run(userId, body.healthSource);
 	}
 
-	if (
-		body.enabled !== undefined ||
-		body.thresholdKm !== undefined ||
-		body.ntfyTopic !== undefined
-	) {
-		const thresholdKm = Number(body.thresholdKm);
-		const ntfyTopic = body.ntfyTopic?.trim() ?? "";
+	if (typeof body.ntfyTopic === "string") {
+		updateNtfyTopic(userId, body.ntfyTopic);
+	}
 
-		if (typeof body.enabled !== "boolean") {
+	// Plan refresh requires a connected Calendar and a way to be told it ran.
+	if (typeof body.planRefreshEnabled === "boolean") {
+		if (body.planRefreshEnabled) {
+			const connection = getGoogleConnection(userId);
+			if (!connection?.calendarId || !connection.tz) {
+				return c.json(
+					{
+						error:
+							"Connect Google Calendar before enabling weekly plan refresh",
+					},
+					400,
+				);
+			}
+		}
+		updatePlanRefreshEnabled(userId, body.planRefreshEnabled);
+	}
+
+	if (body.enabled !== undefined || body.thresholdKm !== undefined) {
+		const current = getWaxedChainReminderSettings(userId);
+		const thresholdKm =
+			body.thresholdKm !== undefined
+				? Number(body.thresholdKm)
+				: current.thresholdKm;
+		const enabled = body.enabled !== undefined ? body.enabled : current.enabled;
+
+		if (typeof enabled !== "boolean") {
 			return c.json({ error: "enabled must be a boolean" }, 400);
 		}
 
@@ -355,7 +386,7 @@ me.patch("/settings", async (c) => {
 			return c.json({ error: "thresholdKm must be a positive number" }, 400);
 		}
 
-		if (body.enabled && !ntfyTopic) {
+		if (enabled && !getNtfyTopic(userId)) {
 			return c.json(
 				{ error: "ntfyTopic is required when reminders are enabled" },
 				400,
@@ -363,9 +394,9 @@ me.patch("/settings", async (c) => {
 		}
 
 		updateWaxedChainReminderSettings(userId, {
-			enabled: body.enabled,
+			enabled,
 			thresholdKm,
-			ntfyTopic,
+			ntfyTopic: getNtfyTopic(userId),
 		});
 	}
 
@@ -383,6 +414,7 @@ me.patch("/settings", async (c) => {
 		favoriteModels: getFavoriteModels(userId),
 		openwearables: { owUserId: getOwUserId(userId) },
 		compare: getCompareSettings(userId),
+		planRefresh: getPlanRefreshSettings(userId),
 		healthAutoExport: {
 			apiKey: haeConfigured ? "••••••••" : null,
 			configured: haeConfigured,

@@ -17,6 +17,14 @@ import {
 	setConnectionMetadata,
 } from "../lib/googleCalendarConnection.js";
 import { ensureTrainingCalendar } from "../lib/googleCalendarClient.js";
+import { readTrainingPlan } from "../lib/calendarPlan.js";
+import { runPlanRefresh } from "../lib/planRefreshRunner.js";
+import {
+	duePlanWeek,
+	duePlanWeekKey,
+	markManualRefreshError,
+	markPlanRefreshed,
+} from "../lib/planRefreshSettings.js";
 
 /**
  * Calendar connection routes: OAuth against Google plus the one-time setup
@@ -172,6 +180,64 @@ google.patch("/timezone", async (c) => {
 
 	setTzStmt.run(body.timezone, userId);
 	return c.json({ ok: true });
+});
+
+/** GET /api/google/plan — the forward plan projected from the Training calendar. */
+google.get("/plan", async (c) => {
+	let userId: string;
+	try {
+		userId = getUserId(c);
+	} catch {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
+
+	try {
+		const plan = await readTrainingPlan(userId);
+		return c.json(plan);
+	} catch (err) {
+		return c.json(
+			{
+				error:
+					err instanceof Error ? err.message : "Failed to read training plan",
+			},
+			502,
+		);
+	}
+});
+
+/**
+ * POST /api/google/plan/refresh — run a Plan refresh on demand. Unlike the
+ * scheduled refresh this runs regardless of the watermark (it is explicit), and
+ * it clears any sticky error state on success.
+ */
+google.post("/plan/refresh", async (c) => {
+	let userId: string;
+	try {
+		userId = getUserId(c);
+	} catch {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
+
+	const connection = getGoogleConnection(userId);
+	if (!connection?.calendarId || !connection.tz) {
+		return c.json({ error: "Google Calendar not connected" }, 400);
+	}
+
+	const now = new Date();
+	const weekStart = duePlanWeek(now, connection.tz);
+	const weekKey = duePlanWeekKey(now, connection.tz);
+
+	const result = await runPlanRefresh(userId, weekKey, weekStart);
+	if (!result.ok) {
+		// Manual refresh: record the error without consuming the scheduler's
+		// capped retry budget for this week.
+		markManualRefreshError(userId, result.error ?? "Plan refresh failed");
+		return c.json({ error: result.error ?? "Plan refresh failed" }, 502);
+	}
+
+	markPlanRefreshed(userId, weekKey);
+	const plan = await readTrainingPlan(userId);
+	return c.json({ ok: true, weekKey, plan });
 });
 
 export { google, getCalendarContext };

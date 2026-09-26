@@ -282,7 +282,15 @@ db.exec(`
     waxed_chain_accumulated_km REAL NOT NULL DEFAULT 0,
     waxed_chain_last_notified_at TEXT,
     coach_model TEXT NOT NULL DEFAULT 'moonshotai/kimi-k2.6',
-    favorite_models TEXT NOT NULL DEFAULT '[]'
+    favorite_models TEXT NOT NULL DEFAULT '[]',
+    ntfy_topic TEXT NOT NULL DEFAULT '',
+    plan_refresh_enabled INTEGER NOT NULL DEFAULT 0,
+    plan_refresh_week TEXT,
+    plan_refresh_at TEXT,
+    plan_refresh_status TEXT,
+    plan_refresh_error TEXT,
+    plan_refresh_attempts INTEGER NOT NULL DEFAULT 0,
+    plan_refresh_attempt_week TEXT
   )
 `);
 
@@ -299,6 +307,72 @@ try {
 try {
 	db.exec(
 		`ALTER TABLE user_settings ADD COLUMN favorite_models TEXT NOT NULL DEFAULT '[]'`,
+	);
+} catch {
+	/* column already exists */
+}
+
+// Migration: add the shared notification topic. ntfy_topic supersedes the
+// waxed-chain-scoped column so one topic serves every notification; the
+// waxed-chain module seeds it from the legacy column on first read.
+try {
+	db.exec(
+		"ALTER TABLE user_settings ADD COLUMN ntfy_topic TEXT NOT NULL DEFAULT ''",
+	);
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec(
+		"INSERT INTO user_settings (user_id, ntfy_topic) SELECT user_id, waxed_chain_ntfy_topic FROM user_settings WHERE waxed_chain_ntfy_topic != '' ON CONFLICT(user_id) DO UPDATE SET ntfy_topic = excluded.ntfy_topic WHERE user_settings.ntfy_topic = ''",
+	);
+} catch {
+	/* legacy column may not exist on a fresh DB */
+}
+
+// Migration: add Weekly Plan refresh state to user_settings. The watermark
+// (plan_refresh_week/at) makes Plan refresh idempotent; it records when a
+// refresh happened, never what the plan contains (see ADR-0003).
+try {
+	db.exec(
+		"ALTER TABLE user_settings ADD COLUMN plan_refresh_enabled INTEGER NOT NULL DEFAULT 0",
+	);
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN plan_refresh_week TEXT");
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN plan_refresh_at TEXT");
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN plan_refresh_status TEXT");
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN plan_refresh_error TEXT");
+} catch {
+	/* column already exists */
+}
+// Retry accounting for the current due Plan week: attempts reset when the
+// attempt week differs from the week being refreshed. Capped so a persistent
+// failure notifies once instead of retrying every tick forever.
+try {
+	db.exec(
+		"ALTER TABLE user_settings ADD COLUMN plan_refresh_attempts INTEGER NOT NULL DEFAULT 0",
+	);
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec(
+		"ALTER TABLE user_settings ADD COLUMN plan_refresh_attempt_week TEXT",
 	);
 } catch {
 	/* column already exists */

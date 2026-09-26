@@ -15,6 +15,7 @@ import {
 	type ModelEntry,
 	type OpenwearablesSettings,
 	type ParsedActivity,
+	type PlanRefreshSettings,
 	type ProfileChangeEntry,
 	type StravaClubEvent,
 	type StoredRecord,
@@ -23,6 +24,7 @@ import {
 	type TrainerChatHistory,
 	type TrainerMessage,
 	type TrainerThread,
+	type TrainingPlanResponse,
 	type UpdateAthleteProfileBody,
 	type UpdateCalendarTimezoneBody,
 	type UpdateZoneOverridesBody,
@@ -46,6 +48,7 @@ export interface UserSettingsResponse {
 	favoriteModels: string[];
 	openwearables: OpenwearablesSettings;
 	compare: CompareSettings;
+	planRefresh: PlanRefreshSettings;
 	healthAutoExport: HealthAutoExportSettings;
 	athleteProfile: AthleteProfile;
 }
@@ -741,6 +744,75 @@ export async function updateCalendarTimezone(timezone: string): Promise<void> {
 			(data as { error?: string }).error ?? "Failed to update timezone",
 		);
 	}
+}
+
+// ─── Training plan ────────────────────────────────────────────────────────────
+
+export async function fetchTrainingPlan(): Promise<TrainingPlanResponse> {
+	const res = await fetch(`${API_BASE}/google/plan`, { cache: "no-store" });
+	if (!res.ok) {
+		const data = await res.json().catch(() => ({ error: "Failed" }));
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to load training plan",
+		);
+	}
+	return res.json();
+}
+
+export async function refreshTrainingPlan(): Promise<{
+	weekKey: string;
+	plan: TrainingPlanResponse;
+}> {
+	const res = await fetch(`${API_BASE}/google/plan/refresh`, {
+		method: "POST",
+	});
+	const data = await res
+		.json()
+		.catch(() => ({ error: "Failed to refresh training plan" }));
+	if (!res.ok) {
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to refresh training plan",
+		);
+	}
+	return data as { weekKey: string; plan: TrainingPlanResponse };
+}
+
+export async function updatePlanRefreshSettings(input: {
+	enabled: boolean;
+}): Promise<PlanRefreshSettings> {
+	const res = await fetch(`${API_BASE}/me/settings`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ planRefreshEnabled: input.enabled }),
+	});
+	const data = await res
+		.json()
+		.catch(() => ({ error: "Failed to update plan refresh settings" }));
+	if (!res.ok) {
+		throw new Error(
+			(data as { error?: string }).error ??
+				"Failed to update plan refresh settings",
+		);
+	}
+	return (data as UserSettingsResponse).planRefresh;
+}
+
+export async function updateNtfyTopic(topic: string): Promise<string> {
+	const res = await fetch(`${API_BASE}/me/settings`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ ntfyTopic: topic }),
+	});
+	const data = await res
+		.json()
+		.catch(() => ({ error: "Failed to update notification topic" }));
+	if (!res.ok) {
+		throw new Error(
+			(data as { error?: string }).error ??
+				"Failed to update notification topic",
+		);
+	}
+	return (data as UserSettingsResponse).waxedChainReminder.ntfyTopic;
 }
 
 export interface StravaEventsPage {

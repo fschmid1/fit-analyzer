@@ -299,6 +299,16 @@ export interface HeatmapResponse {
 // Approximate characters per token used for quick context-size budgeting.
 export const APPROX_CHARS_PER_TOKEN = 4;
 
+/**
+ * The activity id every general (non-activity) trainer thread is filed under.
+ * The web opens `TrainerView` with this id and the server uses it to find the
+ * user's general thread for unattended Plan refresh writes.
+ */
+export const GENERAL_ACTIVITY_ID = "general";
+
+/** Default name for a user's general coach-plan thread. */
+export const GENERAL_THREAD_NAME = "Cycling Coach Plan";
+
 /** Rough token cost of one image attachment in a provider payload. */
 export const APPROX_TOKENS_PER_IMAGE = 1000;
 
@@ -559,6 +569,49 @@ export interface CalendarRemovalResult {
 
 export interface UpdateCalendarTimezoneBody {
 	timezone: string;
+}
+
+/** Outcome of the most recent Plan refresh for the user. */
+export type PlanRefreshStatus = "never" | "success" | "error";
+
+/** Weekly Plan refresh settings (the scheduled Plan refresh). */
+export interface PlanRefreshSettings {
+	/** Whether the weekly Plan refresh runs automatically. */
+	enabled: boolean;
+	/** ISO week key of the Plan week most recently refreshed, e.g. "2026-W40". */
+	refreshedWeek: string | null;
+	/** When the last Plan refresh completed. */
+	refreshedAt: string | null;
+	/** Outcome of the last Plan refresh. */
+	lastStatus: PlanRefreshStatus;
+	/** Error detail from the last failed refresh, if any. */
+	lastError: string | null;
+}
+
+/** One upcoming planned workout projected from the training calendar. */
+export interface PlanWorkout {
+	id: string;
+	/** YYYY-MM-DD in the training timezone. */
+	date: string;
+	/** "HH:MM" wall time in the training timezone. */
+	startTime: string;
+	/** Session length in minutes. */
+	durationMinutes: number;
+	/** Short label (the event title without the app prefix). */
+	focus: string;
+	/** Optional session notes from the event body. */
+	description: string | null;
+	/** True when the athlete edited the event in Google after the last sync. */
+	edited: boolean;
+}
+
+/** Response body for GET /api/google/plan. */
+export interface TrainingPlanResponse {
+	connected: boolean;
+	timezone: string | null;
+	workouts: PlanWorkout[];
+	/** Wall-clock "today" (YYYY-MM-DD) in the training timezone. */
+	today: string | null;
 }
 
 // --- Athlete profile types ---

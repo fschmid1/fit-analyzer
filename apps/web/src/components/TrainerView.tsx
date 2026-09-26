@@ -2,7 +2,11 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import type { UIMessage } from "@tanstack/ai-react";
 import type { TrainerThread, UIToolCall } from "@fit-analyzer/shared";
-import { AVAILABLE_MODELS, type ModelEntry } from "@fit-analyzer/shared";
+import {
+	AVAILABLE_MODELS,
+	GENERAL_THREAD_NAME,
+	type ModelEntry,
+} from "@fit-analyzer/shared";
 import {
 	compactTrainerHistory,
 	createThread,
@@ -492,7 +496,7 @@ export function TrainerView({
 					onComplete={async (prompt, coachModel) => {
 						const thread = await createThread(
 							activityId,
-							"Cycling Coach Plan",
+							GENERAL_THREAD_NAME,
 							coachModel ?? undefined,
 						);
 						setThreads((prev) => [...prev, thread]);

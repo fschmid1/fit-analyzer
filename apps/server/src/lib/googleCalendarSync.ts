@@ -1,4 +1,9 @@
-import type { CalendarSyncRow, PlannedWorkout } from "@fit-analyzer/shared";
+import type {
+	CalendarSyncRow,
+	PlanWorkout,
+	PlannedWorkout,
+} from "@fit-analyzer/shared";
+import type { GoogleEvent } from "./googleCalendarClient.js";
 
 /**
  * Pure Plan-sync mechanics: sync-key derivation, Google event payloads, and
@@ -64,6 +69,26 @@ export interface CalendarEventBody {
 	extendedProperties: { private: Record<string, string> };
 }
 
+/**
+ * Narrow a Google API event to the snapshot the sync engine operates on. One
+ * shared mapper so every read path (Plan sync, removal, plan projection)
+ * derives the snapshot identically.
+ */
+export function toCalendarEventSnapshot(
+	ev: GoogleEvent,
+): CalendarEventSnapshot {
+	return {
+		id: ev.id,
+		summary: ev.summary ?? null,
+		description: ev.description ?? null,
+		start: ev.start ?? null,
+		end: ev.end ?? null,
+		updated: ev.updated,
+		colorId: ev.colorId,
+		extendedProperties: ev.extendedProperties,
+	};
+}
+
 /** One row in a Plan sync result, shown in the tool display. */
 export type SyncRow = CalendarSyncRow;
 
@@ -89,6 +114,47 @@ export interface MergeResult {
 	/** App events not deleted because the user edited them. */
 	skippedEdits: number;
 	errors: string[];
+}
+
+// ─── Plan projection (read path) ──────────────────────────────────────────────
+
+/**
+ * Project one stored event into a PlanWorkout for the /plan screen. Returns
+ * null for events with no timed start or whose start already passed. Pure — the
+ * read path supplies the calendar rows and the training timezone.
+ */
+export function toPlanWorkout(
+	ev: CalendarEventSnapshot,
+	timezone: string,
+	now: Date,
+): PlanWorkout | null {
+	const startWall = eventWallStart(ev);
+	if (!startWall) return null;
+	if (startWall <= wallClockMinute(now, timezone)) return null;
+	const date = startWall.slice(0, 10);
+	if (!DATE_RE.test(date)) return null;
+	const focus = eventFocus(ev);
+	if (!focus) return null;
+	return {
+		id: ev.id,
+		date,
+		startTime: startWall.slice(11, 16),
+		durationMinutes: eventDurationMinutes(ev),
+		focus,
+		description: ev.description ?? null,
+		edited: userEdited(ev),
+	};
+}
+
+function eventDurationMinutes(ev: CalendarEventSnapshot): number {
+	const start = ev.start?.dateTime;
+	const end = ev.end?.dateTime;
+	if (!start || !end) return 60;
+	const delta =
+		(Date.parse(`${end.slice(0, 19)}Z`) -
+			Date.parse(`${start.slice(0, 19)}Z`)) /
+		60_000;
+	return Number.isFinite(delta) && delta > 0 ? Math.round(delta) : 60;
 }
 
 // ─── Key + payload derivation ─────────────────────────────────────────────────

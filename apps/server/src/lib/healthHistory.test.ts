@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import type * as HealthHistoryModule from "./healthHistory.js";
 import {
 	clearSourceHistory,
 	getDailySnapshots,
@@ -41,9 +42,7 @@ afterAll(() => {
 async function importFresh() {
 	const modulePath = require.resolve("./healthHistory.js");
 	delete require.cache[modulePath];
-	return (await import("./healthHistory.js")) as typeof import(
-		"./healthHistory.js",
-	);
+	return (await import("./healthHistory.js")) as typeof HealthHistoryModule;
 }
 
 describe("healthHistory", () => {
@@ -96,7 +95,7 @@ describe("healthHistory", () => {
 		const h = await importFresh();
 		const { db } = await import("../db.js");
 		db.prepare(
-			"INSERT INTO health_daily_history (user_id, source, date, data) VALUES (?, ?, ?, ?)",
+			"INSERT OR REPLACE INTO health_daily_history (user_id, source, date, data) VALUES (?, ?, ?, ?)",
 		).run("u3", "openwearables", "2026-09-01", "{not json");
 
 		h.upsertDailySnapshot(
@@ -228,7 +227,7 @@ describe("healthHistory", () => {
 		// then run the same INSERT..SELECT the db.ts migration performs.
 		const { db } = await import("../db.js");
 		db.prepare(
-			"INSERT INTO hae_health_history (user_id, date, data, updated_at) VALUES (?, ?, ?, ?)",
+			"INSERT OR REPLACE INTO hae_health_history (user_id, date, data, updated_at) VALUES (?, ?, ?, ?)",
 		).run(
 			"u8",
 			"2026-08-01",

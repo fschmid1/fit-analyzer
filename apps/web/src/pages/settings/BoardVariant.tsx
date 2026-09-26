@@ -86,6 +86,8 @@ export function BoardVariant({
 				return ledFrom(data?.openwearables.owUserId != null);
 			case "waxed":
 				return ledFrom(data?.waxedChainReminder.enabled ?? null);
+			case "planRefresh":
+				return ledFrom(data?.planRefresh.enabled ?? null);
 			default:
 				return "unknown";
 		}

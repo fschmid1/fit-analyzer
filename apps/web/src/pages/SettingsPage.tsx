@@ -3,6 +3,7 @@ import { CoachModelSettings } from "../components/CoachModelSettings";
 import { GoogleCalendarConnect } from "../components/GoogleCalendarConnect";
 import { HealthAutoExportSettings } from "../components/HealthAutoExportSettings";
 import { OpenwearablesSettings } from "../components/OpenwearablesSettings";
+import { PlanRefreshSettingsCard } from "../components/PlanRefreshSettingsCard";
 import { ProfileChangelogCard } from "../components/ProfileChangelogCard";
 import { StravaConnect } from "../components/StravaConnect";
 import { WahooConnect } from "../components/WahooConnect";
@@ -38,6 +39,8 @@ function DomainBody({
 			return <ZoneOverrideSettings />;
 		case "coachModel":
 			return <CoachModelSettings />;
+		case "planRefresh":
+			return <PlanRefreshSettingsCard />;
 		case "waxed":
 			return <WaxedChainReminderSettings />;
 		case "changelog":

@@ -65,6 +65,12 @@ export const SETTINGS_DOMAINS: SettingsDomain[] = [
 		group: "Coach",
 	},
 	{
+		id: "planRefresh",
+		name: "Weekly plan refresh",
+		blurb: "Refresh the training plan every week and notify you.",
+		group: "Coach",
+	},
+	{
 		id: "waxed",
 		name: "Waxed chain reminders",
 		blurb: "ntfy notification when rides cross a maintenance threshold.",

@@ -39,6 +39,7 @@ export type SettingsDomainId =
 	| "profile"
 	| "zones"
 	| "coachModel"
+	| "planRefresh"
 	| "changelog";
 
 export type LedState = "ok" | "attention" | "off" | "unknown";

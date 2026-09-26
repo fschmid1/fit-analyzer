@@ -3,14 +3,14 @@ import type {
 	WaxedChainReminderSettings,
 } from "@fit-analyzer/shared";
 import { db } from "../db.js";
-import { env } from "../env.js";
+import { getNtfyTopic, updateNtfyTopic } from "./notificationSettings.js";
+import { sendNtfy } from "./ntfy.js";
 
 const DEFAULT_THRESHOLD_KM = 300;
 
 interface UserSettingsRow {
 	waxed_chain_reminders_enabled: number;
 	waxed_chain_reminder_km: number;
-	waxed_chain_ntfy_topic: string;
 	waxed_chain_accumulated_km: number;
 	waxed_chain_last_notified_at: string | null;
 }
@@ -19,7 +19,6 @@ const getSettingsStmt = db.prepare<UserSettingsRow, [string]>(
 	`SELECT
       waxed_chain_reminders_enabled,
       waxed_chain_reminder_km,
-      waxed_chain_ntfy_topic,
       waxed_chain_accumulated_km,
       waxed_chain_last_notified_at
    FROM user_settings
@@ -30,13 +29,11 @@ const upsertSettingsStmt = db.prepare(
 	`INSERT INTO user_settings (
       user_id,
       waxed_chain_reminders_enabled,
-      waxed_chain_reminder_km,
-      waxed_chain_ntfy_topic
-   ) VALUES (?, ?, ?, ?)
+      waxed_chain_reminder_km
+   ) VALUES (?, ?, ?)
    ON CONFLICT(user_id) DO UPDATE SET
       waxed_chain_reminders_enabled = excluded.waxed_chain_reminders_enabled,
-      waxed_chain_reminder_km = excluded.waxed_chain_reminder_km,
-      waxed_chain_ntfy_topic = excluded.waxed_chain_ntfy_topic`,
+      waxed_chain_reminder_km = excluded.waxed_chain_reminder_km`,
 );
 
 const updateAccumulatedStmt = db.prepare(
@@ -61,6 +58,7 @@ function roundKm(value: number): number {
 }
 
 function toPublicSettings(
+	userId: string,
 	row: UserSettingsRow | null,
 ): WaxedChainReminderSettings {
 	const thresholdKm = sanitizeThresholdKm(
@@ -73,7 +71,7 @@ function toPublicSettings(
 	return {
 		enabled: Boolean(row?.waxed_chain_reminders_enabled ?? 0),
 		thresholdKm,
-		ntfyTopic: row?.waxed_chain_ntfy_topic ?? "",
+		ntfyTopic: getNtfyTopic(userId),
 		accumulatedKm: roundKm(accumulatedKm),
 		remainingKm: roundKm(remainingKm),
 		lastNotifiedAt: row?.waxed_chain_last_notified_at ?? null,
@@ -113,39 +111,11 @@ async function sendWaxedChainReminder(
 	thresholdKm: number,
 	accumulatedKm: number,
 ) {
-	if (!env.NTFY_HOST) {
-		throw new Error("NTFY_HOST is not configured");
-	}
-
-	const headers = new Headers({
-		"Content-Type": "text/plain; charset=utf-8",
-		Title: "Waxed chain reminder",
-		Tags: "bicycle,maintenance",
+	await sendNtfy(topic, {
+		title: "Waxed chain reminder",
+		tags: "bicycle,maintenance",
+		body: `You rode ${roundKm(accumulatedKm)} km since the last chain wax. Configured reminder: ${thresholdKm} km.`,
 	});
-
-	if (env.NTFY_TOKEN) {
-		// ntfy accepts access tokens via Basic auth with an empty username.
-		headers.set(
-			"Authorization",
-			`Basic ${Buffer.from(`:${env.NTFY_TOKEN}`).toString("base64")}`,
-		);
-	}
-
-	const response = await fetch(
-		`${env.NTFY_HOST.replace(/\/+$/, "")}/${encodeURIComponent(topic)}`,
-		{
-			method: "POST",
-			headers,
-			body: `You rode ${roundKm(accumulatedKm)} km since the last chain wax. Configured reminder: ${thresholdKm} km.`,
-		},
-	);
-
-	if (!response.ok) {
-		const errorText = await response.text().catch(() => "");
-		throw new Error(
-			`ntfy request failed with status ${response.status}${errorText ? `: ${errorText}` : ""}`,
-		);
-	}
 }
 
 export async function sendTestWaxedChainReminder(
@@ -167,7 +137,7 @@ export async function sendTestWaxedChainReminder(
 export function getWaxedChainReminderSettings(
 	userId: string,
 ): WaxedChainReminderSettings {
-	return toPublicSettings(getSettingsStmt.get(userId) ?? null);
+	return toPublicSettings(userId, getSettingsStmt.get(userId) ?? null);
 }
 
 export function updateWaxedChainReminderSettings(
@@ -178,8 +148,8 @@ export function updateWaxedChainReminderSettings(
 		userId,
 		input.enabled ? 1 : 0,
 		sanitizeThresholdKm(input.thresholdKm),
-		input.ntfyTopic.trim(),
 	);
+	updateNtfyTopic(userId, input.ntfyTopic);
 
 	return getWaxedChainReminderSettings(userId);
 }
@@ -196,7 +166,7 @@ export async function handleNewActivityForWaxedChainReminder(
 	records: StoredRecord[],
 ): Promise<void> {
 	const row = getSettingsStmt.get(userId) ?? null;
-	const settings = toPublicSettings(row);
+	const settings = toPublicSettings(userId, row);
 
 	if (!settings.enabled || !settings.ntfyTopic) {
 		return;

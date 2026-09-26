@@ -43,3 +43,15 @@ _Avoid_: calendar import, one-way export
 **Sync key**:
 The deterministic key the server computes for each planned workout and stamps into the calendar event, so Plan sync can recognise its own events across runs without duplicating them.
 _Avoid_: plan id, workout id (there is no stored plan entity)
+
+**Plan week**:
+The Mon–Sun calendar week in the athlete's training timezone; the unit a Plan refresh keeps current.
+_Avoid_: rolling week, next 7 days
+
+**Plan refresh**:
+The regeneration and Plan sync of the coach's forward plan that makes the upcoming Plan week current, whether it runs on the weekly schedule or on demand. Always a Plan sync, so an unchanged plan writes nothing new.
+_Avoid_: replan, reschedule
+
+**Refresh watermark**:
+The per-user marker of the Plan week most recently refreshed, which keeps Plan refresh idempotent across ticks and self-heals missed runs. It records when a refresh happened, not what the plan contains — the calendar remains the plan.
+_Avoid_: plan version, last sync (that name belongs to health integrations)

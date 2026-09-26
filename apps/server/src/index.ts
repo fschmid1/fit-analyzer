@@ -13,8 +13,19 @@ import { trainer } from "./routes/trainer.js";
 import { wahoo } from "./routes/wahoo.js";
 import { google } from "./routes/google.js";
 import { initTools } from "./lib/tools/init.js";
+import {
+	runPlanRefreshTick,
+	startPlanRefreshScheduler,
+} from "./lib/planRefreshScheduler.js";
 
 initTools();
+
+// Weekly Plan refresh (ADR-0003): register the hourly tick and run one catch-up
+// pass on startup so a missed week is refreshed after downtime.
+startPlanRefreshScheduler();
+void runPlanRefreshTick().catch((err) => {
+	console.error("[plan-refresh] Startup catch-up failed:", err);
+});
 
 const app = new Hono();
 

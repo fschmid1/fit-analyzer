@@ -16,6 +16,7 @@ import { TrainerView } from "./components/TrainerView";
 import { SettingsPage } from "./pages/SettingsPage";
 import { StatsPage } from "./pages/StatsPage";
 import { EventsPage } from "./pages/EventsPage";
+import { TrainingPlanPage } from "./pages/TrainingPlanPage";
 import { computeAverages } from "./lib/stats";
 import {
 	saveCustomIntervals,
@@ -398,6 +399,7 @@ function App() {
 					}
 				/>
 				<Route path="/stats" element={<StatsPage />} />
+				<Route path="/plan" element={<TrainingPlanPage />} />
 				<Route path="/events" element={<EventsPage />} />
 				<Route
 					path="/settings"

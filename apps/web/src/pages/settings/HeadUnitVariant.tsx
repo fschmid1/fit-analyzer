@@ -123,6 +123,14 @@ export function HeadUnitVariant({
 			detail: data?.coachModel.coachModel ?? "Default model",
 		},
 		{
+			id: "planRefresh",
+			name: "Weekly plan refresh",
+			state: ledFrom(data?.planRefresh.enabled ?? null),
+			detail: data?.planRefresh.enabled
+				? (data.planRefresh.refreshedWeek ?? "Enabled")
+				: "Disabled",
+		},
+		{
 			id: "waxed",
 			name: "Chain reminder",
 			state: ledFrom(waxed?.enabled ?? null),
@@ -136,7 +144,7 @@ export function HeadUnitVariant({
 			title: "Integrations",
 			ids: ["strava", "wahoo", "calendar", "openwearables", "hae"],
 		},
-		{ title: "Coach", ids: ["profile", "zones", "coachModel"] },
+		{ title: "Coach", ids: ["profile", "zones", "coachModel", "planRefresh"] },
 		{ title: "Maintenance", ids: ["waxed", "changelog"] },
 	];
 

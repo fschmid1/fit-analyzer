@@ -2,6 +2,7 @@ import {
 	BarChart3,
 	BotMessageSquare,
 	Calendar,
+	CalendarClock,
 	History,
 	Settings,
 	Upload,
@@ -30,6 +31,7 @@ export function Navbar({ onUploadNew, onOpenTrainer }: NavbarProps) {
 	const isAnalysis = useMatch("/activity/:id");
 	const isTrainer = useMatch("/trainer/:threadId?");
 	const isStats = useMatch("/stats");
+	const isPlan = useMatch("/plan");
 	const isEvents = useMatch("/events");
 	const isSettings = useMatch("/settings");
 
@@ -73,6 +75,15 @@ export function Navbar({ onUploadNew, onOpenTrainer }: NavbarProps) {
 			>
 				<BarChart3 className="w-4 h-4" />
 				<span className="hidden sm:inline">Stats</span>
+			</AnimatedButton>
+
+			<AnimatedButton
+				onClick={() => navigate("/plan")}
+				className={navClass(Boolean(isPlan))}
+				title="Plan"
+			>
+				<CalendarClock className="w-4 h-4" />
+				<span className="hidden sm:inline">Plan</span>
 			</AnimatedButton>
 
 			<AnimatedButton

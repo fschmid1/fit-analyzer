@@ -16,6 +16,7 @@ import {
 	eventFocus,
 	filterRemovals,
 	mergePlan,
+	toCalendarEventSnapshot,
 	type CalendarEventSnapshot,
 	type SyncRow,
 } from "../googleCalendarSync.js";
@@ -89,16 +90,7 @@ function fetchExisting(
 	calendarId: string,
 ): Promise<CalendarEventSnapshot[]> {
 	return listUpcomingEvents(accessToken, calendarId).then((events) =>
-		events.map((ev) => ({
-			id: ev.id,
-			summary: ev.summary ?? null,
-			description: ev.description ?? null,
-			start: ev.start ?? null,
-			end: ev.end ?? null,
-			updated: ev.updated,
-			colorId: ev.colorId,
-			extendedProperties: ev.extendedProperties,
-		})),
+		events.map(toCalendarEventSnapshot),
 	);
 }
 

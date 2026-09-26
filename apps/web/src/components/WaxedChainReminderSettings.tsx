@@ -220,6 +220,9 @@ export function WaxedChainReminderSettings() {
 									placeholder="bike-maintenance"
 									className="px-3 py-2 text-sm bg-[#0f0b1a] border border-[rgba(139,92,246,0.2)] text-[#f1f5f9] rounded-xl focus:outline-none focus:border-[rgba(139,92,246,0.5)]"
 								/>
+								<span className="text-xs text-[#94a3b8]">
+									Shared with weekly plan refresh.
+								</span>
 							</label>
 						</div>
 

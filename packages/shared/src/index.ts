@@ -56,6 +56,10 @@ export type {
 	CalendarSyncResult,
 	CalendarRemovalResult,
 	UpdateCalendarTimezoneBody,
+	PlanRefreshStatus,
+	PlanRefreshSettings,
+	PlanWorkout,
+	TrainingPlanResponse,
 	AthleteProfile,
 	UpdateAthleteProfileBody,
 	UpdateZoneOverridesBody,
@@ -67,6 +71,8 @@ export {
 	APPROX_CHARS_PER_TOKEN,
 	APPROX_TOKENS_PER_IMAGE,
 	estimateContextTokens,
+	GENERAL_ACTIVITY_ID,
+	GENERAL_THREAD_NAME,
 	PROFILE_CHANGE_SOURCE_LABELS,
 } from "./types.js";
 
@@ -110,3 +116,12 @@ export {
 } from "./zones.js";
 
 export { parseFit } from "./parseFit.js";
+
+export {
+	addDays,
+	mondayIndex,
+	mondayOf,
+	isoWeekKey,
+	planWeekFor,
+} from "./planWeek.js";
+export type { PlanWeek } from "./planWeek.js";
