@@ -340,6 +340,36 @@ describe("OAuth2Flow.getValidToken", () => {
 		}
 	});
 
+	it("preserves the stored refresh token when a refresh response omits it", async () => {
+		// Google only returns refresh_token on the first consent; a normal
+		// refresh response omits it. Persisting "" here wipes the stored token,
+		// and every later refresh 400s with
+		// `invalid_request: Missing required parameter: refresh_token`.
+		const provider = makeProvider({
+			tokenResponse: { access_token: "new-at", expires_in: 3600 },
+		});
+		const store = makeTokenStore();
+		store.upsert({
+			userId: "u1",
+			accessToken: "old-at",
+			refreshToken: "keep-me",
+			expiresAt: Math.floor(Date.now() / 1000) + 10, // within 60s margin
+			providerUserId: null,
+			scope: "https://www.googleapis.com/auth/calendar",
+		});
+		const flow = new OAuth2Flow(provider, store);
+
+		const fetchMock = mockFetch([jsonResponse(provider.tokenResponses[0])]);
+		const original = globalThis.fetch;
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+		try {
+			expect(await flow.getValidToken("u1")).toBe("new-at");
+			expect(store.get("u1")?.refreshToken).toBe("keep-me");
+		} finally {
+			globalThis.fetch = original;
+		}
+	});
+
 	it("throws when the user has no stored token", async () => {
 		const provider = makeProvider({ name: "strava" });
 		const flow = new OAuth2Flow(provider, makeTokenStore());

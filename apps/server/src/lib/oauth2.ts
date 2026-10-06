@@ -163,10 +163,14 @@ export class OAuth2Flow {
 				`[${this.provider.name}] Starting token refresh for user ${userId}`,
 			);
 			const refreshed = await this.refreshToken(token);
+			// Providers (Google especially) only return a refresh token on the
+			// first consent; a refresh response usually omits it. Keep the
+			// stored one rather than persisting an empty string, which would
+			// make every later refresh fail with invalid_request.
 			this.tokenStore.updateTokens(
 				userId,
 				refreshed.accessToken,
-				refreshed.refreshToken,
+				refreshed.refreshToken || token.refreshToken,
 				refreshed.expiresAt,
 			);
 			return refreshed.accessToken;
