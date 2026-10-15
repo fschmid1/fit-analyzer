@@ -3,7 +3,8 @@ import L from "leaflet";
 import "leaflet.heat";
 import { ChevronDown, Map as MapIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MapContainer, TileLayer, useMap } from "react-leaflet";
+import { MapContainer, useMap } from "react-leaflet";
+import { BasemapLayer, basemapMapOptions } from "./BasemapLayer";
 
 type HeatLayer = L.Layer & {
 	setLatLngs(latlngs: L.LatLngExpression[]): HeatLayer;
@@ -124,13 +125,12 @@ export function HeatmapMap({ points }: HeatmapMapProps) {
 						zoom={13}
 						className="h-full w-full"
 						zoomControl={false}
-						attributionControl={false}
+						{...basemapMapOptions}
 					>
-						<TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+						<BasemapLayer />
 						<FitBounds points={points} />
 						<HeatLayerComponent points={points} />
 					</MapContainer>
-					<div className="absolute bottom-0 right-0 z-[1000] w-16 h-6 bg-[#1a1533]" />
 				</div>
 			)}
 		</div>

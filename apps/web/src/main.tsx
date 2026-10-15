@@ -5,6 +5,7 @@ import App from "./App";
 import { SettingsProvider } from "./lib/settingsContext";
 import "./index.css";
 import "leaflet/dist/leaflet.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 	<BrowserRouter>
