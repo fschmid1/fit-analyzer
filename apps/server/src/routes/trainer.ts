@@ -12,7 +12,10 @@ import { convertMessagesToModelMessages } from "@tanstack/ai";
 import type { ModelMessage } from "@tanstack/ai";
 import { Hono } from "hono";
 import { db } from "../db.js";
-import { getCoachModelSettings } from "../lib/coachModelSettings.js";
+import {
+	getCoachModelSettings,
+	getCoachVerbositySettings,
+} from "../lib/coachSettings.js";
 import { recomputeSummaryPeakPowers } from "../lib/tools/activityUtils.js";
 import {
 	compactMessages,
@@ -51,11 +54,8 @@ import {
 	createLoopAccumulator,
 } from "../lib/trainerLoopAccumulator.js";
 import { createTrainerToolLoop } from "../lib/trainerToolLoop.js";
-import { buildCalendarGuidance } from "../lib/calendarGuidance.js";
-import {
-	BASE_SYSTEM_PROMPT,
-	buildCurrentTimeText,
-} from "../lib/trainerBasePrompt.js";
+import { buildCoachSystemPrompt } from "../lib/coachSystemPrompt.js";
+import { buildReplyShapeGuidance } from "../lib/replyShapeGuidance.js";
 
 type TrainerChatRequestBody = {
 	messages?: Parameters<typeof convertMessagesToModelMessages>[0];
@@ -66,14 +66,6 @@ type TrainerChatRequestBody = {
 
 function getStringBodyValue(value: unknown): string | undefined {
 	return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-async function buildSystemPrompt(
-	userId: string,
-	_activityId?: string,
-): Promise<string> {
-	const calendarGuidance = await buildCalendarGuidance(userId);
-	return `${BASE_SYSTEM_PROMPT}${calendarGuidance}\n\n${buildCurrentTimeText(new Date())}`;
 }
 
 // Active compaction requests by user/thread. Prevents duplicate concurrent
@@ -109,18 +101,18 @@ const ANALYSIS_SYSTEM_PROMPT =
 	"and activity_lookup to compare with similar past rides. " +
 	"For any activity-specific tool call, pass the exact activityId provided by the user. " +
 	"Call the tools that are relevant to this ride, then base your report on their combined output. " +
-	"Use exactly these sections in this order:\n\n" +
+	"Use exactly these sections in this order, each written as bullets:\n\n" +
 	"## Overview\n" +
-	"Brief summary of the ride: duration, distance (if available), key metrics.\n\n" +
+	"Duration, distance (if available) and the key metrics.\n\n" +
 	"## Intensity Distribution\n" +
-	"Describe how power/heart rate was distributed across the ride. Include time-in-zones and reference peak values where relevant.\n\n" +
+	"How power and heart rate were distributed across the ride, with time-in-zones and peak values where relevant.\n\n" +
 	"## Key Efforts\n" +
-	"Highlight the most notable intervals, climbs, sprints, or sustained efforts. Be specific with durations and watts/HR where available.\n\n" +
+	"The most notable intervals, climbs, sprints or sustained efforts, with durations and watts/HR where available.\n\n" +
 	"## Highlights\n" +
-	"Mention anything that stands out positively: consistency, pacing, breakthroughs, strong finishes.\n\n" +
+	"What stands out positively: consistency, pacing, breakthroughs, strong finishes.\n\n" +
 	"## Suggestions\n" +
-	"Give 2-4 concise, actionable training suggestions based on the data, including recovery and next-workout ideas.\n\n" +
-	"Keep the report factual, encouraging, and actionable. Use markdown formatting only.";
+	"Training suggestions including recovery and next-workout ideas.\n\n" +
+	"Keep the report factual and encouraging. Use markdown formatting only.";
 
 function formatRideContext(
 	activityId: string,
@@ -233,7 +225,12 @@ trainer.post("/analyze/:activityId", async (c) => {
 		);
 	}
 
-	const systemPrompt = ANALYSIS_SYSTEM_PROMPT;
+	// The report keeps its own fixed sections, but shape and length still belong
+	// to the athlete's Verbosity (ADR-0004) — one source of truth for both
+	// coach surfaces.
+	const systemPrompt = `${ANALYSIS_SYSTEM_PROMPT}\n\n${buildReplyShapeGuidance(
+		getCoachVerbositySettings(userId),
+	)}`;
 	const rideContext = formatRideContext(activityId, activity);
 	const messages: ModelMessage[] = [
 		{
@@ -370,8 +367,7 @@ trainer.post("/chat", async (c) => {
 			return c.json({ error: "Stream not found or already completed" }, 404);
 		}
 	} else {
-		const activityId = thread?.activityId ?? undefined;
-		const systemPrompt = await buildSystemPrompt(userId, activityId);
+		const systemPrompt = await buildCoachSystemPrompt(userId);
 		const tools = getToolDefinitions();
 		const metadata = providerConfig.includeReasoning
 			? getKimiRequestMetadata(

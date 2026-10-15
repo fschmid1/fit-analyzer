@@ -4,6 +4,26 @@ Cross-app TypeScript contracts exchanged between the server (Bun API) and the we
 
 ## Language
 
+### Coach
+
+**Coach**:
+The model that writes for the athlete: it answers in trainer chat, produces an activity analysis, and writes the plan-refresh summary. It reads the athlete's training context and replies; the athlete reads the reply.
+_Avoid_: trainer, assistant, bot, AI ("trainer" is the feature surface — trainer chat — not the model)
+
+**Verbosity**:
+The athlete's chosen level of detail for every coach reply — Concise, Standard or Detailed. It scales the reply shape (bullets, rationale, extra sections) and never changes an activity analysis's fixed sections.
+_Avoid_: length, brevity, tone, detail level
+
+### Athlete and activity
+
+**Athlete**:
+The person the coach trains and writes for. Distinct from the **Coach**, which writes: the athlete reads the replies, wears the sensors, and owns the profile, zones and goals.
+_Avoid_: rider, client, trainee
+
+**Activity**:
+A recorded ride: the FIT-derived summary, records, laps and intervals the app stores and analyses. Distinct from a **Planned workout**, which is prescribed rather than recorded.
+_Avoid_: session, workout (that word belongs to a Planned workout)
+
 ### Trainer chat
 
 **Attachment**:

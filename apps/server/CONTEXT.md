@@ -4,6 +4,30 @@ Bun HTTP API and production web host. Owns SQLite access, activity persistence, 
 
 ## Language
 
+### Coach
+
+**Coach**:
+The model that answers in trainer chat, analyses a single activity, and writes the plan-refresh summary. The athlete's coach model is a per-user setting, overridable per trainer thread.
+_Avoid_: trainer, assistant, bot, AI
+
+**Tool card**:
+The interactive card the web renders from a tool result. The coach's prompt states that every tool result reaches the athlete as a card, so the coach interprets and names the card instead of restating its contents.
+_Avoid_: tool output, tool result box, widget
+
+**Verbosity**:
+The athlete's chosen level of detail for every coach reply — Concise, Standard or Detailed. It scales the reply shape (bullets, rationale, extra sections) and never changes an activity analysis's fixed sections.
+_Avoid_: length, brevity, tone, detail level
+
+### Athlete and activity
+
+**Athlete**:
+The person the coach trains and writes for. Distinct from the **Coach**, which writes: the athlete reads the replies, wears the sensors, and owns the profile, zones and goals.
+_Avoid_: rider, client, trainee
+
+**Activity**:
+A recorded ride: the FIT-derived summary, records, laps and intervals the app stores and analyses. Distinct from a **Planned workout**, which is prescribed rather than recorded.
+_Avoid_: session, workout (that word belongs to a Planned workout)
+
 ### Trainer chat
 
 **Attachment**:

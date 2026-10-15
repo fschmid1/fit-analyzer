@@ -10,11 +10,8 @@ import {
 } from "./trainerLoopAccumulator.js";
 import { messageRepo } from "./messageRepo.js";
 import { threadRepo } from "./threadRepo.js";
-import { buildCalendarGuidance } from "./calendarGuidance.js";
-import {
-	BASE_SYSTEM_PROMPT,
-	buildCurrentTimeText,
-} from "./trainerBasePrompt.js";
+import { hasTrainingCalendar } from "./calendarGuidance.js";
+import { buildCoachSystemPrompt } from "./coachSystemPrompt.js";
 import { planWeekFor } from "@fit-analyzer/shared";
 
 /**
@@ -165,10 +162,11 @@ export async function runPlanRefresh(
 			return fail(`${providerConfig.apiKeyEnvName} is not configured`);
 		}
 
-		const calendarGuidance = await buildCalendarGuidance(userId);
-		if (!calendarGuidance) return fail("Google Calendar not connected");
+		if (!hasTrainingCalendar(userId)) {
+			return fail("Google Calendar not connected");
+		}
 
-		const systemPrompt = `${BASE_SYSTEM_PROMPT}${calendarGuidance}\n\n${buildCurrentTimeText(new Date())}`;
+		const systemPrompt = await buildCoachSystemPrompt(userId);
 
 		const week = planWeekFor(weekStart);
 
@@ -182,7 +180,7 @@ export async function runPlanRefresh(
 					`It is time for the weekly plan refresh. Make the upcoming Plan week (${week.start} to ${week.end}) fully populated on the Training calendar.`,
 					"Review the athlete's recent activities, health, and the conversation above; revise workouts only where warranted, and keep the rest of the forward plan as it is.",
 					"Then ALWAYS call add_workouts_to_calendar with the COMPLETE forward plan — an unchanged plan is a valid, idempotent outcome.",
-					"Finish with a short summary message for the athlete: what the week ahead holds and anything they should know.",
+					"Finish with a summary message for the athlete in your reply shape: what the week ahead holds and anything they should know.",
 				].join(" "),
 			},
 		];

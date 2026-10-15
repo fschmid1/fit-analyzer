@@ -282,6 +282,7 @@ db.exec(`
     waxed_chain_accumulated_km REAL NOT NULL DEFAULT 0,
     waxed_chain_last_notified_at TEXT,
     coach_model TEXT NOT NULL DEFAULT 'moonshotai/kimi-k2.6',
+    coach_verbosity TEXT NOT NULL DEFAULT 'concise',
     favorite_models TEXT NOT NULL DEFAULT '[]',
     ntfy_topic TEXT NOT NULL DEFAULT '',
     plan_refresh_enabled INTEGER NOT NULL DEFAULT 0,
@@ -298,6 +299,16 @@ db.exec(`
 try {
 	db.exec(
 		`ALTER TABLE user_settings ADD COLUMN coach_model TEXT NOT NULL DEFAULT 'moonshotai/kimi-k2.6'`,
+	);
+} catch {
+	/* column already exists */
+}
+
+// Migration: add coach_verbosity to existing user_settings rows (ADR-0004).
+// Existing athletes land on the Concise default, which is the point of the change.
+try {
+	db.exec(
+		`ALTER TABLE user_settings ADD COLUMN coach_verbosity TEXT NOT NULL DEFAULT 'concise'`,
 	);
 } catch {
 	/* column already exists */

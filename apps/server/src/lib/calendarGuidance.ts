@@ -8,10 +8,21 @@ import { formatPlanForPrompt, readTrainingPlan } from "./calendarPlan.js";
  * section and extended with the weekly contract (ADR-0003).
  */
 
+/** The guidable connection for a user, or null when there is nothing to guide from. */
+function connectedTrainingCalendar(userId: string) {
+	const connection = getGoogleConnection(userId);
+	return connection?.calendarId && connection.tz ? connection : null;
+}
+
+/** Whether the athlete has a connected Training calendar at all. */
+export function hasTrainingCalendar(userId: string): boolean {
+	return connectedTrainingCalendar(userId) !== null;
+}
+
 /** The guidance for a user, or "" when no Training calendar is connected. */
 export async function buildCalendarGuidance(userId: string): Promise<string> {
-	const connection = getGoogleConnection(userId);
-	if (!connection?.calendarId || !connection.tz) return "";
+	const connection = connectedTrainingCalendar(userId);
+	if (!connection) return "";
 
 	let planText = "(no planned workouts on the calendar)";
 	try {

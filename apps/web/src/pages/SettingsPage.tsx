@@ -1,5 +1,6 @@
 import { AthleteProfileSettings } from "../components/AthleteProfileSettings";
 import { CoachModelSettings } from "../components/CoachModelSettings";
+import { CoachVerbositySettings } from "../components/CoachVerbositySettings";
 import { GoogleCalendarConnect } from "../components/GoogleCalendarConnect";
 import { HealthAutoExportSettings } from "../components/HealthAutoExportSettings";
 import { OpenwearablesSettings } from "../components/OpenwearablesSettings";
@@ -39,6 +40,8 @@ function DomainBody({
 			return <ZoneOverrideSettings />;
 		case "coachModel":
 			return <CoachModelSettings />;
+		case "coachVerbosity":
+			return <CoachVerbositySettings />;
 		case "planRefresh":
 			return <PlanRefreshSettingsCard />;
 		case "waxed":

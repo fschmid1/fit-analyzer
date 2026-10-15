@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
 import { Activity, ChevronRight } from "lucide-react";
+import {
+	COACH_VERBOSITY_LABELS,
+	DEFAULT_COACH_VERBOSITY,
+} from "@fit-analyzer/shared";
 import type { SettingsDomainId } from "./integrationsStatus";
 import {
 	ledFrom,
@@ -123,6 +127,14 @@ export function HeadUnitVariant({
 			detail: data?.coachModel.coachModel ?? "Default model",
 		},
 		{
+			id: "coachVerbosity",
+			name: "Coach verbosity",
+			state: "ok",
+			detail: data
+				? COACH_VERBOSITY_LABELS[data.coachVerbosity]
+				: COACH_VERBOSITY_LABELS[DEFAULT_COACH_VERBOSITY],
+		},
+		{
 			id: "planRefresh",
 			name: "Weekly plan refresh",
 			state: ledFrom(data?.planRefresh.enabled ?? null),
@@ -144,7 +156,10 @@ export function HeadUnitVariant({
 			title: "Integrations",
 			ids: ["strava", "wahoo", "calendar", "openwearables", "hae"],
 		},
-		{ title: "Coach", ids: ["profile", "zones", "coachModel", "planRefresh"] },
+		{
+			title: "Coach",
+			ids: ["profile", "zones", "coachModel", "coachVerbosity", "planRefresh"],
+		},
 		{ title: "Maintenance", ids: ["waxed", "changelog"] },
 	];
 

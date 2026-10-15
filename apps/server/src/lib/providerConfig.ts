@@ -1,7 +1,7 @@
 import type { ModelMessage, UIMessage } from "@tanstack/ai";
 import { AVAILABLE_MODELS, getModelProvider } from "@fit-analyzer/shared";
 import { env } from "../env.js";
-import { getCoachModelSettings } from "./coachModelSettings.js";
+import { getCoachModelSettings } from "./coachSettings.js";
 import { getOllamaModels } from "./ollamaModelCache.js";
 
 // ─── Provider config ──────────────────────────────────────────────────────────

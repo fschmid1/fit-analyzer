@@ -39,6 +39,7 @@ export type SettingsDomainId =
 	| "profile"
 	| "zones"
 	| "coachModel"
+	| "coachVerbosity"
 	| "planRefresh"
 	| "changelog";
 

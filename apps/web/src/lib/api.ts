@@ -4,6 +4,7 @@ import {
 	type ActivityStats,
 	type AthleteProfile,
 	type CoachModelSettings,
+	type CoachVerbosity,
 	type CompareSettings,
 	type GoogleCalendarStatus,
 	type HealthData,
@@ -45,6 +46,7 @@ export interface UserInfo {
 export interface UserSettingsResponse {
 	waxedChainReminder: WaxedChainReminderSettings;
 	coachModel: CoachModelSettings;
+	coachVerbosity: CoachVerbosity;
 	favoriteModels: string[];
 	openwearables: OpenwearablesSettings;
 	compare: CompareSettings;
@@ -163,6 +165,28 @@ export async function updateCoachModelSettings(input: {
 	}
 
 	return (data as UserSettingsResponse).coachModel;
+}
+
+export async function updateCoachVerbosity(input: {
+	verbosity: CoachVerbosity;
+}): Promise<CoachVerbosity> {
+	const res = await fetch(`${API_BASE}/me/settings`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ coachVerbosity: input.verbosity }),
+	});
+
+	const data = await res
+		.json()
+		.catch(() => ({ error: "Failed to update settings" }));
+
+	if (!res.ok) {
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to update settings",
+		);
+	}
+
+	return (data as UserSettingsResponse).coachVerbosity;
 }
 
 export async function updateFavoriteModels(

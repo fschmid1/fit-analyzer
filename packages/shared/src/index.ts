@@ -85,6 +85,15 @@ export {
 export type { AvailableModelId, ModelEntry, Provider } from "./coachModels.js";
 
 export {
+	COACH_VERBOSITIES,
+	COACH_VERBOSITY_BLURBS,
+	COACH_VERBOSITY_LABELS,
+	DEFAULT_COACH_VERBOSITY,
+	isCoachVerbosity,
+} from "./coachVerbosity.js";
+export type { CoachVerbosity } from "./coachVerbosity.js";
+
+export {
 	buildPowerBySecond,
 	buildCadenceBySecond,
 	buildMetricBySecondFromTimeSeries,

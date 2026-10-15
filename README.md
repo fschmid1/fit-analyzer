@@ -108,7 +108,7 @@ apps/
         │   ├── trainerStream.ts           # OpenRouter AI streaming
         │   ├── ollamaTrainerStream.ts     # Ollama Cloud AI streaming
         │   ├── parseCoachingMarkdown.ts   # Markdown coaching response parser
-        │   ├── coachModelSettings.ts      # AI model preference storage
+        │   ├── coachSettings.ts           # AI model + reply-verbosity preference storage
         │   └── waxedChainReminders.ts     # Chain maintenance reminders
         └── db.ts              # SQLite schema and connection
 packages/

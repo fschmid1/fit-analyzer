@@ -12,8 +12,10 @@ import {
 } from "@fit-analyzer/shared";
 import {
 	getCoachModelSettings,
+	getCoachVerbositySettings,
 	updateCoachModelSettings,
-} from "../lib/coachModelSettings.js";
+	updateCoachVerbositySettings,
+} from "../lib/coachSettings.js";
 import {
 	getCompareSettings,
 	updateCompareEnabled,
@@ -221,6 +223,7 @@ me.get("/settings", async (c) => {
 	return c.json({
 		waxedChainReminder: getWaxedChainReminderSettings(userId),
 		coachModel: await getCoachModelSettings(userId),
+		coachVerbosity: getCoachVerbositySettings(userId),
 		favoriteModels: getFavoriteModels(userId),
 		openwearables: { owUserId: getOwUserId(userId) },
 		compare: getCompareSettings(userId),
@@ -251,6 +254,7 @@ me.patch("/settings", async (c) => {
 		Partial<UpdateWaxedChainReminderSettingsBody> &
 			Partial<UpdateAthleteProfileBody> & {
 				coachModel?: string;
+				coachVerbosity?: string;
 				favoriteModels?: string[];
 				owUserId?: string;
 				compareThreadIds?: string[];
@@ -265,6 +269,10 @@ me.patch("/settings", async (c) => {
 		await updateCoachModelSettings(userId, {
 			coachModel: body.coachModel.trim(),
 		});
+	}
+
+	if (body.coachVerbosity !== undefined) {
+		updateCoachVerbositySettings(userId, body.coachVerbosity);
 	}
 
 	if (Array.isArray(body.favoriteModels)) {
@@ -411,6 +419,7 @@ me.patch("/settings", async (c) => {
 	return c.json({
 		waxedChainReminder: getWaxedChainReminderSettings(userId),
 		coachModel: await getCoachModelSettings(userId),
+		coachVerbosity: getCoachVerbositySettings(userId),
 		favoriteModels: getFavoriteModels(userId),
 		openwearables: { owUserId: getOwUserId(userId) },
 		compare: getCompareSettings(userId),
