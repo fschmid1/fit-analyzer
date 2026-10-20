@@ -7,6 +7,11 @@ import type {
 	SleepStages,
 } from "@fit-analyzer/shared";
 import {
+	HEALTH_CONTEXT_DAYS,
+	healthHistoryDateRange,
+	recentDateWindow,
+} from "./healthDates.js";
+import {
 	getDailySnapshots,
 	upsertDailySnapshot,
 	type HealthHistorySource,
@@ -59,8 +64,9 @@ function isConfigured(): boolean {
 
 /**
  * One day of OpenWearables data, as persisted in health_daily_history.
- * Sleep summaries carry the vitals; the body summary rides on the most
- * recent snapshot date.
+ * Sleep summaries carry the vitals; body composition and averaged vitals ride
+ * on the most recent snapshot date, while point-in-time temperature keeps its
+ * measurement date.
  */
 export interface OwDailySnapshot {
 	sleep?: {
@@ -75,11 +81,27 @@ export interface OwDailySnapshot {
 	weightKg?: number | null;
 	/** Latest body temperature from the body summary, persisted with its date. */
 	bodyTemperatureC?: number | null;
+	/**
+	 * When the body temperature was measured. The body summary also returns
+	 * `null` once a reading is older than its freshness window, but an old
+	 * value can survive in history; keep the timestamp so it is not shown as
+	 * current indefinitely.
+	 */
+	bodyTemperatureMeasuredAt?: string | null;
+	/**
+	 * Averaged resting HR from the body summary (7-day window) — the number
+	 * OpenWearables reports as "Resting HR". Takes priority over the per-night
+	 * sleep average when deriving the context and history.
+	 */
+	restingHeartRateBpm?: number | null;
+	/** Averaged HRV (SDNN) from the same body-summary window. */
+	avgHrvSdnnMs?: number | null;
 }
 
 interface SleepRecord {
 	date: string;
-	duration_minutes: number;
+	/** OpenWearables can omit duration for a session with vitals but no span. */
+	duration_minutes: number | null;
 	efficiency_percent?: number;
 	stages?: {
 		awake_minutes?: number;
@@ -92,6 +114,20 @@ interface SleepRecord {
 	avg_respiratory_rate?: number;
 	avg_spo2_percent?: number;
 	[key: string]: unknown;
+}
+
+/**
+ * OpenWearables' blood-pressure payload. The API returns averaged systolic /
+ * diastolic fields, not a plain `{ systolic, diastolic }` pair.
+ */
+export interface OwBloodPressure {
+	avg_systolic_mmhg: number | null;
+	avg_diastolic_mmhg: number | null;
+	max_systolic_mmhg: number | null;
+	max_diastolic_mmhg: number | null;
+	min_systolic_mmhg: number | null;
+	min_diastolic_mmhg: number | null;
+	reading_count: number | null;
 }
 
 export interface BodySummaryResponse {
@@ -117,7 +153,7 @@ export interface BodySummaryResponse {
 		body_temperature_measured_at: string | null;
 		skin_temperature_celsius: number | null;
 		skin_temperature_measured_at: string | null;
-		blood_pressure: { systolic: number; diastolic: number } | null;
+		blood_pressure: OwBloodPressure | null;
 		blood_pressure_measured_at: string | null;
 	};
 }
@@ -133,14 +169,11 @@ export interface OwBodySummary {
 	source: { provider: string; device: string | null };
 }
 
-function getDateRange(): { startDate: string; endDate: string } {
-	const end = new Date();
-	const start = new Date();
-	start.setDate(start.getDate() - 7);
-	end.setDate(end.getDate() + 1); // include today
+/** Fetch one extra day so timezone spillover cannot shorten the 7-day window. */
+const HEALTH_HISTORY_QUERY_DAYS = HEALTH_CONTEXT_DAYS + 1;
 
-	const fmt = (d: Date) => d.toISOString().split("T")[0];
-	return { startDate: fmt(start), endDate: fmt(end) };
+function getDateRange(): { startDate: string; endDate: string } {
+	return healthHistoryDateRange(HEALTH_HISTORY_QUERY_DAYS);
 }
 
 async function fetchSleepSummaries(
@@ -153,7 +186,9 @@ async function fetchSleepSummaries(
 	const params = new URLSearchParams({
 		start_date: startDate,
 		end_date: endDate,
-		limit: "8",
+		// The query spans eight days plus tomorrow for timezone spillover;
+		// ask for all of them so the oldest page cannot hide the newest night.
+		limit: "10",
 	});
 	const apiKey = env.OW_API_KEY;
 	if (!apiKey) throw new Error("OW_API_KEY not configured");
@@ -174,13 +209,22 @@ async function fetchSleepSummaries(
 	return json.data;
 }
 
+/** The window OpenWearables uses when it labels a point reading "recent". */
+const BODY_LATEST_WINDOW_HOURS = 4;
+const BODY_LATEST_WINDOW_MS = BODY_LATEST_WINDOW_HOURS * 60 * 60 * 1000;
+const BODY_AVERAGE_PERIOD_DAYS = 7;
+
 async function fetchBodySummary(
 	owUserId: string,
 ): Promise<BodySummaryResponse | null> {
 	const apiKey = env.OW_API_KEY;
 	if (!apiKey) throw new Error("OW_API_KEY not configured");
+	const params = new URLSearchParams({
+		average_period: String(BODY_AVERAGE_PERIOD_DAYS),
+		latest_window_hours: String(BODY_LATEST_WINDOW_HOURS),
+	});
 	const res = await fetch(
-		`${env.OW_BASE_URL}/api/v1/users/${encodeURIComponent(owUserId)}/summaries/body`,
+		`${env.OW_BASE_URL}/api/v1/users/${encodeURIComponent(owUserId)}/summaries/body?${params}`,
 		{
 			headers: { "X-Open-Wearables-API-Key": apiKey },
 			signal: AbortSignal.timeout(10_000),
@@ -241,7 +285,7 @@ function sleepRecordToSnapshot(rec: SleepRecord): OwDailySnapshot {
 		: null;
 	return {
 		sleep: {
-			durationMinutes: rec.duration_minutes,
+			durationMinutes: rec.duration_minutes ?? 0,
 			efficiencyPercent: rec.efficiency_percent ?? null,
 			stages,
 			avgHeartRateBpm: rec.avg_heart_rate_bpm ?? null,
@@ -256,14 +300,34 @@ function mergeOwSnapshots(
 	existing: OwDailySnapshot,
 	incoming: OwDailySnapshot,
 ): OwDailySnapshot {
+	// A missing key means this snapshot doesn't carry that value (e.g. a
+	// sleep-only record). An explicit null means the body summary reported
+	// no value, so clear the stale one instead of keeping it forever.
+	const keep = <T>(
+		next: T | null | undefined,
+		previous: T | null | undefined,
+	) => (next === undefined ? previous : next);
 	return {
 		sleep: incoming.sleep ?? existing.sleep,
-		weightKg: incoming.weightKg ?? existing.weightKg,
-		bodyTemperatureC: incoming.bodyTemperatureC ?? existing.bodyTemperatureC,
+		weightKg: keep(incoming.weightKg, existing.weightKg),
+		bodyTemperatureC: keep(
+			incoming.bodyTemperatureC,
+			existing.bodyTemperatureC,
+		),
+		bodyTemperatureMeasuredAt: keep(
+			incoming.bodyTemperatureMeasuredAt,
+			existing.bodyTemperatureMeasuredAt,
+		),
+		restingHeartRateBpm: keep(
+			incoming.restingHeartRateBpm,
+			existing.restingHeartRateBpm,
+		),
+		avgHrvSdnnMs: keep(incoming.avgHrvSdnnMs, existing.avgHrvSdnnMs),
 	};
 }
 
-function persistOwSnapshots(
+/** Exported for tests; production callers go through `getRawHealthContext`. */
+export function persistOwSnapshots(
 	fitUserId: string,
 	sleepSummaries: SleepRecord[],
 	bodySummary: BodySummaryResponse | null,
@@ -280,12 +344,21 @@ function persistOwSnapshots(
 					mergeOwSnapshots,
 				);
 			}
-			// Body summary is a current-only snapshot; ride weight + body
-			// temperature on the most recent night's date so they carry an asOf.
-			if (
-				bodySummary?.slow_changing?.weight_kg != null ||
-				bodySummary?.latest?.body_temperature_celsius != null
-			) {
+			// Body summary is a current-only snapshot; ride its current values
+			// on the most recent snapshot date so they carry an asOf.
+			const averaged = bodySummary?.averaged;
+			const bodyValues: OwDailySnapshot = {
+				// An absent section leaves the persisted value alone; a present
+				// section with null explicitly clears it.
+				weightKg: bodySummary?.slow_changing
+					? (bodySummary.slow_changing.weight_kg ?? null)
+					: undefined,
+				restingHeartRateBpm: averaged
+					? (averaged.resting_heart_rate_bpm ?? null)
+					: undefined,
+				avgHrvSdnnMs: averaged ? (averaged.avg_hrv_sdnn_ms ?? null) : undefined,
+			};
+			if (bodySummary) {
 				const snapshots = getDailySnapshots<OwDailySnapshot>(
 					fitUserId,
 					OW_SOURCE,
@@ -296,17 +369,44 @@ function persistOwSnapshots(
 					snapshots.length > 0
 						? snapshots[snapshots.length - 1].date
 						: new Date().toISOString().split("T")[0];
-				upsertDailySnapshot<OwDailySnapshot>(
-					fitUserId,
-					OW_SOURCE,
-					latestDate,
-					{
-						weightKg: bodySummary.slow_changing?.weight_kg ?? null,
-						bodyTemperatureC:
-							bodySummary.latest?.body_temperature_celsius ?? null,
-					},
-					mergeOwSnapshots,
+				const hasBodyValues = Object.values(bodyValues).some(
+					(value) => value !== undefined,
 				);
+				if (hasBodyValues) {
+					upsertDailySnapshot<OwDailySnapshot>(
+						fitUserId,
+						OW_SOURCE,
+						latestDate,
+						bodyValues,
+						mergeOwSnapshots,
+					);
+				}
+
+				// Temperature is a point-in-time reading, so keep it on the day
+				// it was measured instead of borrowing a sleep date. That makes
+				// the history chart honest and lets the fresh-window check use
+				// the real timestamp.
+				const temperature =
+					bodySummary.latest?.body_temperature_celsius ?? null;
+				const measuredAt =
+					bodySummary.latest?.body_temperature_measured_at ?? null;
+				if (temperature != null && temperature > 0) {
+					const measuredDate = measuredAt?.slice(0, 10);
+					const date =
+						measuredDate && /^\d{4}-\d{2}-\d{2}$/.test(measuredDate)
+							? measuredDate
+							: latestDate;
+					upsertDailySnapshot<OwDailySnapshot>(
+						fitUserId,
+						OW_SOURCE,
+						date,
+						{
+							bodyTemperatureC: temperature,
+							bodyTemperatureMeasuredAt: measuredAt,
+						},
+						mergeOwSnapshots,
+					);
+				}
 			}
 		})();
 		db.prepare(
@@ -334,11 +434,90 @@ function determineMetric(
 	};
 }
 
-function computeHealthContext(
+/**
+ * Effective RHR for a day. The body summary's averaged resting HR is the
+ * number OpenWearables reports, so it wins over the per-night sleep average;
+ * the sleep average remains the fallback for days the body summary doesn't
+ * cover.
+ */
+function pickOwRhr(snap: OwDailySnapshot): number | null {
+	const value = snap.restingHeartRateBpm ?? snap.sleep?.avgHeartRateBpm;
+	return value != null && value > 0 ? value : null;
+}
+
+/** Effective HRV (SDNN) for a day, preferring the body-summary average. */
+function pickOwHrv(snap: OwDailySnapshot): number | null {
+	const value = snap.avgHrvSdnnMs ?? snap.sleep?.avgHrvSdnnMs;
+	return value != null && value > 0 ? value : null;
+}
+
+type BodyMetricKey = "restingHeartRateBpm" | "avgHrvSdnnMs";
+
+/**
+ * The latest body-summary value for a metric. A sleep-only poll creates a new
+ * snapshot without body fields; that must not discard the body-summary value
+ * from an earlier snapshot in the window. A key that is present but null is
+ * authoritative: it means OpenWearables explicitly reported no value, so we
+ * stop and fall back to sleep data rather than resurrect an older reading.
+ */
+function latestBodyValue(
+	rows: Array<{ snap: OwDailySnapshot }>,
+	key: BodyMetricKey,
+): number | null {
+	if (rows.length === 0) return null;
+	const newest = rows[0].snap;
+	if (Object.prototype.hasOwnProperty.call(newest, key)) {
+		const value = newest[key] ?? null;
+		return value != null && value > 0 ? value : null;
+	}
+	for (const row of rows) {
+		const value = row.snap[key] ?? null;
+		if (value != null && value > 0) return value;
+	}
+	return null;
+}
+
+/**
+ * Derive an RHR-shaped metric from the sleep averages, then let the body
+ * summary override it. The body-summary value is already a 7-day average, so
+ * it fills both current and trend; the status still comes from the sleep
+ * baseline when one exists.
+ */
+function resolveMetric(
+	rows: Array<{ snap: OwDailySnapshot }>,
+	bodyKey: BodyMetricKey,
+	sleepPick: (snap: OwDailySnapshot) => number | null,
+	round: (v: number) => number,
+	metric: "rhr" | "hrv",
+): HealthContext["rhr"] {
+	const sleepMetric = determineMetric(
+		rows
+			.map((r) => ({ value: sleepPick(r.snap) }))
+			.filter((v): v is { value: number } => v.value != null && v.value > 0),
+		round,
+		metric,
+	);
+
+	const bodyValue = latestBodyValue(rows, bodyKey);
+	if (bodyValue == null) return sleepMetric;
+
+	return {
+		current: round(bodyValue),
+		trend7d: round(bodyValue),
+		status: sleepMetric?.status ?? "normal",
+	};
+}
+
+/** Exported for tests; production callers use `getRawHealthContext`. */
+export function computeHealthContext(
 	snapshots: Array<{ date: string; snap: OwDailySnapshot }>,
+	nowMs = Date.now(),
 ): HealthContext {
 	// getDailySnapshots returns date ASC; derivation wants newest first.
-	const rows = snapshots.slice().sort((a, b) => b.date.localeCompare(a.date));
+	const rows = recentDateWindow(
+		snapshots.slice().sort((a, b) => b.date.localeCompare(a.date)),
+		HEALTH_CONTEXT_DAYS,
+	);
 
 	let rhr: HealthContext["rhr"] = null;
 	let hrv: HealthContext["hrv"] = null;
@@ -348,10 +527,20 @@ function computeHealthContext(
 	const morningHeartRate: HealthContext["morningHeartRate"] = null;
 	let sleep: HealthContext["sleep"] = null;
 
-	// Temperature from the most recent persisted body temperature
-	const latestTempRow = rows.find(
-		(r) => r.snap.bodyTemperatureC != null && r.snap.bodyTemperatureC > 0,
-	);
+	// Temperature is a point-in-time reading. OpenWearables withholds it once
+	// it leaves the freshness window, so a persisted value must not outlive
+	// that window and be shown as current.
+	const latestTempRow = rows.find((r) => {
+		const value = r.snap.bodyTemperatureC;
+		if (value == null || value <= 0) return false;
+		const measuredAt = r.snap.bodyTemperatureMeasuredAt;
+		if (!measuredAt) return false;
+		const measuredMs = Date.parse(measuredAt);
+		return (
+			Number.isFinite(measuredMs) &&
+			Math.abs(nowMs - measuredMs) <= BODY_LATEST_WINDOW_MS
+		);
+	});
 	if (latestTempRow) {
 		const current = latestTempRow.snap.bodyTemperatureC as number;
 		temperature = {
@@ -435,24 +624,6 @@ function computeHealthContext(
 			avgStages7d,
 		};
 
-		// RHR from sleep summaries (per-night avg HR during sleep)
-		rhr = determineMetric(
-			nights
-				.map((n) => ({ value: n.snap.sleep.avgHeartRateBpm }))
-				.filter((v): v is { value: number } => v.value != null && v.value > 0),
-			Math.round,
-			"rhr",
-		);
-
-		// HRV from sleep summaries
-		hrv = determineMetric(
-			nights
-				.map((n) => ({ value: n.snap.sleep.avgHrvSdnnMs }))
-				.filter((v): v is { value: number } => v.value != null && v.value > 0),
-			Math.round,
-			"hrv",
-		);
-
 		// Respiratory rate from sleep summaries
 		respiratoryRate = determineMetric(
 			nights
@@ -471,6 +642,24 @@ function computeHealthContext(
 			"spo2",
 		);
 	}
+
+	// RHR and HRV read every row, not just sleep nights, because the body
+	// summary's averaged values can arrive without a sleep summary.
+	rhr = resolveMetric(
+		rows,
+		"restingHeartRateBpm",
+		(snap) => snap.sleep?.avgHeartRateBpm ?? null,
+		Math.round,
+		"rhr",
+	);
+
+	hrv = resolveMetric(
+		rows,
+		"avgHrvSdnnMs",
+		(snap) => snap.sleep?.avgHrvSdnnMs ?? null,
+		Math.round,
+		"hrv",
+	);
 
 	// Body composition from persisted weight snapshots — most recent
 	// non-null weight wins (same rule as HAE's pickLatestBodyComposition).
@@ -517,8 +706,8 @@ async function resolveHealthContext(
 		console.log(
 			`[ow] fetched ${sleepSummaries?.length} sleep summaries for user ${fitUserId} (OW ID: ${owUserId})`,
 		);
-		if (sleepSummaries && sleepSummaries.length > 0) {
-			persistOwSnapshots(fitUserId, sleepSummaries, bodySummary);
+		if ((sleepSummaries?.length ?? 0) > 0 || bodySummary) {
+			persistOwSnapshots(fitUserId, sleepSummaries ?? [], bodySummary);
 			clearOwCaches(fitUserId);
 		}
 		if (bodySummary) {
@@ -577,11 +766,9 @@ async function resolveBodySummary(
 	}
 }
 
-export async function getOwBodySummary(
-	fitUserId: string,
-): Promise<OwBodySummary | null> {
-	const body = await resolveBodySummary(fitUserId);
-	if (!body) return null;
+/** Exported for tests; production callers use `getOwBodySummary`. */
+export function mapBodySummary(body: BodySummaryResponse): OwBodySummary {
+	const bp = body.latest.blood_pressure;
 	return {
 		weightKg: body.slow_changing.weight_kg,
 		heightCm: body.slow_changing.height_cm,
@@ -589,9 +776,23 @@ export async function getOwBodySummary(
 		muscleMassKg: body.slow_changing.muscle_mass_kg,
 		bmi: body.slow_changing.bmi,
 		age: body.slow_changing.age,
-		bloodPressure: body.latest.blood_pressure,
+		bloodPressure:
+			bp?.avg_systolic_mmhg != null && bp.avg_diastolic_mmhg != null
+				? {
+						systolic: bp.avg_systolic_mmhg,
+						diastolic: bp.avg_diastolic_mmhg,
+					}
+				: null,
 		source: body.source,
 	};
+}
+
+export async function getOwBodySummary(
+	fitUserId: string,
+): Promise<OwBodySummary | null> {
+	const body = await resolveBodySummary(fitUserId);
+	if (!body) return null;
+	return mapBodySummary(body);
 }
 
 export function getOwLastSync(fitUserId: string): string | null {
@@ -616,31 +817,32 @@ export function getOwHistory(
 		startDate,
 		endDate,
 	);
-	return snapshots.map(({ date, snap }) => ({
-		date,
-		rhr:
-			snap.sleep?.avgHeartRateBpm != null
-				? Math.round(snap.sleep.avgHeartRateBpm)
-				: null,
-		hrv:
-			snap.sleep?.avgHrvSdnnMs != null
-				? Math.round(snap.sleep.avgHrvSdnnMs)
-				: null,
-		respiratoryRate:
-			snap.sleep?.avgRespiratoryRate != null
-				? Math.round(snap.sleep.avgRespiratoryRate * 10) / 10
-				: null,
-		spo2:
-			snap.sleep?.avgSpo2Percent != null
-				? Math.round(snap.sleep.avgSpo2Percent * 10) / 10
-				: null,
-		temperature: null,
-		morningHeartRate: null,
-		sleepDurationMinutes: snap.sleep?.durationMinutes ?? null,
-		sleepEfficiencyPercent: snap.sleep?.efficiencyPercent ?? null,
-		deepMinutes: snap.sleep?.stages?.deepMinutes ?? null,
-		remMinutes: snap.sleep?.stages?.remMinutes ?? null,
-	}));
+	return snapshots.map(({ date, snap }) => {
+		const rhr = pickOwRhr(snap);
+		const hrv = pickOwHrv(snap);
+		return {
+			date,
+			rhr: rhr != null ? Math.round(rhr) : null,
+			hrv: hrv != null ? Math.round(hrv) : null,
+			respiratoryRate:
+				snap.sleep?.avgRespiratoryRate != null
+					? Math.round(snap.sleep.avgRespiratoryRate * 10) / 10
+					: null,
+			spo2:
+				snap.sleep?.avgSpo2Percent != null
+					? Math.round(snap.sleep.avgSpo2Percent * 10) / 10
+					: null,
+			temperature:
+				snap.bodyTemperatureC != null && snap.bodyTemperatureC > 0
+					? Math.round(snap.bodyTemperatureC * 10) / 10
+					: null,
+			morningHeartRate: null,
+			sleepDurationMinutes: snap.sleep?.durationMinutes ?? null,
+			sleepEfficiencyPercent: snap.sleep?.efficiencyPercent ?? null,
+			deepMinutes: snap.sleep?.stages?.deepMinutes ?? null,
+			remMinutes: snap.sleep?.stages?.remMinutes ?? null,
+		};
+	});
 }
 
 export function clearOwCaches(fitUserId: string): void {

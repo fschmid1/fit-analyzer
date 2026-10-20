@@ -15,6 +15,11 @@ import {
 	sleepNightDate,
 } from "./haeSleep.js";
 import {
+	HEALTH_CONTEXT_DAYS,
+	healthHistoryDateRange,
+	recentDateWindow,
+} from "./healthDates.js";
+import {
 	clearSourceHistory,
 	getDailySnapshots,
 	getLastHistoryUpdate,
@@ -649,7 +654,10 @@ function computeHaeHealthContext(
 	history: Array<{ date: string } & HaeDailySnapshot>,
 ): HealthContext {
 	// Rows arrive date ASC (from getDailySnapshots); sort newest first
-	const rows = history.slice().sort((a, b) => b.date.localeCompare(a.date));
+	const rows = recentDateWindow(
+		history.slice().sort((a, b) => b.date.localeCompare(a.date)),
+		HEALTH_CONTEXT_DAYS,
+	);
 
 	let rhr: HealthContext["rhr"] = null;
 	let hrv: HealthContext["hrv"] = null;
@@ -934,20 +942,15 @@ export async function getHaeHealthContext(
 		return cached.data;
 	}
 
-	// Fetch last 7 days of history (use tomorrow as the upper bound so data
-	// pushed from timezones ahead of the server isn't dropped).
-	const end = new Date();
-	end.setDate(end.getDate() + 1);
-	const endStr = end.toISOString().split("T")[0];
-	const start = new Date();
-	start.setDate(start.getDate() - 7);
-	const startStr = start.toISOString().split("T")[0];
+	const { startDate, endDate } = healthHistoryDateRange(
+		HEALTH_CONTEXT_DAYS + 1,
+	);
 
 	const rows = getDailySnapshots<HaeDailySnapshot>(
 		fitUserId,
 		HAE_SOURCE,
-		startStr,
-		endStr,
+		startDate,
+		endDate,
 	);
 
 	if (rows.length === 0) return null;
