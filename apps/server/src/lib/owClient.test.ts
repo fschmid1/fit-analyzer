@@ -93,23 +93,32 @@ function bodySummary(
 }
 
 describe("OW health context", () => {
-	it("prefers the body summary's averaged RHR and HRV over sleep averages", () => {
+	it("uses the latest daily RHR/HRV for current and the body 7-day average for trend", () => {
 		const ctx = ow.computeHealthContext([
-			{ date: "2026-10-19", snap: { sleep: sleep(51, 84) } },
+			{
+				date: "2026-10-19",
+				snap: {
+					sleep: sleep(51, 84),
+					dailyRestingHeartRateBpm: 49,
+					dailyHrvSdnnMs: 80,
+				},
+			},
 			{
 				date: "2026-10-20",
 				snap: {
 					sleep: sleep(51, 84),
-					restingHeartRateBpm: 48,
-					avgHrvSdnnMs: 86,
+					dailyRestingHeartRateBpm: 48,
+					dailyHrvSdnnMs: 70,
+					restingHeartRateBpm: 51,
+					avgHrvSdnnMs: 66,
 				},
 			},
 		]);
 
 		expect(ctx.rhr?.current).toBe(48);
-		expect(ctx.rhr?.trend7d).toBe(48);
-		expect(ctx.hrv?.current).toBe(86);
-		expect(ctx.hrv?.trend7d).toBe(86);
+		expect(ctx.rhr?.trend7d).toBe(51);
+		expect(ctx.hrv?.current).toBe(70);
+		expect(ctx.hrv?.trend7d).toBe(66);
 	});
 
 	it("falls back to the sleep average when the body summary has no value", () => {
@@ -138,6 +147,43 @@ describe("OW health context", () => {
 		expect(ctx.hrv?.current).toBe(86);
 	});
 
+	it("keeps using the latest daily value when a newer sleep-only poll arrives", () => {
+		const ctx = ow.computeHealthContext([
+			{ date: "2026-10-20", snap: { sleep: sleep(52, 90) } },
+			{
+				date: "2026-10-19",
+				snap: {
+					sleep: sleep(51, 84),
+					dailyRestingHeartRateBpm: 48,
+					dailyHrvSdnnMs: 70,
+				},
+			},
+		]);
+
+		expect(ctx.rhr?.current).toBe(48);
+		expect(ctx.hrv?.current).toBe(70);
+	});
+
+	it("keeps daily values when the body summary explicitly reports no average", () => {
+		const ctx = ow.computeHealthContext([
+			{
+				date: "2026-10-20",
+				snap: {
+					sleep: sleep(52, 90),
+					dailyRestingHeartRateBpm: 48,
+					dailyHrvSdnnMs: 70,
+					restingHeartRateBpm: null,
+					avgHrvSdnnMs: null,
+				},
+			},
+		]);
+
+		expect(ctx.rhr?.current).toBe(48);
+		expect(ctx.rhr?.trend7d).toBe(48);
+		expect(ctx.hrv?.current).toBe(70);
+		expect(ctx.hrv?.trend7d).toBe(70);
+	});
+
 	it("does not resurrect an older body value after an explicit null", () => {
 		const ctx = ow.computeHealthContext([
 			{
@@ -159,6 +205,28 @@ describe("OW health context", () => {
 		]);
 
 		expect(ctx.rhr?.current).toBe(52);
+		expect(ctx.hrv?.current).toBe(90);
+	});
+
+	it("does not resurrect a body value when a newer date has no body fields", () => {
+		const ctx = ow.computeHealthContext([
+			{ date: "2026-10-21", snap: { dailyRestingHeartRateBpm: 48 } },
+			{
+				date: "2026-10-20",
+				snap: {
+					sleep: sleep(52, 90),
+					restingHeartRateBpm: null,
+					avgHrvSdnnMs: null,
+				},
+			},
+			{
+				date: "2026-10-19",
+				snap: { restingHeartRateBpm: 51, avgHrvSdnnMs: 66 },
+			},
+		]);
+
+		expect(ctx.rhr?.current).toBe(48);
+		expect(ctx.rhr?.trend7d).toBe(48);
 		expect(ctx.hrv?.current).toBe(90);
 	});
 
@@ -227,6 +295,52 @@ describe("OW health context", () => {
 	});
 });
 
+describe("OW daily vital aggregation", () => {
+	it("averages each UTC day and ignores daily totals", () => {
+		const samples = [
+			{
+				timestamp: "2026-10-20T06:00:00Z",
+				type: "resting_heart_rate",
+				value: 48,
+			},
+			{
+				timestamp: "2026-10-20T18:00:00Z",
+				type: "resting_heart_rate",
+				value: 50,
+			},
+			{
+				// 00:30+02:00 is 22:30Z on the 20th, matching OW's UTC grouping.
+				timestamp: "2026-10-21T00:30:00+02:00",
+				type: "resting_heart_rate",
+				value: 52,
+			},
+			{
+				timestamp: "2026-10-19T12:00:00Z",
+				type: "resting_heart_rate",
+				value: 60,
+				is_daily_total: true,
+			},
+			{
+				timestamp: "2026-10-19T12:00:00Z",
+				type: "heart_rate_variability_sdnn",
+				value: 80,
+			},
+			{
+				timestamp: "2026-10-19T18:00:00Z",
+				type: "heart_rate_variability_sdnn",
+				value: 90,
+			},
+		];
+
+		const rhr = ow.dailyMeans(samples, "resting_heart_rate");
+		const hrv = ow.dailyMeans(samples, "heart_rate_variability_sdnn");
+
+		expect(rhr.get("2026-10-20")).toBe(50);
+		expect(rhr.get("2026-10-21")).toBeUndefined();
+		expect(hrv.get("2026-10-19")).toBe(85);
+	});
+});
+
 describe("OW body summary mapping", () => {
 	it("maps the API's averaged blood-pressure fields", () => {
 		const body = ow.mapBodySummary(
@@ -266,6 +380,42 @@ describe("OW snapshot persistence", () => {
 			date: "2026-10-20",
 			rhr: 48,
 			hrv: 86,
+			sleepDurationMinutes: 480,
+		});
+	});
+
+	it("stores daily RHR/HRV on their own dates", () => {
+		ow.persistOwSnapshots(
+			"u5",
+			[
+				{
+					date: "2026-10-20",
+					duration_minutes: 480,
+					avg_heart_rate_bpm: 55,
+					avg_hrv_sdnn_ms: 84,
+				},
+			],
+			bodySummary({ restingHeartRateBpm: 51, avgHrvSdnnMs: 66 }),
+			{
+				rhr: new Map([
+					["2026-10-19", 49],
+					["2026-10-20", 48],
+				]),
+				hrv: new Map([
+					["2026-10-19", 80],
+					["2026-10-20", 70],
+				]),
+			},
+		);
+
+		const history = ow.getOwHistory("u5", "2026-10-14", "2026-10-21");
+		expect(history.find((entry) => entry.date === "2026-10-19")).toMatchObject({
+			rhr: 49,
+			hrv: 80,
+		});
+		expect(history.find((entry) => entry.date === "2026-10-20")).toMatchObject({
+			rhr: 48,
+			hrv: 70,
 			sleepDurationMinutes: 480,
 		});
 	});

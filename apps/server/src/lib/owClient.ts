@@ -64,9 +64,9 @@ function isConfigured(): boolean {
 
 /**
  * One day of OpenWearables data, as persisted in health_daily_history.
- * Sleep summaries carry the vitals; body composition and averaged vitals ride
- * on the most recent snapshot date, while point-in-time temperature keeps its
- * measurement date.
+ * Sleep summaries and the daily resting-HR/HRV series fill their own dates;
+ * body composition and the 7-day averages ride on the most recent snapshot
+ * date, while point-in-time temperature keeps its measurement date.
  */
 export interface OwDailySnapshot {
 	sleep?: {
@@ -89,9 +89,17 @@ export interface OwDailySnapshot {
 	 */
 	bodyTemperatureMeasuredAt?: string | null;
 	/**
+	 * Resting HR for this date, from the `resting_heart_rate` series. This is
+	 * the daily number OpenWearables plots; the body summary's 7-day average
+	 * lives in `restingHeartRateBpm` so the two are not confused.
+	 */
+	dailyRestingHeartRateBpm?: number | null;
+	/** Daily HRV (SDNN) for this date, from the HRV series. */
+	dailyHrvSdnnMs?: number | null;
+	/**
 	 * Averaged resting HR from the body summary (7-day window) — the number
-	 * OpenWearables reports as "Resting HR". Takes priority over the per-night
-	 * sleep average when deriving the context and history.
+	 * OpenWearables reports under "Averaged over 7 days". Used as the trend
+	 * baseline; the daily series above supplies the current value.
 	 */
 	restingHeartRateBpm?: number | null;
 	/** Averaged HRV (SDNN) from the same body-summary window. */
@@ -209,6 +217,86 @@ async function fetchSleepSummaries(
 	return json.data;
 }
 
+/** The daily vitals OpenWearables plots as trends. */
+const DAILY_VITAL_TYPES = [
+	"resting_heart_rate",
+	"heart_rate_variability_sdnn",
+] as const;
+
+type DailyVitalType = (typeof DAILY_VITAL_TYPES)[number];
+
+export interface OwTimeseriesSample {
+	timestamp: string;
+	type: string;
+	value: number;
+	is_daily_total?: boolean | null;
+}
+
+/**
+ * One point a day, the mean of that UTC day's readings. OpenWearables' body
+ * trends group the same way, so the current value matches what the user sees
+ * on the trend chart even when the provider reports several readings a day.
+ */
+export function dailyMeans(
+	samples: OwTimeseriesSample[],
+	type: DailyVitalType,
+): Map<string, number> {
+	const totals = new Map<string, { sum: number; count: number }>();
+	for (const sample of samples) {
+		if (sample.type !== type || sample.is_daily_total === true) continue;
+		const value = Number(sample.value);
+		if (!Number.isFinite(value) || value <= 0) continue;
+		const parsed = Date.parse(sample.timestamp);
+		if (!Number.isFinite(parsed)) continue;
+		const date = new Date(parsed).toISOString().slice(0, 10);
+		const entry = totals.get(date) ?? { sum: 0, count: 0 };
+		entry.sum += value;
+		entry.count += 1;
+		totals.set(date, entry);
+	}
+	return new Map(
+		[...totals].map(([date, { sum, count }]) => [date, sum / count]),
+	);
+}
+
+async function fetchDailyVitals(owUserId: string): Promise<{
+	rhr: Map<string, number>;
+	hrv: Map<string, number>;
+} | null> {
+	const apiKey = env.OW_API_KEY;
+	if (!apiKey) throw new Error("OW_API_KEY not configured");
+	const { startDate, endDate } = getDateRange();
+	const params = new URLSearchParams({
+		start_time: `${startDate}T00:00:00Z`,
+		end_time: `${endDate}T23:59:59Z`,
+		// Hourly buckets keep a noisy series (HRV) under the page limit while
+		// still giving a faithful daily mean.
+		resolution: "1hour",
+		limit: "1000",
+	});
+	for (const type of DAILY_VITAL_TYPES) params.append("types", type);
+
+	const res = await fetch(
+		`${env.OW_BASE_URL}/api/v1/users/${encodeURIComponent(owUserId)}/timeseries?${params}`,
+		{
+			headers: { "X-Open-Wearables-API-Key": apiKey },
+			signal: AbortSignal.timeout(10_000),
+		},
+	);
+	if (!res.ok) {
+		console.warn(
+			`[ow] timeseries fetch failed: ${res.status} ${res.statusText} (response body redacted)`,
+		);
+		return null;
+	}
+	const json = (await res.json()) as { data?: OwTimeseriesSample[] };
+	const samples = json.data ?? [];
+	return {
+		rhr: dailyMeans(samples, "resting_heart_rate"),
+		hrv: dailyMeans(samples, "heart_rate_variability_sdnn"),
+	};
+}
+
 /** The window OpenWearables uses when it labels a point reading "recent". */
 const BODY_LATEST_WINDOW_HOURS = 4;
 const BODY_LATEST_WINDOW_MS = BODY_LATEST_WINDOW_HOURS * 60 * 60 * 1000;
@@ -318,6 +406,11 @@ function mergeOwSnapshots(
 			incoming.bodyTemperatureMeasuredAt,
 			existing.bodyTemperatureMeasuredAt,
 		),
+		dailyRestingHeartRateBpm: keep(
+			incoming.dailyRestingHeartRateBpm,
+			existing.dailyRestingHeartRateBpm,
+		),
+		dailyHrvSdnnMs: keep(incoming.dailyHrvSdnnMs, existing.dailyHrvSdnnMs),
 		restingHeartRateBpm: keep(
 			incoming.restingHeartRateBpm,
 			existing.restingHeartRateBpm,
@@ -326,11 +419,17 @@ function mergeOwSnapshots(
 	};
 }
 
+export interface OwDailyVitals {
+	rhr: Map<string, number>;
+	hrv: Map<string, number>;
+}
+
 /** Exported for tests; production callers go through `getRawHealthContext`. */
 export function persistOwSnapshots(
 	fitUserId: string,
 	sleepSummaries: SleepRecord[],
 	bodySummary: BodySummaryResponse | null,
+	dailyVitals: OwDailyVitals | null = null,
 ): void {
 	try {
 		db.transaction(() => {
@@ -341,6 +440,26 @@ export function persistOwSnapshots(
 					OW_SOURCE,
 					rec.date,
 					sleepRecordToSnapshot(rec),
+					mergeOwSnapshots,
+				);
+			}
+			// Daily vitals belong to their own dates, unlike the body summary's
+			// current-only averages.
+			for (const [date, value] of dailyVitals?.rhr ?? []) {
+				upsertDailySnapshot<OwDailySnapshot>(
+					fitUserId,
+					OW_SOURCE,
+					date,
+					{ dailyRestingHeartRateBpm: value },
+					mergeOwSnapshots,
+				);
+			}
+			for (const [date, value] of dailyVitals?.hrv ?? []) {
+				upsertDailySnapshot<OwDailySnapshot>(
+					fitUserId,
+					OW_SOURCE,
+					date,
+					{ dailyHrvSdnnMs: value },
 					mergeOwSnapshots,
 				);
 			}
@@ -435,23 +554,27 @@ function determineMetric(
 }
 
 /**
- * Effective RHR for a day. The body summary's averaged resting HR is the
- * number OpenWearables reports, so it wins over the per-night sleep average;
- * the sleep average remains the fallback for days the body summary doesn't
- * cover.
+ * Effective RHR for a day. The daily `resting_heart_rate` series is the value
+ * OpenWearables plots, so it wins; the body summary's 7-day average and the
+ * per-night sleep average are fallbacks for days the series doesn't cover.
  */
 function pickOwRhr(snap: OwDailySnapshot): number | null {
-	const value = snap.restingHeartRateBpm ?? snap.sleep?.avgHeartRateBpm;
+	const value =
+		snap.dailyRestingHeartRateBpm ??
+		snap.restingHeartRateBpm ??
+		snap.sleep?.avgHeartRateBpm;
 	return value != null && value > 0 ? value : null;
 }
 
-/** Effective HRV (SDNN) for a day, preferring the body-summary average. */
+/** Effective HRV (SDNN) for a day, preferring the daily series. */
 function pickOwHrv(snap: OwDailySnapshot): number | null {
-	const value = snap.avgHrvSdnnMs ?? snap.sleep?.avgHrvSdnnMs;
+	const value =
+		snap.dailyHrvSdnnMs ?? snap.avgHrvSdnnMs ?? snap.sleep?.avgHrvSdnnMs;
 	return value != null && value > 0 ? value : null;
 }
 
 type BodyMetricKey = "restingHeartRateBpm" | "avgHrvSdnnMs";
+type DailyMetricKey = "dailyRestingHeartRateBpm" | "dailyHrvSdnnMs";
 
 /**
  * The latest body-summary value for a metric. A sleep-only poll creates a new
@@ -464,12 +587,23 @@ function latestBodyValue(
 	rows: Array<{ snap: OwDailySnapshot }>,
 	key: BodyMetricKey,
 ): number | null {
-	if (rows.length === 0) return null;
-	const newest = rows[0].snap;
-	if (Object.prototype.hasOwnProperty.call(newest, key)) {
-		const value = newest[key] ?? null;
+	for (const row of rows) {
+		if (!Object.prototype.hasOwnProperty.call(row.snap, key)) continue;
+		const value = row.snap[key] ?? null;
 		return value != null && value > 0 ? value : null;
 	}
+	return null;
+}
+
+/**
+ * The most recent daily value. Unlike the body summary, a null on a later day
+ * does not invalidate an earlier reading — it only means that date has no
+ * sample — so keep scanning for the newest one.
+ */
+function latestDailyValue(
+	rows: Array<{ snap: OwDailySnapshot }>,
+	key: DailyMetricKey,
+): number | null {
 	for (const row of rows) {
 		const value = row.snap[key] ?? null;
 		if (value != null && value > 0) return value;
@@ -477,14 +611,27 @@ function latestBodyValue(
 	return null;
 }
 
+/** Mean of the daily values available in the window. */
+function meanDailyValue(
+	rows: Array<{ snap: OwDailySnapshot }>,
+	key: DailyMetricKey,
+): number | null {
+	const values = rows
+		.map((row) => row.snap[key] ?? null)
+		.filter((value): value is number => value != null && value > 0);
+	if (values.length === 0) return null;
+	return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
 /**
- * Derive an RHR-shaped metric from the sleep averages, then let the body
- * summary override it. The body-summary value is already a 7-day average, so
- * it fills both current and trend; the status still comes from the sleep
- * baseline when one exists.
+ * Build an RHR-shaped metric from the daily series and the body summary.
+ * `current` is the latest daily reading (the number OpenWearables plots);
+ * `trend7d` is the body summary's 7-day average, falling back to the mean of
+ * the daily readings. Sleep averages remain the fallback when neither exists.
  */
 function resolveMetric(
 	rows: Array<{ snap: OwDailySnapshot }>,
+	dailyKey: DailyMetricKey,
 	bodyKey: BodyMetricKey,
 	sleepPick: (snap: OwDailySnapshot) => number | null,
 	round: (v: number) => number,
@@ -498,13 +645,16 @@ function resolveMetric(
 		metric,
 	);
 
+	const dailyValue = latestDailyValue(rows, dailyKey);
 	const bodyValue = latestBodyValue(rows, bodyKey);
-	if (bodyValue == null) return sleepMetric;
+	const current = dailyValue ?? bodyValue;
+	if (current == null) return sleepMetric;
 
+	const trend = bodyValue ?? meanDailyValue(rows, dailyKey) ?? current;
 	return {
-		current: round(bodyValue),
-		trend7d: round(bodyValue),
-		status: sleepMetric?.status ?? "normal",
+		current: round(current),
+		trend7d: round(trend),
+		status: determineStatus(current, trend, metric),
 	};
 }
 
@@ -643,10 +793,11 @@ export function computeHealthContext(
 		);
 	}
 
-	// RHR and HRV read every row, not just sleep nights, because the body
-	// summary's averaged values can arrive without a sleep summary.
+	// RHR and HRV read every row, not just sleep nights, because the daily
+	// series and the body summary's averages can arrive without a sleep summary.
 	rhr = resolveMetric(
 		rows,
+		"dailyRestingHeartRateBpm",
 		"restingHeartRateBpm",
 		(snap) => snap.sleep?.avgHeartRateBpm ?? null,
 		Math.round,
@@ -655,6 +806,7 @@ export function computeHealthContext(
 
 	hrv = resolveMetric(
 		rows,
+		"dailyHrvSdnnMs",
 		"avgHrvSdnnMs",
 		(snap) => snap.sleep?.avgHrvSdnnMs ?? null,
 		Math.round,
@@ -699,15 +851,31 @@ async function resolveHealthContext(
 	console.log(`[ow] cache miss for user ${fitUserId} (OW ID: ${owUserId})`);
 
 	try {
-		const [sleepSummaries, bodySummary] = await Promise.all([
+		const [sleepSummaries, bodySummary, dailyVitals] = await Promise.all([
 			fetchSleepSummaries(owUserId),
 			fetchBodySummary(owUserId),
+			// The body summary and sleep nights are still useful when the
+			// timeseries endpoint is unavailable, so degrade instead of failing.
+			fetchDailyVitals(owUserId).catch((err) => {
+				console.warn("[ow] daily vitals fetch failed:", err);
+				return null;
+			}),
 		]);
 		console.log(
-			`[ow] fetched ${sleepSummaries?.length} sleep summaries for user ${fitUserId} (OW ID: ${owUserId})`,
+			`[ow] fetched ${sleepSummaries?.length} sleep summaries, ${dailyVitals?.rhr.size ?? 0} daily RHR days, ${dailyVitals?.hrv.size ?? 0} daily HRV days for user ${fitUserId} (OW ID: ${owUserId})`,
 		);
-		if ((sleepSummaries?.length ?? 0) > 0 || bodySummary) {
-			persistOwSnapshots(fitUserId, sleepSummaries ?? [], bodySummary);
+		if (
+			(sleepSummaries?.length ?? 0) > 0 ||
+			bodySummary ||
+			(dailyVitals?.rhr.size ?? 0) > 0 ||
+			(dailyVitals?.hrv.size ?? 0) > 0
+		) {
+			persistOwSnapshots(
+				fitUserId,
+				sleepSummaries ?? [],
+				bodySummary,
+				dailyVitals,
+			);
 			clearOwCaches(fitUserId);
 		}
 		if (bodySummary) {
