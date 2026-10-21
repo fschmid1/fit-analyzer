@@ -10,6 +10,8 @@ beforeAll(async () => {
 	// `db` reads its path from env at import time, so point it at a temp
 	// database before loading the module graph.
 	process.env.DB_PATH = DB_PATH;
+	process.env.OW_API_KEY = "test-key";
+	process.env.OW_BASE_URL = "https://ow.test";
 	ow = await import("./owClient.js");
 });
 
@@ -338,6 +340,59 @@ describe("OW daily vital aggregation", () => {
 		expect(rhr.get("2026-10-20")).toBe(50);
 		expect(rhr.get("2026-10-21")).toBeUndefined();
 		expect(hrv.get("2026-10-19")).toBe(85);
+	});
+
+	it("pages within OW's limit and follows the cursor", async () => {
+		const requests: string[] = [];
+		const pages = [
+			{
+				data: [
+					{
+						timestamp: "2026-10-19T22:00:00Z",
+						type: "resting_heart_rate",
+						value: 49,
+					},
+				],
+				pagination: { next_cursor: "page-2", has_more: true },
+			},
+			{
+				data: [
+					{
+						timestamp: "2026-10-20T22:00:00Z",
+						type: "resting_heart_rate",
+						value: 48,
+					},
+					{
+						timestamp: "2026-10-20T22:00:00Z",
+						type: "heart_rate_variability_sdnn",
+						value: 70,
+					},
+				],
+				pagination: { next_cursor: null, has_more: false },
+			},
+		];
+		const fakeFetch = (async (input: string | URL | Request) => {
+			requests.push(String(input));
+			return new Response(JSON.stringify(pages[requests.length - 1]));
+		}) as typeof fetch;
+
+		const vitals = await ow.fetchDailyVitals("u1", fakeFetch);
+
+		expect(vitals?.rhr.get("2026-10-19")).toBe(49);
+		expect(vitals?.rhr.get("2026-10-20")).toBe(48);
+		expect(vitals?.hrv.get("2026-10-20")).toBe(70);
+		expect(requests).toHaveLength(2);
+
+		const first = new URL(requests[0]);
+		expect(first.searchParams.get("limit")).toBe("100");
+		expect(first.searchParams.getAll("types")).toEqual([
+			"resting_heart_rate",
+			"heart_rate_variability_sdnn",
+		]);
+		expect(first.searchParams.has("cursor")).toBe(false);
+
+		const second = new URL(requests[1]);
+		expect(second.searchParams.get("cursor")).toBe("page-2");
 	});
 });
 

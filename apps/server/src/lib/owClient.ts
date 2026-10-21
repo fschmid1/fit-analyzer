@@ -259,38 +259,79 @@ export function dailyMeans(
 	);
 }
 
-async function fetchDailyVitals(owUserId: string): Promise<{
+interface OwTimeseriesPage {
+	data?: OwTimeseriesSample[];
+	pagination?: {
+		next_cursor?: string | null;
+		has_more?: boolean;
+	} | null;
+}
+
+/** OpenWearables caps `limit` at 100; larger values are a 400. */
+const TIMESERIES_PAGE_LIMIT = 100;
+/** Bounds a pathological or looping cursor; 20 pages is 2000 samples. */
+const TIMESERIES_MAX_PAGES = 20;
+
+/**
+ * Fetch the daily RHR/HRV series. The endpoint paginates with an opaque
+ * cursor and rejects `limit` above 100, so walk the pages instead of asking
+ * for the whole window in one request.
+ *
+ * Exported for tests; production callers use `getRawHealthContext`.
+ */
+export async function fetchDailyVitals(
+	owUserId: string,
+	fetchImpl: typeof fetch = fetch,
+): Promise<{
 	rhr: Map<string, number>;
 	hrv: Map<string, number>;
 } | null> {
 	const apiKey = env.OW_API_KEY;
 	if (!apiKey) throw new Error("OW_API_KEY not configured");
 	const { startDate, endDate } = getDateRange();
-	const params = new URLSearchParams({
-		start_time: `${startDate}T00:00:00Z`,
-		end_time: `${endDate}T23:59:59Z`,
-		// Hourly buckets keep a noisy series (HRV) under the page limit while
-		// still giving a faithful daily mean.
-		resolution: "1hour",
-		limit: "1000",
-	});
-	for (const type of DAILY_VITAL_TYPES) params.append("types", type);
 
-	const res = await fetch(
-		`${env.OW_BASE_URL}/api/v1/users/${encodeURIComponent(owUserId)}/timeseries?${params}`,
-		{
-			headers: { "X-Open-Wearables-API-Key": apiKey },
-			signal: AbortSignal.timeout(10_000),
-		},
-	);
-	if (!res.ok) {
-		console.warn(
-			`[ow] timeseries fetch failed: ${res.status} ${res.statusText} (response body redacted)`,
+	const samples: OwTimeseriesSample[] = [];
+	let cursor: string | null = null;
+	for (let page = 0; page < TIMESERIES_MAX_PAGES; page++) {
+		const params = new URLSearchParams({
+			start_time: `${startDate}T00:00:00Z`,
+			end_time: `${endDate}T23:59:59Z`,
+			// Hourly buckets keep a noisy series (HRV) under the page limit
+			// while still giving a faithful daily mean.
+			resolution: "1hour",
+			limit: String(TIMESERIES_PAGE_LIMIT),
+		});
+		for (const type of DAILY_VITAL_TYPES) params.append("types", type);
+		if (cursor) params.set("cursor", cursor);
+
+		const res = await fetchImpl(
+			`${env.OW_BASE_URL}/api/v1/users/${encodeURIComponent(owUserId)}/timeseries?${params}`,
+			{
+				headers: { "X-Open-Wearables-API-Key": apiKey },
+				signal: AbortSignal.timeout(10_000),
+			},
 		);
-		return null;
+		if (!res.ok) {
+			console.warn(
+				`[ow] timeseries fetch failed: ${res.status} ${res.statusText} (response body redacted)`,
+			);
+			return null;
+		}
+		const json = (await res.json()) as OwTimeseriesPage;
+		samples.push(...(json.data ?? []));
+		const nextCursor = json.pagination?.next_cursor ?? null;
+		if (!nextCursor || json.pagination?.has_more === false) {
+			cursor = null;
+			break;
+		}
+		cursor = nextCursor;
 	}
-	const json = (await res.json()) as { data?: OwTimeseriesSample[] };
-	const samples = json.data ?? [];
+	if (cursor) {
+		console.warn(
+			`[ow] timeseries pagination stopped after ${TIMESERIES_MAX_PAGES} pages; later samples were dropped`,
+		);
+	}
+
 	return {
 		rhr: dailyMeans(samples, "resting_heart_rate"),
 		hrv: dailyMeans(samples, "heart_rate_variability_sdnn"),
