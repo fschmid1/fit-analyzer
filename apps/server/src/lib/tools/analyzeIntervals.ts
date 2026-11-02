@@ -1,193 +1,17 @@
-import type { Interval, ToolDefinition } from "@fit-analyzer/shared";
+import {
+	detectHeartRateIntervals,
+	detectPowerIntervals,
+	mapStoredRecords,
+	type Interval,
+	type ToolDefinition,
+} from "@fit-analyzer/shared";
 import type { ToolHandler } from "./registry.js";
 import { getActivityById, resolveActivityId } from "./activityUtils.js";
-
-function computeAverages(
-	records: {
-		power: number | null;
-		heartRate: number | null;
-		cadence: number | null;
-		elapsedSeconds: number;
-	}[],
-) {
-	const includedRecords = records.filter((r) => r.cadence !== 0);
-	const validPower = includedRecords.filter((r) => r.power != null);
-	const validHR = includedRecords.filter((r) => r.heartRate != null);
-	const validCadence = includedRecords.filter((r) => r.cadence != null);
-	let duration = 0;
-	for (let i = 0; i < records.length - 1; i++) {
-		if (records[i].cadence === 0) continue;
-		const diff = records[i + 1].elapsedSeconds - records[i].elapsedSeconds;
-		if (diff > 0) duration += diff;
-	}
-	return {
-		avgPower:
-			validPower.length > 0
-				? Math.round(
-						validPower.reduce((s, r) => s + (r.power ?? 0), 0) /
-							validPower.length,
-					)
-				: null,
-		avgHeartRate:
-			validHR.length > 0
-				? Math.round(
-						validHR.reduce((s, r) => s + (r.heartRate ?? 0), 0) /
-							validHR.length,
-					)
-				: null,
-		avgCadence:
-			validCadence.length > 0
-				? Math.round(
-						validCadence.reduce((s, r) => s + (r.cadence ?? 0), 0) /
-							validCadence.length,
-					)
-				: null,
-		duration,
-	};
-}
-
-function detectPowerIntervals(
-	records: {
-		power: number | null;
-		heartRate: number | null;
-		cadence: number | null;
-		elapsedSeconds: number;
-	}[],
-	minAvgPower: number,
-	minSeconds: number,
-	coastingTolerance = 2,
-): Interval[] {
-	if (records.length === 0 || minAvgPower <= 0 || minSeconds <= 0) return [];
-
-	const segments: { startIdx: number; endIdx: number }[] = [];
-	let segmentStart = -1;
-
-	for (let i = 0; i < records.length; i++) {
-		const r = records[i];
-		if (r.power != null && r.power > 0) {
-			if (segmentStart === -1) segmentStart = i;
-		} else if (segmentStart !== -1) {
-			segments.push({ startIdx: segmentStart, endIdx: i - 1 });
-			segmentStart = -1;
-		}
-	}
-	if (segmentStart !== -1) {
-		segments.push({ startIdx: segmentStart, endIdx: records.length - 1 });
-	}
-
-	const merged: { startIdx: number; endIdx: number }[] = [];
-	let current: (typeof segments)[0] | null = null;
-
-	for (const seg of segments) {
-		if (!current) {
-			current = seg;
-			continue;
-		}
-		const gapEnd = records[current.endIdx].elapsedSeconds;
-		const gapStart = records[seg.startIdx].elapsedSeconds;
-		if (gapStart - gapEnd <= coastingTolerance) {
-			current.endIdx = seg.endIdx;
-		} else {
-			merged.push(current);
-			current = seg;
-		}
-	}
-	if (current) merged.push(current);
-
-	const results: Interval[] = [];
-	if (merged.length === 0) return [];
-
-	const maxSeconds = records[records.length - 1].elapsedSeconds;
-
-	for (const seg of merged) {
-		const startSeconds = records[seg.startIdx].elapsedSeconds;
-		const endSeconds = Math.min(records[seg.endIdx].elapsedSeconds, maxSeconds);
-		const duration = endSeconds - startSeconds;
-
-		if (duration < minSeconds) continue;
-
-		const slice = records.slice(seg.startIdx, seg.endIdx + 1);
-		const stats = computeAverages(slice);
-
-		if (stats.avgPower === null || stats.avgPower < minAvgPower) continue;
-
-		results.push({
-			index: results.length,
-			startSeconds,
-			endSeconds,
-			avgPower: stats.avgPower,
-			normalizedPower: null,
-			avgHeartRate: stats.avgHeartRate,
-			avgCadence: stats.avgCadence,
-			normalizedCadence: null,
-			duration,
-		});
-	}
-
-	return results;
-}
-
-function detectHrIntervals(
-	records: {
-		power: number | null;
-		heartRate: number | null;
-		cadence: number | null;
-		elapsedSeconds: number;
-	}[],
-	minHr: number,
-	minSeconds: number,
-): Interval[] {
-	if (records.length === 0 || minHr <= 0 || minSeconds <= 0) return [];
-
-	const segments: { startIdx: number; endIdx: number }[] = [];
-	let segmentStart = -1;
-
-	for (let i = 0; i < records.length; i++) {
-		const r = records[i];
-		if (r.heartRate != null && r.heartRate >= minHr) {
-			if (segmentStart === -1) segmentStart = i;
-		} else if (segmentStart !== -1) {
-			segments.push({ startIdx: segmentStart, endIdx: i - 1 });
-			segmentStart = -1;
-		}
-	}
-	if (segmentStart !== -1) {
-		segments.push({ startIdx: segmentStart, endIdx: records.length - 1 });
-	}
-
-	const results: Interval[] = [];
-	const maxSeconds = records[records.length - 1].elapsedSeconds;
-
-	for (const seg of segments) {
-		const startSeconds = records[seg.startIdx].elapsedSeconds;
-		const endSeconds = Math.min(records[seg.endIdx].elapsedSeconds, maxSeconds);
-		const duration = endSeconds - startSeconds;
-
-		if (duration < minSeconds) continue;
-
-		const slice = records.slice(seg.startIdx, seg.endIdx + 1);
-		const stats = computeAverages(slice);
-
-		results.push({
-			index: results.length,
-			startSeconds,
-			endSeconds,
-			avgPower: stats.avgPower,
-			normalizedPower: null,
-			avgHeartRate: stats.avgHeartRate,
-			avgCadence: stats.avgCadence,
-			normalizedCadence: null,
-			duration,
-		});
-	}
-
-	return results;
-}
 
 export const analyzeIntervalsDefinition: ToolDefinition = {
 	name: "analyze_intervals",
 	description:
-		"Detect intervals (sustained efforts) in an activity by power or heart rate thresholds. Returns each interval's duration, average power, HR, and cadence.",
+		"Detect intervals (sustained efforts) in an activity by power or heart rate thresholds. Scans the ride for contiguous blocks at or above the threshold; short dips up to coastingTolerance are bridged. Returns each interval's duration, average power, HR, and cadence.",
 	parameters: {
 		type: "object",
 		properties: {
@@ -197,7 +21,8 @@ export const analyzeIntervalsDefinition: ToolDefinition = {
 			},
 			minPower: {
 				type: "number",
-				description: "Minimum average power in watts (default 200)",
+				description:
+					"Power threshold in watts; intervals must stay at or above this (default 200)",
 			},
 			minSeconds: {
 				type: "number",
@@ -206,7 +31,7 @@ export const analyzeIntervalsDefinition: ToolDefinition = {
 			coastingTolerance: {
 				type: "number",
 				description:
-					"Max coasting gap to merge adjacent efforts in seconds (default 2)",
+					"Max seconds below the threshold to bridge within one effort (default 5)",
 			},
 			minHeartRate: {
 				type: "number",
@@ -272,14 +97,14 @@ export const analyzeIntervalsHandler: ToolHandler = async (args, context) => {
 	const coastingTolerance =
 		typeof args.coastingTolerance === "number" && args.coastingTolerance >= 0
 			? args.coastingTolerance
-			: 2;
+			: 5;
 	const minHr =
 		typeof args.minHeartRate === "number" && args.minHeartRate > 0
 			? args.minHeartRate
 			: null;
 
-	const records = data.records;
-	if (records.length === 0) {
+	const storedRecords = data.records;
+	if (storedRecords.length === 0) {
 		return {
 			id: "",
 			name: "analyze_intervals",
@@ -288,6 +113,7 @@ export const analyzeIntervalsHandler: ToolHandler = async (args, context) => {
 			error: "Activity has no records.",
 		};
 	}
+	const records = mapStoredRecords(storedRecords);
 
 	let powerIntervals: Interval[] = [];
 	let hrIntervals: Interval[] = [];
@@ -307,7 +133,12 @@ export const analyzeIntervalsHandler: ToolHandler = async (args, context) => {
 				? Math.round(data.summary.avgHeartRate * 0.85)
 				: 0);
 		if (hrThreshold > 0) {
-			hrIntervals = detectHrIntervals(records, hrThreshold, minSeconds);
+			hrIntervals = detectHeartRateIntervals(
+				records,
+				hrThreshold,
+				minSeconds,
+				coastingTolerance,
+			);
 		}
 	}
 

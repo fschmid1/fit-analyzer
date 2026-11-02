@@ -96,6 +96,7 @@ export type { CoachVerbosity } from "./coachVerbosity.js";
 export {
 	buildPowerBySecond,
 	buildCadenceBySecond,
+	buildMetricBySecond,
 	buildMetricBySecondFromTimeSeries,
 	mapStoredRecords,
 	computeNormalizedPower,
@@ -105,6 +106,11 @@ export {
 	peakPowerFromSeconds,
 	peakPowerFromTimeSeries,
 } from "./power.js";
+
+export {
+	detectPowerIntervals,
+	detectHeartRateIntervals,
+} from "./intervals.js";
 
 export type {
 	ZoneBand,

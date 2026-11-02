@@ -1,4 +1,8 @@
-import type { ActivityRecord, Interval } from "@fit-analyzer/shared";
+import {
+	detectPowerIntervals,
+	type ActivityRecord,
+	type Interval,
+} from "@fit-analyzer/shared";
 import {
 	Check,
 	ChevronDown,
@@ -11,13 +15,12 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatElapsedTime } from "../lib/formatters";
-import { detectPowerIntervals } from "../lib/stats";
 
 const DEBOUNCE_MS = 500;
 
 const DEFAULT_MIN_POWER = 200;
 const DEFAULT_MIN_SECONDS = 10;
-const DEFAULT_COASTING = 2;
+const DEFAULT_COASTING = 5;
 
 interface AutoDetectIntervalsProps {
 	records: ActivityRecord[];

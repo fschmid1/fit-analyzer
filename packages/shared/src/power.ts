@@ -58,7 +58,7 @@ function normalizedMetricFromSeconds(
  * carrying the last known value forward across seconds without a sample.
  * Assumes records are non-empty and sorted by elapsedSeconds.
  */
-function buildMetricBySecond<K extends keyof ActivityRecord>(
+export function buildMetricBySecond<K extends keyof ActivityRecord>(
 	records: ActivityRecord[],
 	key: K,
 ): (number | null)[] {
