@@ -108,6 +108,32 @@ describe("detectPowerIntervals", () => {
 		expect(intervals[0].duration).toBe(248);
 	});
 
+	it("reports the four main reps and ignores a short primer", () => {
+		// Regression for the uploaded 4x4 VO2 file: a 58 s primer, then
+		// four ~4-minute reps with brief dips inside each rep.
+		const rep = [
+			...flat(265, 120),
+			...flat(250, 3),
+			...flat(265, 60),
+			...flat(230, 5),
+			...flat(265, 52),
+		];
+		const power = [
+			...flat(125, 600),
+			...flat(265, 58),
+			...flat(125, 60),
+			...repeat([...rep, ...flat(125, 240)], 4),
+			...flat(125, 240),
+		];
+		const intervals = detectPowerIntervals(makeRecords(power), 262, 60);
+
+		expect(intervals).toHaveLength(4);
+		for (const interval of intervals) {
+			expect(interval.duration).toBe(240);
+			expect(interval.avgPower).toBe(264);
+		}
+	});
+
 	it("returns nothing for empty records or invalid parameters", () => {
 		expect(detectPowerIntervals([], 200, 10)).toEqual([]);
 		expect(detectPowerIntervals(makeRecords(flat(250, 60)), 0, 10)).toEqual([]);

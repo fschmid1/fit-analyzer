@@ -16,6 +16,23 @@ const SMOOTHING_WINDOW_SECONDS = 5;
 
 const DEFAULT_COASTING_TOLERANCE_SECONDS = 5;
 
+/**
+ * Power only has to fall below this fraction of the threshold before an
+ * effort is considered finished. A hard 4-minute effort typically dips to
+ * 90–95% of its average for a few seconds (gear changes, a soft stroke);
+ * using a hysteresis band keeps those dips from splitting one rep into
+ * several. Genuine recoveries fall far below this line.
+ */
+const POWER_EXIT_THRESHOLD_RATIO = 0.85;
+
+/**
+ * Even inside the hysteresis band, close an effort once it has been below
+ * the entry threshold for this long. This prevents a long sub-threshold
+ * block (for example sweetspot after a threshold surge) from merging two
+ * genuinely separate efforts.
+ */
+const MAX_SOFT_GAP_SECONDS = 30;
+
 interface SecondRange {
 	startIdx: number;
 	endIdx: number;
@@ -53,36 +70,55 @@ function rollingMedian(
 }
 
 /**
- * Find contiguous runs whose smoothed metric stays at or above `threshold`.
- * Dips below the threshold are tolerated for up to `toleranceSeconds`,
- * which bridges coasting gaps and short recoveries without merging
- * genuinely separate efforts.
+ * Find contiguous runs whose smoothed metric stays at or above
+ * `enterThreshold`. A run remains open while the metric stays above
+ * `exitThreshold` (a hysteresis band), and short gaps below the exit
+ * threshold are tolerated for up to `toleranceSeconds`.
+ *
+ * The run ends at the last sample that was at or above the entry
+ * threshold, so the hysteresis band does not pad the reported interval.
  */
 function detectRuns(
 	valuesBySecond: (number | null)[],
-	threshold: number,
+	enterThreshold: number,
+	exitThreshold: number,
 	toleranceSeconds: number,
 ): SecondRange[] {
 	const smoothed = rollingMedian(valuesBySecond, SMOOTHING_WINDOW_SECONDS);
 	const runs: SecondRange[] = [];
 
 	let startIdx = -1;
-	let lastAboveIdx = -1;
+	let lastAboveEnterIdx = -1;
+	let lastAboveExitIdx = -1;
 
 	for (let i = 0; i < smoothed.length; i++) {
 		const value = smoothed[i];
-		if (value !== null && value >= threshold) {
+
+		if (value !== null && value >= enterThreshold) {
 			if (startIdx === -1) startIdx = i;
-			lastAboveIdx = i;
-		} else if (startIdx !== -1 && i - lastAboveIdx > toleranceSeconds) {
-			runs.push({ startIdx, endIdx: lastAboveIdx });
+			lastAboveEnterIdx = i;
+			lastAboveExitIdx = i;
+			continue;
+		}
+
+		if (startIdx === -1) continue;
+
+		if (value !== null && value >= exitThreshold) {
+			lastAboveExitIdx = i;
+		}
+
+		const softGapExceeded = i - lastAboveEnterIdx > MAX_SOFT_GAP_SECONDS;
+		const exitGapExceeded = i - lastAboveExitIdx > toleranceSeconds;
+		if (softGapExceeded || exitGapExceeded) {
+			runs.push({ startIdx, endIdx: lastAboveEnterIdx });
 			startIdx = -1;
-			lastAboveIdx = -1;
+			lastAboveEnterIdx = -1;
+			lastAboveExitIdx = -1;
 		}
 	}
 
 	if (startIdx !== -1) {
-		runs.push({ startIdx, endIdx: lastAboveIdx });
+		runs.push({ startIdx, endIdx: lastAboveEnterIdx });
 	}
 
 	return runs;
@@ -122,8 +158,6 @@ function computeIntervalStats(records: ActivityRecord[]): SelectionStats {
 interface IntervalOptions {
 	/** Minimum interval duration in seconds. */
 	minSeconds: number;
-	/** Optional predicate applied to the interval's computed stats. */
-	accept?: (stats: SelectionStats) => boolean;
 }
 
 function runsToIntervals(
@@ -152,7 +186,6 @@ function runsToIntervals(
 		if (slice.length === 0) continue;
 
 		const stats = computeIntervalStats(slice);
-		if (options.accept && !options.accept(stats)) continue;
 
 		results.push({
 			index: results.length,
@@ -173,35 +206,38 @@ function runsToIntervals(
 /**
  * Detect sustained power efforts in an activity.
  *
- * Each contiguous stretch where power stays at or above `minAvgPower` for
- * at least `minSeconds` becomes one interval. Short dips up to
- * `coastingToleranceSeconds` (coasting, gear changes, a soft pedal stroke)
- * are bridged so they do not split one effort into many. The detected
- * interval must also average at least `minAvgPower`.
+ * Each contiguous stretch where power stays at or above `minPower` for at
+ * least `minSeconds` becomes one interval. Brief dips — even down to 85% of
+ * the threshold for a few seconds — are bridged so they do not split one
+ * rep into several. Genuine recoveries fall far below that band and end the
+ * effort.
  *
  * This scans for efforts *inside* the ride. It does not compare whole
  * pedaling blocks to the threshold, which previously made it impossible to
  * find a hard 4-minute effort inside a mostly-endurance ride.
+ *
+ * `minPower` is a detection threshold, not a strict average: a 4-minute rep
+ * that averages 261 W while being ridden at ~265 W can still be reported
+ * when `minPower` is 262 W, because the dips are what pulled the average
+ * down.
  */
 export function detectPowerIntervals(
 	records: ActivityRecord[],
-	minAvgPower: number,
+	minPower: number,
 	minSeconds: number,
 	coastingToleranceSeconds = DEFAULT_COASTING_TOLERANCE_SECONDS,
 ): Interval[] {
-	if (records.length === 0 || minAvgPower <= 0 || minSeconds <= 0) return [];
+	if (records.length === 0 || minPower <= 0 || minSeconds <= 0) return [];
 
 	const powerBySecond = buildPowerBySecond(records);
 	const runs = detectRuns(
 		powerBySecond,
-		minAvgPower,
+		minPower,
+		minPower * POWER_EXIT_THRESHOLD_RATIO,
 		Math.max(0, coastingToleranceSeconds),
 	);
 
-	return runsToIntervals(records, runs, {
-		minSeconds,
-		accept: (stats) => stats.avgPower !== null && stats.avgPower >= minAvgPower,
-	});
+	return runsToIntervals(records, runs, { minSeconds });
 }
 
 /**
@@ -221,6 +257,7 @@ export function detectHeartRateIntervals(
 	const heartRateBySecond = buildMetricBySecond(records, "heartRate");
 	const runs = detectRuns(
 		heartRateBySecond,
+		minHeartRate,
 		minHeartRate,
 		Math.max(0, coastingToleranceSeconds),
 	);

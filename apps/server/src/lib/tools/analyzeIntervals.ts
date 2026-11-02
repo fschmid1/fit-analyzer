@@ -11,7 +11,7 @@ import { getActivityById, resolveActivityId } from "./activityUtils.js";
 export const analyzeIntervalsDefinition: ToolDefinition = {
 	name: "analyze_intervals",
 	description:
-		"Detect intervals (sustained efforts) in an activity by power or heart rate thresholds. Scans the ride for contiguous blocks at or above the threshold; short dips up to coastingTolerance are bridged. Returns each interval's duration, average power, HR, and cadence.",
+		"Detect intervals (sustained efforts) in an activity by power or heart rate thresholds. Scans the ride for contiguous blocks at or above the threshold; short dips up to coastingTolerance are bridged. minPower is a detection threshold, so a rep's average can be a few watts lower. Returns each interval's duration, average power, HR, and cadence.",
 	parameters: {
 		type: "object",
 		properties: {
@@ -26,7 +26,8 @@ export const analyzeIntervalsDefinition: ToolDefinition = {
 			},
 			minSeconds: {
 				type: "number",
-				description: "Minimum duration in seconds (default 10)",
+				description:
+					"Minimum duration in seconds (default 60; use 10–20 for micro-intervals)",
 			},
 			coastingTolerance: {
 				type: "number",
@@ -93,7 +94,7 @@ export const analyzeIntervalsHandler: ToolHandler = async (args, context) => {
 	const minSeconds =
 		typeof args.minSeconds === "number" && args.minSeconds > 0
 			? args.minSeconds
-			: 10;
+			: 60;
 	const coastingTolerance =
 		typeof args.coastingTolerance === "number" && args.coastingTolerance >= 0
 			? args.coastingTolerance
@@ -154,7 +155,7 @@ export const analyzeIntervalsHandler: ToolHandler = async (args, context) => {
 
 	if (powerIntervals.length > 0) {
 		lines.push("");
-		lines.push(`Power intervals (≥${minPower}W, ≥${minSeconds}s):`);
+		lines.push(`Power intervals (threshold ≥${minPower}W, ≥${minSeconds}s):`);
 		for (const iv of powerIntervals) {
 			lines.push(
 				`  #${iv.index + 1}: ${fmt(iv.duration)} @ ${iv.avgPower ?? "?"}W${iv.avgHeartRate != null ? `, HR ${iv.avgHeartRate}bpm` : ""}${iv.avgCadence != null ? `, ${iv.avgCadence}rpm` : ""}`,
@@ -162,7 +163,9 @@ export const analyzeIntervalsHandler: ToolHandler = async (args, context) => {
 		}
 	} else if (mode === "power" || mode === "both") {
 		lines.push("");
-		lines.push(`No power intervals found (≥${minPower}W, ≥${minSeconds}s).`);
+		lines.push(
+			`No power intervals found (threshold ≥${minPower}W, ≥${minSeconds}s).`,
+		);
 	}
 
 	if (hrIntervals.length > 0) {
