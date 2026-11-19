@@ -10,6 +10,7 @@ import {
 } from "@fit-analyzer/shared";
 import type { ToolHandler } from "./registry.js";
 import { computeAllTimeEstimates } from "../athleteStats.js";
+import { crossTrainingSessionRepo } from "../crossTrainingSessionRepo.js";
 
 const DEFAULT_LOOKBACK_DAYS = 42;
 const CTL_TC = 42;
@@ -93,7 +94,7 @@ function formatDay(date: Date): string {
 export const trainingLoadDefinition: ToolDefinition = {
 	name: "training_load",
 	description:
-		"Compute Training Stress Score (TSS), Chronic Training Load (CTL/fitness), Acute Training Load (ATL/fatigue), and Training Stress Balance (TSB/form) from recent activities.",
+		"Compute Training Stress Score (TSS), Chronic Training Load (CTL/fitness), Acute Training Load (ATL/fatigue), and Training Stress Balance (TSB/form) from recent activities, including the training load intervals.icu reports for cross-training sessions (strength, runs, swims).",
 	parameters: {
 		type: "object",
 		properties: {
@@ -117,7 +118,24 @@ export const trainingLoadHandler: ToolHandler = async (args, context) => {
 				: DEFAULT_LOOKBACK_DAYS;
 
 		const ftp = estimateFtp(userId);
-		if (ftp == null) {
+
+		const end = new Date();
+		end.setDate(end.getDate() + 1);
+		const start = new Date();
+		start.setDate(start.getDate() - days);
+		const startStr = formatDay(start);
+		const endStr = formatDay(end);
+
+		// Cross-training load as intervals.icu computed it. It shares TSS's
+		// scale, so it belongs in the same daily buckets as ride TSS.
+		const sessionLoads = crossTrainingSessionRepo
+			.loadByDate(userId, startStr, endStr)
+			.filter(
+				(s): s is { date: string; trainingLoad: number } =>
+					s.trainingLoad != null && s.trainingLoad > 0,
+			);
+
+		if (ftp == null && sessionLoads.length === 0) {
 			return {
 				id: "",
 				name: "training_load",
@@ -127,13 +145,6 @@ export const trainingLoadHandler: ToolHandler = async (args, context) => {
 					"Could not estimate FTP — the athlete has no power data yet. Ask them for their FTP before calculating training load.",
 			};
 		}
-
-		const end = new Date();
-		end.setDate(end.getDate() + 1);
-		const start = new Date();
-		start.setDate(start.getDate() - days);
-		const startStr = formatDay(start);
-		const endStr = formatDay(end);
 
 		const rows = summaryStmt.all(userId, startStr, endStr) as {
 			date: string;
@@ -146,6 +157,7 @@ export const trainingLoadHandler: ToolHandler = async (args, context) => {
 			byDate.set(formatDay(d), { date: formatDay(d), tss: 0 });
 		}
 		for (const row of rows) {
+			if (ftp == null) break;
 			let summary: ActivitySummary;
 			let records: StoredRecord[] = [];
 			try {
@@ -159,6 +171,20 @@ export const trainingLoadHandler: ToolHandler = async (args, context) => {
 			const existing = byDate.get(row.date);
 			if (existing) existing.tss = (existing.tss ?? 0) + tss;
 			else byDate.set(row.date, { date: row.date, tss });
+		}
+
+		const sessionLoadTotal = sessionLoads.reduce(
+			(sum, s) => sum + s.trainingLoad,
+			0,
+		);
+		for (const session of sessionLoads) {
+			const existing = byDate.get(session.date);
+			if (existing) existing.tss = (existing.tss ?? 0) + session.trainingLoad;
+			else
+				byDate.set(session.date, {
+					date: session.date,
+					tss: session.trainingLoad,
+				});
 		}
 
 		const ordered = Array.from(byDate.values()).sort((a, b) =>
@@ -196,9 +222,14 @@ export const trainingLoadHandler: ToolHandler = async (args, context) => {
 		else form = "deep fatigue/risk of overtraining";
 
 		const content = [
-			`Estimated FTP: ${ftp} W`,
+			...(ftp != null ? [`Estimated FTP: ${ftp} W`] : []),
 			`Lookback: last ${days} days (${ordered.length} daily buckets)`,
 			`Total TSS: ${Math.round(totalTss)}`,
+			...(sessionLoadTotal > 0
+				? [
+						`Cross-training load included: ${Math.round(sessionLoadTotal)} from ${sessionLoads.length} session(s)`,
+					]
+				: []),
 			`Current CTL (fitness): ${currentCtl}`,
 			`Current ATL (fatigue): ${currentAtl}`,
 			`Current TSB (form): ${currentTsb} — ${form}`,
@@ -212,6 +243,8 @@ export const trainingLoadHandler: ToolHandler = async (args, context) => {
 				ftp,
 				days,
 				totalTss: Math.round(totalTss),
+				crossTrainingLoad: Math.round(sessionLoadTotal),
+				crossTrainingSessions: sessionLoads.length,
 				dates: ordered.map((d) => d.date),
 				tss: ordered.map((d) => Math.round((d.tss ?? 0) * 10) / 10),
 				ctl: ctlSeries,

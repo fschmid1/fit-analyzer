@@ -29,7 +29,12 @@ import { SettingsBanner } from "../pages/settings/settingsShared";
  * Disconnecting forgets the key only: planned workouts already on
  * intervals.icu are left in place (ADR-0005).
  */
-export function IntervalsIcuConnect() {
+export function IntervalsIcuConnect({
+	onSynced,
+}: {
+	/** Called after a successful manual sync so history and sessions refresh. */
+	onSynced?: () => void;
+}) {
 	const [status, setStatus] = useState<IntervalsIcuStatus | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [apiKey, setApiKey] = useState("");
@@ -129,12 +134,18 @@ export function IntervalsIcuConnect() {
 		setSyncResult(null);
 		try {
 			const result = await syncIntervalsIcuNow();
-			setSyncResult(
-				`${result.imported} imported, ${result.updated} updated, ${
-					result.skipped
-				} already known${result.failed ? `, ${result.failed} failed` : ""}.`,
-			);
+			const parts: string[] = [];
+			if (result.imported) parts.push(`${result.imported} rides imported`);
+			if (result.sessionsImported)
+				parts.push(`${result.sessionsImported} sessions imported`);
+			if (result.updated) parts.push(`${result.updated} rides updated`);
+			if (result.sessionsUpdated)
+				parts.push(`${result.sessionsUpdated} sessions updated`);
+			parts.push(`${result.skipped} already known`);
+			if (result.failed) parts.push(`${result.failed} failed`);
+			setSyncResult(`${parts.join(", ")}.`);
 			setStatus(await fetchIntervalsIcuStatus());
+			onSynced?.();
 		} catch (err) {
 			setNotification({
 				type: "error",
@@ -173,8 +184,8 @@ export function IntervalsIcuConnect() {
 						Connect with a personal API key so the coach can plan workouts on
 						your intervals.icu calendar. Create one under Settings → API on
 						intervals.icu (username <code>API_KEY</code>, the key is the
-						password). Rides you complete are imported automatically every few
-						minutes.
+						password). Completed activities — rides, strength sessions, runs and
+						swims — are imported automatically every few minutes.
 					</p>
 					<TrainingTimezoneField />
 					<label className="flex items-center gap-2 text-xs text-[#94a3b8]">
@@ -184,7 +195,7 @@ export function IntervalsIcuConnect() {
 							onChange={(e) => setBackfill(e.target.checked)}
 							className="accent-[#0ea5e9]"
 						/>
-						Also import the last 90 days of rides (runs in the background)
+						Also import the last 90 days of activities (runs in the background)
 					</label>
 					<div className="flex flex-col gap-1.5">
 						<label

@@ -1,5 +1,7 @@
 import {
 	DEFAULT_PLANNED_SPORT,
+	normalizePlannedSport,
+	plannedSportEmoji,
 	renderWorkoutSteps,
 	type CalendarSyncRow,
 	type PlanWorkout,
@@ -32,6 +34,9 @@ export const SYNC_KEY_PROP = "fitAnalyzerSyncKey";
 
 /** Private extended property carrying the workout focus (avoids title parsing). */
 export const SYNC_FOCUS_PROP = "fitAnalyzerFocus";
+
+/** Private extended property carrying the planned sport (a ride, a gym day, …). */
+export const SYNC_SPORT_PROP = "fitAnalyzerSport";
 
 /** Private extended property stamping the last app-write (ms since epoch). */
 export const SYNC_STAMP_PROP = "fitAnalyzerSyncStamp";
@@ -155,7 +160,9 @@ export function toPlanWorkout(
 		focus,
 		description: ev.description ?? null,
 		edited: userEdited(ev),
-		sport: DEFAULT_PLANNED_SPORT,
+		sport: normalizePlannedSport(
+			ev.extendedProperties?.private?.[SYNC_SPORT_PROP],
+		),
 		steps: [],
 		target: "google",
 	};
@@ -181,9 +188,9 @@ function eventDurationMinutes(ev: CalendarEventSnapshot): number {
  */
 export const syncKey = planSyncKey;
 
-/** Event title — the focus, prefixed so app events are recognisable at a glance. */
+/** Event title — the focus, prefixed with the sport so app events read at a glance. */
 export function eventTitle(workout: PlannedWorkout): string {
-	return `🚴 ${workout.focus}`;
+	return `${plannedSportEmoji(workout.sport)} ${workout.focus}`;
 }
 
 /** Wall-clock event body in the training timezone. */
@@ -210,6 +217,7 @@ export function buildEvent(
 			private: {
 				[SYNC_KEY_PROP]: syncKey(workout),
 				[SYNC_FOCUS_PROP]: workout.focus.trim(),
+				[SYNC_SPORT_PROP]: workout.sport ?? DEFAULT_PLANNED_SPORT,
 				[SYNC_STAMP_PROP]: String(nowMs),
 			},
 		},
@@ -218,10 +226,10 @@ export function buildEvent(
 
 /** The focus a stored event was written with (private property, not the title). */
 export function eventFocus(ev: CalendarEventSnapshot): string {
-	return (
-		ev.extendedProperties?.private?.[SYNC_FOCUS_PROP] ??
-		(ev.summary ?? "").replace(/^🚴\s*/, "")
-	);
+	const stored = ev.extendedProperties?.private?.[SYNC_FOCUS_PROP];
+	if (stored != null) return stored;
+	// Legacy events carried a leading sport emoji; strip any leading symbols.
+	return (ev.summary ?? "").replace(/^[^\p{L}\p{N}]+\s*/u, "");
 }
 
 /** The event body: the coach's prose, then the rendered structure. */
@@ -477,8 +485,18 @@ function eventsDiffer(
 	const descChanged =
 		normalizeDesc(existing.description) !== normalizeDesc(next.description);
 	const colorChanged = (existing.colorId ?? null) !== next.colorId;
+	const sportChanged =
+		normalizePlannedSport(
+			existing.extendedProperties?.private?.[SYNC_SPORT_PROP],
+		) !==
+		normalizePlannedSport(next.extendedProperties.private[SYNC_SPORT_PROP]);
 	return (
-		startChanged || endChanged || titleChanged || descChanged || colorChanged
+		startChanged ||
+		endChanged ||
+		titleChanged ||
+		descChanged ||
+		colorChanged ||
+		sportChanged
 	);
 }
 

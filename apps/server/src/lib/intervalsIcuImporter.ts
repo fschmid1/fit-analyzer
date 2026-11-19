@@ -13,7 +13,11 @@ import {
 import {
 	intervalsIcuActivityToPayload,
 	isoLocalDate,
+	isIntervalsIcuRide,
+	isStravaSourced,
 } from "./intervalsIcuImportAdapter.js";
+import { intervalsIcuSessionFromActivity } from "./intervalsIcuSessionAdapter.js";
+import { crossTrainingSessionRepo } from "./crossTrainingSessionRepo.js";
 import { getTrainingTimezone } from "./trainingTimezone.js";
 import { getNtfyTopic } from "./notificationSettings.js";
 import { sendNtfy } from "./ntfy.js";
@@ -22,11 +26,14 @@ import { sendNtfy } from "./ntfy.js";
  * IntervalsIcu activity import: a five-minute poll plus the opt-in 90-day
  * backfill, both through the same importer (ADR-0005).
  *
- * Only rides are considered, and only rides intervals.icu can hand over as raw
- * seconds — Strava-sourced activities are skipped. Import is idempotent: a ride
- * already stored for this user is never re-fetched, and a ride that arrived
- * earlier from Strava or a FIT upload gets the intervals.icu id stamped onto its
- * existing row (see activityImporter).
+ * Rides become Activities, imported from raw per-second streams. Every other
+ * completed activity becomes a summary-only Cross-training session for the
+ * coach. Strava-sourced activities of either kind are skipped: intervals.icu
+ * serves only a stub for them, and Strava's terms forbid re-downloading their
+ * data through a third party. Import is idempotent: a ride already stored for
+ * this user is never re-fetched, a session already stored is never rewritten,
+ * and a ride that arrived earlier from Strava or a FIT upload gets the
+ * intervals.icu id stamped onto its existing row (see activityImporter).
  */
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000;
@@ -37,8 +44,14 @@ const BACKFILL_CHUNK_DAYS = 14;
 const MAX_POLL_FAILURES = 3;
 
 export interface IntervalsIcuSyncOutcome {
+	/** Rides imported into activities. */
 	imported: number;
+	/** Rides refreshed in place. */
 	updated: number;
+	/** Non-ride sessions imported into cross_training_sessions. */
+	sessionsImported: number;
+	/** Non-ride sessions refreshed in place. */
+	sessionsUpdated: number;
 	skipped: number;
 	failed: number;
 	errors: string[];
@@ -83,6 +96,8 @@ async function syncWindow(
 	const outcome: IntervalsIcuSyncOutcome = {
 		imported: 0,
 		updated: 0,
+		sessionsImported: 0,
+		sessionsUpdated: 0,
 		skipped: 0,
 		failed: 0,
 		errors: [],
@@ -90,24 +105,49 @@ async function syncWindow(
 	const activities = await listIntervalsIcuActivities(apiKey, oldest, newest);
 
 	for (const activity of activities) {
-		if (isActivityImported(db, "intervals-icu", activity.id, userId)) {
-			outcome.skipped += 1;
-			continue;
-		}
 		try {
-			const result = await intervalsIcuActivityToPayload(
-				userId,
-				apiKey,
-				activity,
-				timezone,
-			);
+			if (isStravaSourced(activity)) {
+				outcome.skipped += 1;
+				continue;
+			}
+
+			if (isIntervalsIcuRide(activity)) {
+				if (isActivityImported(db, "intervals-icu", activity.id, userId)) {
+					outcome.skipped += 1;
+					continue;
+				}
+				const result = await intervalsIcuActivityToPayload(
+					userId,
+					apiKey,
+					activity,
+					timezone,
+				);
+				if ("skipped" in result) {
+					outcome.skipped += 1;
+					continue;
+				}
+				const imported = await importActivity(db, result.payload);
+				if (imported.status === "imported") outcome.imported += 1;
+				else if (imported.status === "updated") outcome.updated += 1;
+				else outcome.skipped += 1;
+				continue;
+			}
+
+			// Every other completed activity is context, not a ride: keep the
+			// summary intervals.icu reports and never fetch its streams.
+			const result = intervalsIcuSessionFromActivity(activity);
 			if ("skipped" in result) {
 				outcome.skipped += 1;
 				continue;
 			}
-			const imported = await importActivity(db, result.payload);
-			if (imported.status === "imported") outcome.imported += 1;
-			else if (imported.status === "updated") outcome.updated += 1;
+			// Upsert unconditionally: it is cheap and lets a provider-side edit
+			// (renamed session, corrected duration) refresh the stored summary.
+			const status = crossTrainingSessionRepo.upsert({
+				...result.session,
+				userId,
+			});
+			if (status === "imported") outcome.sessionsImported += 1;
+			else if (status === "updated") outcome.sessionsUpdated += 1;
 			else outcome.skipped += 1;
 		} catch (err) {
 			outcome.failed += 1;
@@ -174,7 +214,11 @@ async function runBackfill(userId: string): Promise<void> {
 				newest,
 				timezone,
 			);
-			imported += outcome.imported + outcome.updated;
+			imported +=
+				outcome.imported +
+				outcome.updated +
+				outcome.sessionsImported +
+				outcome.sessionsUpdated;
 			failed += outcome.failed;
 			errors.push(...outcome.errors);
 			recordIntervalsIcuBackfillProgress(userId, imported, failed);
@@ -231,8 +275,8 @@ export async function runIntervalsIcuPollerTick(): Promise<void> {
 			try {
 				const outcome = await syncIntervalsIcuActivities(userId);
 				if (outcome.failed > 0) {
-					// The list loaded, but some rides did not: count the pass as
-					// failed so a persistently broken ride still notifies.
+					// The list loaded, but some activities did not: count the pass
+					// as failed so a persistently broken one still notifies.
 					await handlePollFailure(
 						userId,
 						`${outcome.failed} activity import(s) failed: ${outcome.errors[0] ?? "unknown error"}`,
@@ -240,9 +284,16 @@ export async function runIntervalsIcuPollerTick(): Promise<void> {
 				} else {
 					markIntervalsIcuPollSuccess(userId);
 				}
-				if (outcome.imported + outcome.updated + outcome.failed > 0) {
+				if (
+					outcome.imported +
+						outcome.updated +
+						outcome.sessionsImported +
+						outcome.sessionsUpdated +
+						outcome.failed >
+					0
+				) {
 					console.log(
-						`[intervals-icu] Poll for ${userId}: ${outcome.imported} imported, ${outcome.updated} updated, ${outcome.failed} failed`,
+						`[intervals-icu] Poll for ${userId}: ${outcome.imported} rides imported, ${outcome.updated} rides updated, ${outcome.sessionsImported} sessions imported, ${outcome.sessionsUpdated} sessions updated, ${outcome.failed} failed`,
 					);
 				}
 			} catch (err) {

@@ -62,6 +62,34 @@ db.exec(
 	"CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date)",
 );
 
+// Completed non-ride training sessions (strength, run, swim, …) imported from
+// intervals.icu as summaries. Distinct from `activities`: no records, no
+// analysis — context for the coach and the athlete's history.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cross_training_sessions (
+    id                 TEXT PRIMARY KEY,
+    user_id            TEXT NOT NULL,
+    date               TEXT NOT NULL,
+    start_time         TEXT,
+    sport              TEXT NOT NULL,
+    name               TEXT NOT NULL,
+    duration_seconds   INTEGER NOT NULL,
+    elapsed_seconds    INTEGER,
+    distance_meters    REAL,
+    avg_heart_rate     INTEGER,
+    max_heart_rate     INTEGER,
+    training_load      REAL,
+    kg_lifted          REAL,
+    source             TEXT NOT NULL,
+    source_activity_id TEXT NOT NULL,
+    created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_cross_training_sessions_source
+    ON cross_training_sessions(user_id, source, source_activity_id);
+  CREATE INDEX IF NOT EXISTS idx_cross_training_sessions_user_date
+    ON cross_training_sessions(user_id, date);
+`);
+
 // Trainer chat history tables
 db.exec(`
   CREATE TABLE IF NOT EXISTS trainer_chats (

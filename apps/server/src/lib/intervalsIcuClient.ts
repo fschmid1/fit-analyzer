@@ -66,6 +66,9 @@ export interface IntervalsIcuActivity {
 	max_heartrate?: number | null;
 	average_cadence?: number | null;
 	icu_training_load?: number | null;
+	/** Total kilograms lifted, reported for strength sessions. */
+	kg_lifted?: number | null;
+	icu_rpe?: number | null;
 	total_elevation_gain?: number | null;
 	device_name?: string | null;
 	device_watts?: boolean | null;
@@ -184,7 +187,9 @@ export async function listIntervalsIcuActivities(
 	apiKey: string,
 	oldestDate: string,
 	newestDate: string,
-	limit = 200,
+	// A 90-day window can hold more than 200 activities once walks and
+	// cross-training sessions are counted, so the manual sync asks for more.
+	limit = 500,
 ): Promise<IntervalsIcuActivity[]> {
 	const params = new URLSearchParams({
 		oldest: oldestDate,

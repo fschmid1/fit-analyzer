@@ -2,9 +2,12 @@ import type { ReactNode } from "react";
 import { sparklinePath } from "./sparklineUtils";
 
 interface TrainingLoadDisplay {
-	ftp: number;
+	ftp: number | null;
 	days: number;
 	totalTss: number;
+	/** Load from cross-training sessions (intervals.icu), when present. */
+	crossTrainingLoad?: number;
+	crossTrainingSessions?: number;
 	dates: string[];
 	tss: number[];
 	ctl: number[];
@@ -77,7 +80,11 @@ export function renderTrainingLoad(display: unknown): ReactNode | null {
 				)}
 			</svg>
 			<div className="text-[10px] text-[#7c6fa0]">
-				FTP: {d.ftp}W · {d.days}d lookback · TSS: {d.totalTss}
+				{d.ftp != null ? `FTP: ${d.ftp}W · ` : ""}
+				{d.days}d lookback · TSS: {d.totalTss}
+				{d.crossTrainingLoad
+					? ` · cross-training: ${d.crossTrainingLoad} (${d.crossTrainingSessions})`
+					: ""}
 			</div>
 		</div>
 	);

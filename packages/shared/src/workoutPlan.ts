@@ -52,11 +52,102 @@ export interface WorkoutRepeat {
 
 export type WorkoutStepItem = WorkoutStep | WorkoutRepeat;
 
-/** The sport a planned workout prescribes. v1 syncs cycling only. */
-export type PlannedSport = "Ride";
+/**
+ * The sport a planned workout prescribes, named as an intervals.icu activity
+ * type. Rides are the default; the coach also plans cross-training sessions
+ * (strength, runs, swims, …) alongside them.
+ */
+export type PlannedSport =
+	| "Ride"
+	| "VirtualRide"
+	| "WeightTraining"
+	| "Run"
+	| "Swim"
+	| "Rowing"
+	| "Yoga"
+	| "Walk"
+	| "Hike"
+	| "Crossfit"
+	| "Workout";
 
 export const DEFAULT_PLANNED_SPORT: PlannedSport = "Ride";
-export const SUPPORTED_PLANNED_SPORTS: readonly PlannedSport[] = ["Ride"];
+
+export const SUPPORTED_PLANNED_SPORTS: readonly PlannedSport[] = [
+	"Ride",
+	"VirtualRide",
+	"WeightTraining",
+	"Run",
+	"Swim",
+	"Rowing",
+	"Yoga",
+	"Walk",
+	"Hike",
+	"Crossfit",
+	"Workout",
+];
+
+/**
+ * Sports whose planned workouts can carry structured steps. Everything else is
+ * prose only: a strength session has exercises and sets, not %FTP targets.
+ */
+export const STRUCTURED_PLANNED_SPORTS: readonly PlannedSport[] = [
+	"Ride",
+	"VirtualRide",
+	"Run",
+	"Swim",
+	"Rowing",
+];
+
+/** True when `value` is one of the sports the coach may prescribe. */
+export function isPlannedSport(value: unknown): value is PlannedSport {
+	return (
+		typeof value === "string" &&
+		(SUPPORTED_PLANNED_SPORTS as readonly string[]).includes(value)
+	);
+}
+
+/** The sport, or the default when the value is missing/unsupported. */
+export function normalizePlannedSport(
+	value: unknown,
+	fallback: PlannedSport = DEFAULT_PLANNED_SPORT,
+): PlannedSport {
+	return isPlannedSport(value) ? value : fallback;
+}
+
+/** True when a workout of this sport accepts structured steps. */
+export function supportsWorkoutSteps(
+	sport: PlannedSport | null | undefined,
+): boolean {
+	return (
+		sport != null &&
+		(STRUCTURED_PLANNED_SPORTS as readonly string[]).includes(sport)
+	);
+}
+
+/** Short marker used in calendars so a session's sport reads at a glance. */
+export function plannedSportEmoji(
+	sport: PlannedSport | null | undefined,
+): string {
+	switch (sport) {
+		case "WeightTraining":
+		case "Crossfit":
+			return "🏋️";
+		case "Run":
+			return "🏃";
+		case "Swim":
+			return "🏊";
+		case "Rowing":
+			return "🚣";
+		case "Yoga":
+			return "🧘";
+		case "Walk":
+			return "🚶";
+		case "Hike":
+			return "🥾";
+		default:
+			return "🚴";
+	}
+}
 
 /** Fallback start time when the coach gives none (afternoon). */
 export const DEFAULT_START_TIME = "17:00";

@@ -1,12 +1,29 @@
 import { useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useDrag } from "@use-gesture/react";
-import { Clock, Zap, Heart, Route, Trash2, Loader2 } from "lucide-react";
-import type { ActivityListItem } from "@fit-analyzer/shared";
+import {
+	Activity,
+	Clock,
+	Dumbbell,
+	Flame,
+	Footprints,
+	Heart,
+	Loader2,
+	Route,
+	Trash2,
+	Waves,
+	Zap,
+} from "lucide-react";
+import type {
+	ActivityListItem,
+	CrossTrainingSession,
+} from "@fit-analyzer/shared";
 import { AnimatedButton } from "./AnimatedButton";
 
 interface ActivityHistoryProps {
 	activities: ActivityListItem[];
+	/** Completed non-ride sessions (gym, runs, swims) from intervals.icu. */
+	sessions: CrossTrainingSession[];
 	loading: boolean;
 	onSelect: (id: string) => void;
 	onDelete: (id: string) => void;
@@ -30,6 +47,88 @@ function formatDate(dateStr: string): string {
 		day: "numeric",
 		year: "numeric",
 	});
+}
+
+const SPORT_LABELS: Record<string, string> = {
+	WeightTraining: "Strength",
+	Crossfit: "CrossFit",
+	Run: "Run",
+	Swim: "Swim",
+	Rowing: "Row",
+	Yoga: "Yoga",
+	Walk: "Walk",
+	Hike: "Hike",
+	Workout: "Workout",
+};
+
+function sportLabel(sport: string): string {
+	return SPORT_LABELS[sport] ?? sport;
+}
+
+function SportIcon({ sport }: { sport: string }) {
+	const className = "w-4 h-4 text-[#a78bfa]";
+	if (sport === "WeightTraining" || sport === "Crossfit")
+		return <Dumbbell className={className} />;
+	if (sport === "Run" || sport === "Walk" || sport === "Hike")
+		return <Footprints className={className} />;
+	if (sport === "Swim" || sport === "Rowing")
+		return <Waves className={className} />;
+	return <Activity className={className} />;
+}
+
+/** One imported non-ride session. Read-only: intervals.icu owns the data. */
+function SessionRow({ session }: { session: CrossTrainingSession }) {
+	return (
+		<div className="flex items-center gap-3 rounded-xl border border-[rgba(139,92,246,0.1)] bg-[#1a1533]/70 p-3.5">
+			<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#8b5cf6]/15">
+				<SportIcon sport={session.sport} />
+			</div>
+			<div className="min-w-0 flex-1">
+				<div className="flex items-baseline gap-2">
+					<p className="truncate text-sm font-medium text-[#f1f5f9]">
+						{session.name}
+					</p>
+					<span className="shrink-0 rounded-md border border-[#8b5cf6]/10 bg-[#8b5cf6]/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[#c4b5fd]">
+						{sportLabel(session.sport)}
+					</span>
+				</div>
+				<p className="mt-0.5 text-xs text-[#94a3b8]">
+					{formatDate(session.date)}
+					{session.startTime ? ` · ${session.startTime}` : ""}
+				</p>
+				<div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+					<span className="flex items-center gap-1 text-[#94a3b8]">
+						<Clock className="w-3 h-3" />
+						{formatDuration(session.durationSeconds)}
+					</span>
+					{session.distanceKm != null && (
+						<span className="flex items-center gap-1 text-[#22c55e]">
+							<Route className="w-3 h-3" />
+							{session.distanceKm} km
+						</span>
+					)}
+					{session.avgHeartRate != null && (
+						<span className="flex items-center gap-1 text-[#ef4444]">
+							<Heart className="w-3 h-3" />
+							{session.avgHeartRate} bpm
+						</span>
+					)}
+					{session.trainingLoad != null && (
+						<span className="flex items-center gap-1 text-[#f59e0b]">
+							<Flame className="w-3 h-3" />
+							{Math.round(session.trainingLoad)} load
+						</span>
+					)}
+					{session.kgLifted != null && (
+						<span className="flex items-center gap-1 text-[#c4b5fd]">
+							<Dumbbell className="w-3 h-3" />
+							{Math.round(session.kgLifted).toLocaleString("en-US")} kg
+						</span>
+					)}
+				</div>
+			</div>
+		</div>
+	);
 }
 
 interface SwipeableRowProps {
@@ -186,6 +285,7 @@ function SwipeableRow({
 
 export function ActivityHistory({
 	activities,
+	sessions,
 	loading,
 	onSelect,
 	onDelete,
@@ -222,7 +322,7 @@ export function ActivityHistory({
 		);
 	}
 
-	if (activities.length === 0) {
+	if (activities.length === 0 && sessions.length === 0) {
 		return (
 			<div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
 				<div className="text-center">
@@ -253,6 +353,11 @@ export function ActivityHistory({
 					<p className="text-sm text-[#94a3b8] mt-1">
 						{activities.length}{" "}
 						{activities.length === 1 ? "activity" : "activities"} recorded
+						{sessions.length > 0
+							? ` · ${sessions.length} cross-training ${
+									sessions.length === 1 ? "session" : "sessions"
+								}`
+							: ""}
 					</p>
 				</div>
 				<AnimatedButton
@@ -263,17 +368,41 @@ export function ActivityHistory({
 				</AnimatedButton>
 			</div>
 
-			<div className="flex flex-col gap-3">
-				{activities.map((activity) => (
-					<SwipeableRow
-						key={activity.id}
-						activity={activity}
-						isDeleting={deletingId === activity.id}
-						onSelect={onSelect}
-						onRequestDelete={setConfirmDeleteId}
-					/>
-				))}
-			</div>
+			{activities.length === 0 ? (
+				<p className="text-sm text-[#94a3b8]">
+					No rides yet. Upload a .fit file or connect intervals.icu in Settings.
+				</p>
+			) : (
+				<div className="flex flex-col gap-3">
+					{activities.map((activity) => (
+						<SwipeableRow
+							key={activity.id}
+							activity={activity}
+							isDeleting={deletingId === activity.id}
+							onSelect={onSelect}
+							onRequestDelete={setConfirmDeleteId}
+						/>
+					))}
+				</div>
+			)}
+
+			{sessions.length > 0 && (
+				<section className="mt-8">
+					<div className="mb-3 flex items-baseline justify-between gap-3">
+						<h3 className="text-sm font-semibold uppercase tracking-wide text-[#8b5cf6]">
+							Cross-training
+						</h3>
+						<span className="text-[11px] text-[#7c6fa0]">
+							Gym, runs and more from intervals.icu
+						</span>
+					</div>
+					<div className="flex flex-col gap-2">
+						{sessions.map((session) => (
+							<SessionRow key={session.id} session={session} />
+						))}
+					</div>
+				</section>
+			)}
 
 			{confirmDeleteId &&
 				createPortal(

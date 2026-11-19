@@ -14,6 +14,7 @@ import { wahoo } from "./routes/wahoo.js";
 import { google } from "./routes/google.js";
 import { intervalsIcu } from "./routes/intervalsIcu.js";
 import { plan } from "./routes/plan.js";
+import { sessions } from "./routes/sessions.js";
 import { initTools } from "./lib/tools/init.js";
 import {
 	runPlanRefreshTick,
@@ -50,6 +51,7 @@ app.route("/api/strava", strava);
 app.route("/api/google", google);
 app.route("/api/intervals-icu", intervalsIcu);
 app.route("/api/plan", plan);
+app.route("/api/sessions", sessions);
 app.route("/api/trainer", trainer);
 app.route("/api/wahoo", wahoo);
 

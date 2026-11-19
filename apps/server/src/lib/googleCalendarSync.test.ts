@@ -8,6 +8,7 @@ import {
 	SYNC_FOCUS_PROP,
 	SYNC_KEY_PROP,
 	SYNC_STAMP_PROP,
+	toPlanWorkout,
 	type CalendarEventSnapshot,
 } from "./googleCalendarSync.js";
 import type { PlannedWorkout } from "@fit-analyzer/shared";
@@ -98,6 +99,31 @@ describe("buildEvent", () => {
 	it("defaults duration to 60 minutes when invalid", () => {
 		const ev = buildEvent(workout({ durationMinutes: 0 }), TZ, 0);
 		expect(ev.end.dateTime.slice(11, 16)).toBe("18:00");
+	});
+
+	it("marks a strength session and survives the plan read-back", () => {
+		const ev = buildEvent(
+			workout({ sport: "WeightTraining", focus: "Gym" }),
+			TZ,
+			123,
+		);
+		expect(ev.summary).toBe("🏋️ Gym");
+		const plan = toPlanWorkout(
+			{
+				id: "evt-1",
+				summary: ev.summary,
+				description: ev.description,
+				start: ev.start,
+				end: ev.end,
+				updated: new Date(123).toISOString(),
+				colorId: ev.colorId,
+				extendedProperties: ev.extendedProperties,
+			},
+			TZ,
+			new Date(NOW),
+		);
+		expect(plan?.sport).toBe("WeightTraining");
+		expect(plan?.focus).toBe("Gym");
 	});
 });
 

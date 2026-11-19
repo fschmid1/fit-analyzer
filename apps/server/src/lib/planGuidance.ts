@@ -1,5 +1,8 @@
 import { getConnectedPlanTargets, primaryPlanTarget } from "./planTargets.js";
-import { planTargetLabel } from "@fit-analyzer/shared";
+import {
+	SUPPORTED_PLANNED_SPORTS,
+	planTargetLabel,
+} from "@fit-analyzer/shared";
 import {
 	formatPlanForPrompt,
 	readPlanContext,
@@ -55,17 +58,18 @@ export async function buildPlanGuidance(userId: string): Promise<string> {
 		context,
 		"",
 		"Use sync_training_plan to push the plan. Always send the COMPLETE forward plan, never just the changes: workouts already in the plan are updated in place, entries missing from your list are removed, and a workout that has started is never created, changed or removed. Workouts default to 17:00 when you omit a start time; infer better times from the athlete's activity history when it suggests one.",
-		"Every workout carries a sport. v1 accepts only Ride; leave it out for rides.",
+		`Every workout carries a sport: ${SUPPORTED_PLANNED_SPORTS.join(", ")}. Leave it out for rides. Plan strength and other cross-training sessions with their real sport (usually WeightTraining) and describe the exercises, sets and reps in the description. Structured steps are endurance-only (Ride, VirtualRide, Run, Swim, Rowing), so omit them for strength and other cross-training.`,
+		"Completed non-ride sessions (gym, runs, swims) appear under Cross-Training Sessions in the athlete context. Plan around them: keep the athlete's established gym days, and do not stack a hard ride on the same day as a heavy strength session unless they ask.",
 		"",
 		"### Structured workouts",
-		"Each workout may carry `steps`: the session structure, as a list of items in order. A step is `{ kind, durationMinutes, target, note }`; a repeat block is `{ repeat, steps }` with one nesting level. kind is warmup | interval | recovery | cooldown | free (default interval).",
+		"Each endurance workout (Ride, VirtualRide, Run, Swim, Rowing) may carry `steps`: the session structure, as a list of items in order. A step is `{ kind, durationMinutes, target, note }`; a repeat block is `{ repeat, steps }` with one nesting level. kind is warmup | interval | recovery | cooldown | free (default interval).",
 		"target is `{ metric, pct, range }` where metric is power | hr | pace, pct is a percentage of the athlete's threshold (%FTP, %LTHR, %threshold pace), and range is an optional `{ low, high }` band with pct as the midpoint. Never use absolute watts: thresholds live with the athlete and the targets.",
 		"Example: a 5 × (4 min at 105–115% FTP, 4 min at 50% FTP) session with warmup and cooldown:",
 		'[{ "kind": "warmup", "durationMinutes": 12, "target": { "metric": "power", "pct": 55 } },',
 		' { "repeat": 5, "steps": [{ "kind": "interval", "durationMinutes": 4, "target": { "metric": "power", "pct": 110, "range": { "low": 105, "high": 115 } } },',
 		'                     { "kind": "recovery", "durationMinutes": 4, "target": { "metric": "power", "pct": 50 } }] },',
 		' { "kind": "cooldown", "durationMinutes": 10, "target": { "metric": "power", "pct": 50 } }]',
-		"That structure reaches intervals.icu as a native workout and Google Calendar as readable lines; the plan screen shows a summary. Omitting steps is fine for an easy spin or when the athlete wants prose only.",
+		"That structure reaches intervals.icu as a native workout and Google Calendar as readable lines; the plan screen shows a summary. Omitting steps is fine for an easy spin or when the athlete wants prose only. Strength and other cross-training are always prose.",
 		"",
 		"Use remove_planned_workouts to clear entries entirely (e.g. a plan you are abandoning). Prefer sync_training_plan with a revised plan while the athlete still trains.",
 		"The Plan week is Monday–Sunday in the athlete's timezone. Keep the upcoming Plan week fully populated — that is what the weekly refresh guarantees. Revise workouts only where recent activity, health, or the athlete's feedback warrants it; otherwise keep the existing plan.",

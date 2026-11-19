@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Routes, Route, useNavigate, useMatch } from "react-router-dom";
 import type {
 	ActivityListItem,
+	CrossTrainingSession,
 	Interval,
 	ParsedActivity,
 } from "@fit-analyzer/shared";
@@ -28,6 +29,7 @@ import {
 import {
 	fetchActivities,
 	fetchActivity,
+	fetchTrainingSessions,
 	saveActivityToServer,
 	deleteActivity,
 	updateIntervals,
@@ -46,6 +48,7 @@ function App() {
 	const [activity, setActivity] = useState<ParsedActivity | null>(null);
 	const [activityId, setActivityId] = useState<string | null>(null);
 	const [activities, setActivities] = useState<ActivityListItem[]>([]);
+	const [sessions, setSessions] = useState<CrossTrainingSession[]>([]);
 	const [historyLoading, setHistoryLoading] = useState(true);
 	const [user, setUser] = useState<UserInfo | null>(null);
 	const [analysis, setAnalysis] = useState<string | null>(null);
@@ -116,8 +119,15 @@ function App() {
 	const loadActivities = useCallback(async () => {
 		setHistoryLoading(true);
 		try {
-			const list = await fetchActivities();
+			const [list, sessionList] = await Promise.all([
+				fetchActivities(),
+				fetchTrainingSessions().catch((err) => {
+					console.error("Failed to fetch training sessions:", err);
+					return [] as CrossTrainingSession[];
+				}),
+			]);
 			setActivities(list);
+			setSessions(sessionList);
 		} catch (err) {
 			console.error("Failed to fetch activities:", err);
 		} finally {
@@ -380,6 +390,7 @@ function App() {
 					element={
 						<ActivityHistory
 							activities={activities}
+							sessions={sessions}
 							loading={historyLoading}
 							onSelect={handleSelectActivity}
 							onDelete={handleDeleteActivity}

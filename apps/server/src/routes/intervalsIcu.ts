@@ -92,8 +92,10 @@ intervalsIcu.post("/sync", async (c) => {
 	const userId = userIdOrNull(c);
 	if (!userId) return c.json({ error: "Unauthorized" }, 401);
 	try {
+		// 90 days, matching the backfill: one action brings rides and
+		// cross-training sessions (including gym history) into the app.
 		const outcome = await syncIntervalsIcuActivities(userId, {
-			days: 30,
+			days: 90,
 		});
 		// A clean manual pass is a healthy connection: it resets the streak and
 		// stamps last-sync, exactly like a clean poll.

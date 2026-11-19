@@ -24,6 +24,10 @@ _Avoid_: rider, client, trainee
 A recorded ride: the FIT-derived summary, records, laps and intervals the app stores and analyses. Distinct from a **Planned workout**, which is prescribed rather than recorded.
 _Avoid_: session, workout (that word belongs to a Planned workout)
 
+**Cross-training session**:
+A completed non-ride training session — strength, run, swim, yoga — the server imports from intervals.icu as a summary: date, sport, duration, heart rate, training load, kilograms lifted. Never records, never charted. Distinct from an **Activity**, which is a ride, and from a **Planned workout**, which is prescribed.
+_Avoid_: activity, workout, gym log
+
 **Interval**:
 A detected effort block inside an **Activity**: a contiguous stretch at or above a threshold, carrying its own averages. Distinct from a **lap**, which the recording device defines, and from **IntervalsIcu**, the external platform.
 _Avoid_: segment, effort block, rep (a rep is one interval within a set)
@@ -59,7 +63,7 @@ A connected destination that holds the coach's plan for the athlete: a Google **
 _Avoid_: calendar (the athlete's personal calendars are not plan targets), destination, sink
 
 **IntervalsIcu**:
-The external training platform (intervals.icu) that an athlete may connect as a **Plan target** and as a source of completed activities. Written "intervals.icu" in UI copy and `IntervalsIcu` in code; never bare "Intervals", which means detected effort blocks.
+The external training platform (intervals.icu) that an athlete may connect as a **Plan target** and as a source of completed training: rides become **Activities**, every other completed activity becomes a **Cross-training session**. Written "intervals.icu" in UI copy and `IntervalsIcu` in code; never bare "Intervals", which means detected effort blocks.
 _Avoid_: Intervals, ICU, intervals
 
 **Primary plan target**:

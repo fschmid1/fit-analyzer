@@ -123,6 +123,45 @@ export interface CreateActivityBody {
 	intervals?: Interval[];
 }
 
+// --- Cross-training sessions ---
+
+/**
+ * A completed training session that is not a ride — strength, run, swim, yoga —
+ * reduced to the summary intervals.icu reports.
+ *
+ * Summary-only by design: an **Activity** is analysed from per-second records,
+ * while these sessions exist to give the coach load, recovery and scheduling
+ * context. They are never charted or analysed like a ride.
+ */
+export interface CrossTrainingSession {
+	id: string;
+	/** YYYY-MM-DD in the athlete's training timezone. */
+	date: string;
+	/** "HH:MM" local wall time, when intervals.icu reports one. */
+	startTime: string | null;
+	/** intervals.icu activity type, e.g. "WeightTraining" or "Run". */
+	sport: string;
+	name: string;
+	/** Moving time in seconds. */
+	durationSeconds: number;
+	elapsedSeconds: number | null;
+	distanceKm: number | null;
+	avgHeartRate: number | null;
+	maxHeartRate: number | null;
+	/** Training load as intervals.icu computed it, when reported. */
+	trainingLoad: number | null;
+	/** Total kilograms lifted, reported for strength sessions. */
+	kgLifted: number | null;
+	/** Where the session was imported from, e.g. "intervals-icu". */
+	source: string;
+	createdAt: string;
+}
+
+/** Response body for GET /api/sessions. */
+export interface CrossTrainingSessionsResponse {
+	sessions: CrossTrainingSession[];
+}
+
 /** Stored interval configuration for an activity */
 export interface IntervalConfig {
 	intervals: Interval[];

@@ -7,6 +7,7 @@ import {
 	type CoachVerbosity,
 	type CompareSettings,
 	type ConnectIntervalsIcuBody,
+	type CrossTrainingSession,
 	type GoogleCalendarStatus,
 	type IntervalsIcuStatus,
 	type HealthData,
@@ -291,6 +292,16 @@ export async function fetchActivities(): Promise<ActivityListItem[]> {
 	if (!res.ok) throw new Error("Failed to fetch activities");
 	const data = await res.json();
 	return data.activities;
+}
+
+/** Completed non-ride sessions (gym, runs, swims) imported from intervals.icu. */
+export async function fetchTrainingSessions(): Promise<CrossTrainingSession[]> {
+	const res = await fetch(`${API_BASE}/sessions`, { cache: "no-store" });
+	if (!res.ok) throw new Error("Failed to fetch training sessions");
+	const data = (await res.json()) as {
+		sessions: CrossTrainingSession[];
+	};
+	return data.sessions;
 }
 
 export async function fetchActivity(id: string): Promise<
@@ -836,6 +847,8 @@ export async function disconnectIntervalsIcu(): Promise<void> {
 export async function syncIntervalsIcuNow(): Promise<{
 	imported: number;
 	updated: number;
+	sessionsImported: number;
+	sessionsUpdated: number;
 	skipped: number;
 	failed: number;
 	errors: string[];
@@ -848,6 +861,8 @@ export async function syncIntervalsIcuNow(): Promise<{
 	return data as {
 		imported: number;
 		updated: number;
+		sessionsImported: number;
+		sessionsUpdated: number;
 		skipped: number;
 		failed: number;
 		errors: string[];

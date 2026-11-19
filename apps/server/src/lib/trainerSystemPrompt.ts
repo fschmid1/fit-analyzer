@@ -5,6 +5,7 @@ import {
 	computeActivityStats,
 	computeAllTimeEstimates,
 } from "./athleteStats.js";
+import { readCrossTrainingPrompt } from "./crossTrainingContext.js";
 import { getActivityById } from "./tools/activityUtils.js";
 import { getHaeHealthContext } from "./haeClient.js";
 import {
@@ -326,6 +327,9 @@ export async function buildTrainerAthleteContext(
 			console.warn("[trainer] OW body summary fetch failed:", err);
 		}
 	}
+
+	const sessionText = readCrossTrainingPrompt(userId, startDate);
+	if (sessionText) sections.push(sessionText);
 
 	if (activityStats.count > 0) {
 		sections.push(

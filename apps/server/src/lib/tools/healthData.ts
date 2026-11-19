@@ -12,6 +12,7 @@ import {
 	getRawHealthContext,
 } from "../owClient.js";
 import type { HealthContext } from "@fit-analyzer/shared";
+import { readCrossTrainingPrompt } from "../crossTrainingContext.js";
 
 const TRAINER_HEALTH_LOOKBACK_DAYS = 90;
 
@@ -288,7 +289,7 @@ async function resolveActiveHealthContext(
 export const healthDataDefinition: ToolDefinition = {
 	name: "health_data",
 	description:
-		"Retrieve the athlete's health and fitness context including wearable health metrics (resting HR, HRV, sleep, SpO2), body composition, user-provided profile (FTP, max HR, goals), and recent training history. Call this when you need athlete context to personalize coaching advice.",
+		"Retrieve the athlete's health and fitness context including wearable health metrics (resting HR, HRV, sleep, SpO2), body composition, user-provided profile (FTP, max HR, goals), recent training history, and cross-training sessions (gym, runs, swims) imported from intervals.icu. Call this when you need athlete context to personalize coaching advice.",
 	parameters: {
 		type: "object",
 		properties: {},
@@ -353,6 +354,9 @@ export const healthDataHandler: ToolHandler = async (_args, context) => {
 				console.warn("[health_data] OW body summary fetch failed:", err);
 			}
 		}
+
+		const sessionText = readCrossTrainingPrompt(userId, startDate);
+		if (sessionText) sections.push(sessionText.trim());
 
 		if (activityStats.count > 0) {
 			sections.push("## Recent Training History");

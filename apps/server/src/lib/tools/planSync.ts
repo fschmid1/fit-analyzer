@@ -8,9 +8,12 @@ import type {
 import type { ToolDefinition, ToolResult } from "@fit-analyzer/shared";
 import {
 	DEFAULT_PLANNED_SPORT,
+	STRUCTURED_PLANNED_SPORTS,
 	SUPPORTED_PLANNED_SPORTS,
+	isPlannedSport,
 	normalizeWorkoutSteps,
 	planTargetLabel,
+	supportsWorkoutSteps,
 } from "@fit-analyzer/shared";
 import type { ToolHandler } from "./registry.js";
 import {
@@ -126,18 +129,21 @@ function parseWorkouts(
 			typeof item.description === "string" && item.description.trim() !== ""
 				? item.description.trim()
 				: null;
-		const sport =
-			typeof item.sport === "string" && item.sport.trim() !== ""
-				? (item.sport.trim() as PlannedWorkout["sport"])
-				: DEFAULT_PLANNED_SPORT;
-		if (!SUPPORTED_PLANNED_SPORTS.includes(sport as never)) {
+		const sportRaw = typeof item.sport === "string" ? item.sport.trim() : "";
+		const sport = sportRaw === "" ? DEFAULT_PLANNED_SPORT : sportRaw;
+		if (!isPlannedSport(sport)) {
 			return {
-				error: `workouts[${i}] "${focus}": sport must be ${SUPPORTED_PLANNED_SPORTS.join(", ")}`,
+				error: `workouts[${i}] "${focus}": sport must be one of ${SUPPORTED_PLANNED_SPORTS.join(", ")}`,
 			};
 		}
 		const steps = normalizeWorkoutSteps(item.steps ?? null);
 		if ("error" in steps) {
 			return { error: `workouts[${i}] "${focus}": ${steps.error}` };
+		}
+		if (steps.steps.length > 0 && !supportsWorkoutSteps(sport)) {
+			return {
+				error: `workouts[${i}] "${focus}": ${sport} workouts take no structured steps; put the exercises, sets and reps in description (structured steps are for ${STRUCTURED_PLANNED_SPORTS.join(", ")})`,
+			};
 		}
 		workouts.push({
 			date,

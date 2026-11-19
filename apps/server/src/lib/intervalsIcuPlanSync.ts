@@ -8,7 +8,9 @@ import type {
 } from "@fit-analyzer/shared";
 import {
 	DEFAULT_PLANNED_SPORT,
+	normalizePlannedSport,
 	renderWorkoutSteps,
+	supportsWorkoutSteps,
 	totalWorkoutMinutes,
 } from "@fit-analyzer/shared";
 import type {
@@ -223,12 +225,17 @@ export function buildIcuEvent(workout: PlannedWorkout): IntervalsIcuEventInput {
 		workout.durationMinutes > 0
 			? workout.durationMinutes
 			: Math.max(1, totalWorkoutMinutes(steps));
-	const doc = buildIcuWorkoutDoc(steps);
+	const sport = workout.sport ?? DEFAULT_PLANNED_SPORT;
+	// Structured steps target an endurance threshold. A strength or mobility
+	// session is prose in the description, never a fake %FTP workout.
+	const doc = supportsWorkoutSteps(sport)
+		? buildIcuWorkoutDoc(steps)
+		: undefined;
 	return {
 		uid,
 		external_id: uid,
 		category: "WORKOUT",
-		type: workout.sport ?? DEFAULT_PLANNED_SPORT,
+		type: sport,
 		start_date_local: `${workout.date}T${start}:00`,
 		name: workout.focus.trim(),
 		description: buildIcuDescription(workout),
@@ -541,7 +548,7 @@ export function icuEventToPlanWorkout(
 		focus,
 		description: eventProse(ev.description),
 		edited: Boolean(mark && updated > mark.writtenAt + EDIT_SKEW_MS),
-		sport: (ev.type as PlanWorkout["sport"]) ?? DEFAULT_PLANNED_SPORT,
+		sport: normalizePlannedSport(ev.type),
 		steps: icuDocToSteps(ev.workout_doc),
 		target: "intervalsIcu",
 	};

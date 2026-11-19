@@ -61,9 +61,9 @@ function WorkoutRow({ workout }: { workout: PlanWorkout }) {
 					)}
 				</p>
 				<p className="text-xs text-[#94a3b8] mt-0.5">
-					{workout.durationMinutes} min
+					{workout.durationMinutes} min · {workout.sport}
 					{workout.steps.length > 0
-						? ` · ${totalWorkoutMinutes(workout.steps)} min structured · ${workout.sport}`
+						? ` · ${totalWorkoutMinutes(workout.steps)} min structured`
 						: ""}
 				</p>
 				{workout.description && (

@@ -189,6 +189,26 @@ describe("buildIcuEvent", () => {
 		expect(ev.start_date_local).toBe("2026-10-01T17:00:00");
 		expect(ev.moving_time).toBe(3600);
 	});
+
+	it("carries a cross-training sport and omits the structured doc", () => {
+		const ev = buildIcuEvent(
+			workout({
+				sport: "WeightTraining",
+				focus: "Gym",
+				steps: [
+					{
+						kind: "interval",
+						durationMinutes: 10,
+						target: { metric: "power", pct: 50, range: null },
+						note: null,
+					},
+				],
+			}),
+		);
+		expect(ev.type).toBe("WeightTraining");
+		expect(ev.workout_doc).toBeUndefined();
+		expect(ev.description).toContain("10 min");
+	});
 });
 
 describe("mergeIcuPlan", () => {

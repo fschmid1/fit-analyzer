@@ -61,6 +61,28 @@ export function createTestDb(): Database {
 		);
 		CREATE INDEX idx_profile_changes_user_created
 			ON profile_changes(user_id, created_at DESC, id);
+		CREATE TABLE cross_training_sessions (
+			id                 TEXT PRIMARY KEY,
+			user_id            TEXT NOT NULL,
+			date               TEXT NOT NULL,
+			start_time         TEXT,
+			sport              TEXT NOT NULL,
+			name               TEXT NOT NULL,
+			duration_seconds   INTEGER NOT NULL,
+			elapsed_seconds    INTEGER,
+			distance_meters    REAL,
+			avg_heart_rate     INTEGER,
+			max_heart_rate     INTEGER,
+			training_load      REAL,
+			kg_lifted          REAL,
+			source             TEXT NOT NULL,
+			source_activity_id TEXT NOT NULL,
+			created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+		CREATE UNIQUE INDEX idx_cross_training_sessions_source
+			ON cross_training_sessions(user_id, source, source_activity_id);
+		CREATE INDEX idx_cross_training_sessions_user_date
+			ON cross_training_sessions(user_id, date);
 	`);
 	return database;
 }

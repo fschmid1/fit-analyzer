@@ -28,6 +28,10 @@ _Avoid_: rider, client, trainee
 A recorded ride: the FIT-derived summary, records, laps and intervals the app stores and analyses. Distinct from a **Planned workout**, which is prescribed rather than recorded.
 _Avoid_: session, workout (that word belongs to a Planned workout)
 
+**Cross-training session**:
+A completed non-ride training session — strength, run, swim, yoga — imported from intervals.icu as a summary and shown in Activity History beside the rides. Read-only and never charted; the coach uses it as load and scheduling context. Distinct from an **Activity**, which is a ride.
+_Avoid_: activity, workout, gym log
+
 ### Trainer chat
 
 **Attachment**:

@@ -2,7 +2,7 @@
 
 ## Contexts
 
-- [Shared](./packages/shared/CONTEXT.md) — cross-app contracts: activity records, trainer chat shapes, user settings
+- [Shared](./packages/shared/CONTEXT.md) — cross-app contracts: activity records, cross-training sessions, trainer chat shapes, user settings
 - [Server](./apps/server/CONTEXT.md) — Bun HTTP API, SQLite persistence, trainer chat streaming, attachment storage
 - [Web](./apps/web/CONTEXT.md) — React/Vite client: FIT parsing, charts, trainer chat UX, attachment capture and viewing
 

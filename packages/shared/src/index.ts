@@ -8,6 +8,8 @@ export type {
 	StoredRecord,
 	ActivityListItem,
 	StoredActivity,
+	CrossTrainingSession,
+	CrossTrainingSessionsResponse,
 	CreateActivityBody,
 	IntervalConfig,
 	UpdateIntervalsBody,
@@ -100,12 +102,17 @@ export type {
 export {
 	DEFAULT_PLANNED_SPORT,
 	SUPPORTED_PLANNED_SPORTS,
+	STRUCTURED_PLANNED_SPORTS,
 	DEFAULT_START_TIME,
 	formatWorkoutTarget,
+	isPlannedSport,
 	isWorkoutRepeat,
+	normalizePlannedSport,
 	normalizeWorkoutSteps,
 	planTargetLabel,
+	plannedSportEmoji,
 	renderWorkoutSteps,
+	supportsWorkoutSteps,
 	totalWorkoutMinutes,
 } from "./workoutPlan.js";
 

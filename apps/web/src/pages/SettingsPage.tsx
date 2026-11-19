@@ -30,7 +30,7 @@ function DomainBody({
 		case "wahoo":
 			return <WahooConnect onSynced={onSynced} />;
 		case "intervalsIcu":
-			return <IntervalsIcuConnect />;
+			return <IntervalsIcuConnect onSynced={onSynced} />;
 		case "calendar":
 			return <GoogleCalendarConnect />;
 		case "openwearables":
