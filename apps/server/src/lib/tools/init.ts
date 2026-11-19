@@ -56,11 +56,11 @@ import {
 	resetZonesHandler,
 } from "./setZones.js";
 import {
-	addWorkoutsDefinition,
-	addWorkoutsHandler,
-	removeWorkoutsDefinition,
-	removeWorkoutsHandler,
-} from "./calendarSync.js";
+	syncTrainingPlanDefinition,
+	syncTrainingPlanHandler,
+	removePlannedWorkoutsDefinition,
+	removePlannedWorkoutsHandler,
+} from "./planSync.js";
 
 let initialized = false;
 
@@ -86,6 +86,6 @@ export function initTools(): void {
 	registerTool(setZonesDefinition, setZonesHandler);
 	registerTool(resetZonesDefinition, resetZonesHandler);
 	registerTool(healthDataDefinition, healthDataHandler);
-	registerTool(addWorkoutsDefinition, addWorkoutsHandler);
-	registerTool(removeWorkoutsDefinition, removeWorkoutsHandler);
+	registerTool(syncTrainingPlanDefinition, syncTrainingPlanHandler);
+	registerTool(removePlannedWorkoutsDefinition, removePlannedWorkoutsHandler);
 }

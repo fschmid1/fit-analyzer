@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import type { UpdateCalendarTimezoneBody } from "@fit-analyzer/shared";
-import { db } from "../db.js";
 import { env } from "../env.js";
 import { getUserId } from "../lib/getUserId.js";
 import {
@@ -13,18 +12,14 @@ import {
 	getGoogleConnection,
 	googleFlow,
 	googleTokenStore,
-	isValidTimezone,
 	setConnectionMetadata,
 } from "../lib/googleCalendarConnection.js";
+import { isValidTimezone } from "../lib/wallClock.js";
 import { ensureTrainingCalendar } from "../lib/googleCalendarClient.js";
-import { readTrainingPlan } from "../lib/calendarPlan.js";
-import { runPlanRefresh } from "../lib/planRefreshRunner.js";
 import {
-	duePlanWeek,
-	duePlanWeekKey,
-	markManualRefreshError,
-	markPlanRefreshed,
-} from "../lib/planRefreshSettings.js";
+	getTrainingTimezone,
+	setTrainingTimezone,
+} from "../lib/trainingTimezone.js";
 
 /**
  * Calendar connection routes: OAuth against Google plus the one-time setup
@@ -35,10 +30,6 @@ import {
  */
 
 const google = new Hono();
-
-const setTzStmt = db.prepare(
-	"UPDATE google_tokens SET tz = ?, updated_at = datetime('now') WHERE user_id = ?",
-);
 
 /** GET /api/google/connect?tz=… — redirect to Google OAuth. */
 google.get("/connect", (c) => {
@@ -143,7 +134,7 @@ google.get("/status", (c) => {
 	return c.json({
 		connected: true,
 		calendarId: connection.calendarId,
-		timezone: connection.tz,
+		timezone: getTrainingTimezone(userId),
 		calendarUrl: connection.calendarId
 			? `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(connection.calendarId)}`
 			: null,
@@ -178,66 +169,8 @@ google.patch("/timezone", async (c) => {
 		return c.json({ error: "Invalid timezone" }, 400);
 	}
 
-	setTzStmt.run(body.timezone, userId);
+	setTrainingTimezone(userId, body.timezone);
 	return c.json({ ok: true });
-});
-
-/** GET /api/google/plan — the forward plan projected from the Training calendar. */
-google.get("/plan", async (c) => {
-	let userId: string;
-	try {
-		userId = getUserId(c);
-	} catch {
-		return c.json({ error: "Unauthorized" }, 401);
-	}
-
-	try {
-		const plan = await readTrainingPlan(userId);
-		return c.json(plan);
-	} catch (err) {
-		return c.json(
-			{
-				error:
-					err instanceof Error ? err.message : "Failed to read training plan",
-			},
-			502,
-		);
-	}
-});
-
-/**
- * POST /api/google/plan/refresh — run a Plan refresh on demand. Unlike the
- * scheduled refresh this runs regardless of the watermark (it is explicit), and
- * it clears any sticky error state on success.
- */
-google.post("/plan/refresh", async (c) => {
-	let userId: string;
-	try {
-		userId = getUserId(c);
-	} catch {
-		return c.json({ error: "Unauthorized" }, 401);
-	}
-
-	const connection = getGoogleConnection(userId);
-	if (!connection?.calendarId || !connection.tz) {
-		return c.json({ error: "Google Calendar not connected" }, 400);
-	}
-
-	const now = new Date();
-	const weekStart = duePlanWeek(now, connection.tz);
-	const weekKey = duePlanWeekKey(now, connection.tz);
-
-	const result = await runPlanRefresh(userId, weekKey, weekStart);
-	if (!result.ok) {
-		// Manual refresh: record the error without consuming the scheduler's
-		// capped retry budget for this week.
-		markManualRefreshError(userId, result.error ?? "Plan refresh failed");
-		return c.json({ error: result.error ?? "Plan refresh failed" }, 502);
-	}
-
-	markPlanRefreshed(userId, weekKey);
-	const plan = await readTrainingPlan(userId);
-	return c.json({ ok: true, weekKey, plan });
 });
 
 export { google, getCalendarContext };

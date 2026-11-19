@@ -1,13 +1,10 @@
-import {
-	normalizedPowerFromSeconds,
-	normalizedCadenceFromSeconds,
-	peakPowerFromTimeSeries,
-	buildMetricBySecondFromTimeSeries,
-	type ActivitySummary,
-	type LapMarker,
-	type StoredRecord,
+import type {
+	ActivitySummary,
+	LapMarker,
+	StoredRecord,
 } from "@fit-analyzer/shared";
 import type { ImportPayload } from "./activityImporter.js";
+import { summarizeRideRecords } from "./rideSummary.js";
 
 // ─── Strava API response shapes ───────────────────────────────────────────────
 
@@ -100,77 +97,26 @@ export function buildRecords(
  * Build ActivitySummary entirely from raw stream data.
  * Nothing is taken from Strava's pre-computed API fields.
  *
- * Uses a simple mean of non-zero samples, matching Garmin's session record:
- * the device records at 1 Hz so its simple mean == its time-weighted mean.
- * Time-weighting Strava's variable-rate stream is NOT equivalent because large
- * Δt values at pause/auto-pause boundaries are gaps, not sample durations —
- * weighting by them over-penalises the first sample after each stop.
+ * The maths live in rideSummary.ts so every importer summarises a ride the
+ * same way; this wrapper only adapts Strava's field names.
  */
 export function buildSummary(
 	activity: StravaActivity,
 	records: StoredRecord[],
-	timeArr: number[],
-	wattsArr: number[],
-	cadenceArr: number[],
 ): ActivitySummary {
-	// Simple mean of non-zero values, mirroring Garmin session record behaviour:
-	// zeros (coasting / sensor dropout) are excluded from averages.
-	const powerVals = records
-		.map((r) => r.power)
-		.filter((v): v is number => v !== null && v > 0);
-	const hrVals = records
-		.map((r) => r.heartRate)
-		.filter((v): v is number => v !== null && v > 0);
-	const cadVals = records
-		.map((r) => r.cadence)
-		.filter((v): v is number => v !== null && v > 0);
-
-	const avg = (vals: number[]) =>
-		vals.length
-			? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length)
-			: null;
-	const max = (vals: number[]) =>
-		vals.length ? vals.reduce((m, v) => (v > m ? v : m), vals[0]) : null;
-
-	// Total work: ∫ power dt (W·s = J), nulls treated as 0W
-	let totalWork: number | null = null;
-	if (wattsArr.length > 0 && timeArr.length === wattsArr.length) {
-		let joules = 0;
-		for (let i = 0; i < wattsArr.length; i++) {
-			const dt = i === 0 ? timeArr[0] : timeArr[i] - timeArr[i - 1];
-			joules += (wattsArr[i] ?? 0) * dt;
-		}
-		totalWork = Math.round(joules);
-	}
-
-	return {
+	return summarizeRideRecords({
 		date: activity.start_date.slice(0, 10),
-		// moving_time matches Garmin's totalTimerTime (excludes pauses; time stream
-		// runs 0→elapsed_time which overshoots by the total paused duration)
-		totalTimerTime: activity.moving_time,
-		totalDistanceKm:
-			activity.distance != null
-				? Math.round((activity.distance / 1000) * 10) / 10
-				: null,
-		avgPower: avg(powerVals),
-		normalizedPower: normalizedPowerFromSeconds(
-			buildMetricBySecondFromTimeSeries(timeArr, wattsArr),
-		),
-		maxPower: max(powerVals),
-		avgHeartRate: avg(hrVals),
-		maxHeartRate: max(hrVals),
-		avgCadence: avg(cadVals),
-		normalizedCadence: normalizedCadenceFromSeconds(
-			buildMetricBySecondFromTimeSeries(timeArr, cadenceArr),
-		),
-		totalWork,
-		peak1minPower: peakPowerFromTimeSeries(timeArr, wattsArr, 60),
-		peak5minPower: peakPowerFromTimeSeries(timeArr, wattsArr, 300),
-		peak20minPower: peakPowerFromTimeSeries(timeArr, wattsArr, 1200),
-		locationCity: activity.location_city ?? null,
-		locationState: activity.location_state ?? null,
-		locationCountry: activity.location_country ?? null,
-	};
+		// moving_time matches Garmin's totalTimerTime (excludes pauses; the time
+		// stream runs 0→elapsed_time, which overshoots by the total paused time).
+		durationSeconds: activity.moving_time,
+		distanceMeters: activity.distance ?? null,
+		records,
+		location: {
+			city: activity.location_city ?? null,
+			state: activity.location_state ?? null,
+			country: activity.location_country ?? null,
+		},
+	});
 }
 
 /** Build LapMarker[] from Strava laps, converting stream indices to elapsed seconds. */
@@ -286,18 +232,10 @@ export async function stravaActivityToPayload(
 	const laps = await fetcher.fetchLaps(stravaActivityId, accessToken);
 
 	const timeArr = streams.time?.data ?? [];
-	const wattsArr = streams.watts?.data ?? [];
-	const cadenceArr = streams.cadence?.data ?? [];
 	const startDate = new Date(activity.start_date);
 
 	const records = buildRecords(startDate, streams);
-	const summary = buildSummary(
-		activity,
-		records,
-		timeArr,
-		wattsArr,
-		cadenceArr,
-	);
+	const summary = buildSummary(activity, records);
 	const lapMarkers = buildLaps(laps, timeArr);
 
 	return {

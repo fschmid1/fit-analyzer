@@ -5,7 +5,6 @@ import {
 	filterRemovals,
 	mergePlan,
 	syncKey,
-	wallClockMinute,
 	SYNC_FOCUS_PROP,
 	SYNC_KEY_PROP,
 	SYNC_STAMP_PROP,
@@ -99,13 +98,6 @@ describe("buildEvent", () => {
 	it("defaults duration to 60 minutes when invalid", () => {
 		const ev = buildEvent(workout({ durationMinutes: 0 }), TZ, 0);
 		expect(ev.end.dateTime.slice(11, 16)).toBe("18:00");
-	});
-});
-
-describe("wallClockMinute", () => {
-	it("formats the current minute in the target timezone", () => {
-		expect(wallClockMinute(new Date(NOW), TZ)).toBe(NOW_WALL);
-		expect(wallClockMinute(new Date(NOW), "UTC")).toBe("2026-08-29T10:00");
 	});
 });
 

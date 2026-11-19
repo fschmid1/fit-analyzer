@@ -54,6 +54,11 @@ import {
 import { buildUserZones, getUserEstimates } from "../lib/zonesService.js";
 import { db } from "../db.js";
 import { getUserId } from "../lib/getUserId.js";
+import {
+	getTrainingTimezone,
+	setTrainingTimezone,
+} from "../lib/trainingTimezone.js";
+import { isValidTimezone } from "../lib/wallClock.js";
 
 const me = new Hono();
 
@@ -199,6 +204,36 @@ me.get("/", (c) => {
 	}
 
 	return c.json({ username, email, name });
+});
+
+// GET /me/training-timezone — the athlete's timezone, shared by every plan
+// target (ADR-0005).
+me.get("/training-timezone", (c) => {
+	let userId: string;
+	try {
+		userId = getUserId(c);
+	} catch {
+		return c.json({ error: "Not authenticated" }, 401);
+	}
+	return c.json({ timezone: getTrainingTimezone(userId) });
+});
+
+// PATCH /me/training-timezone — set the athlete's timezone.
+me.patch("/training-timezone", async (c) => {
+	let userId: string;
+	try {
+		userId = getUserId(c);
+	} catch {
+		return c.json({ error: "Not authenticated" }, 401);
+	}
+	const body = await c.req
+		.json<{ timezone?: string }>()
+		.catch(() => ({ timezone: undefined }));
+	if (!body.timezone || !isValidTimezone(body.timezone)) {
+		return c.json({ error: "Invalid timezone" }, 400);
+	}
+	setTrainingTimezone(userId, body.timezone);
+	return c.json({ timezone: body.timezone });
 });
 
 // GET /me/settings — return persisted user settings

@@ -60,7 +60,8 @@ export function BoardVariant({
 	const [expanded, setExpanded] = useState<Set<SettingsDomainId>>(
 		() => new Set(["profile"]),
 	);
-	const { strava, wahoo, calendar, hae, flash } = useIntegrationsStatus();
+	const { strava, wahoo, intervalsIcu, calendar, hae, flash } =
+		useIntegrationsStatus();
 	const { data } = useSettings();
 
 	const toggle = (id: SettingsDomainId) => {
@@ -78,6 +79,13 @@ export function BoardVariant({
 				return ledFrom(strava?.connected ?? null);
 			case "wahoo":
 				return ledFrom(wahoo?.connected ?? null);
+			case "intervalsIcu":
+				return ledFrom(
+					intervalsIcu
+						? intervalsIcu.connected && intervalsIcu.keyValid !== false
+						: null,
+					intervalsIcu?.keyValid === false,
+				);
 			case "calendar":
 				return ledFrom(calendar?.connected ?? null);
 			case "hae":

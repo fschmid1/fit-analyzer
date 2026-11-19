@@ -272,6 +272,43 @@ db.exec(`
   )
 `);
 
+// IntervalsIcu connection: a personal API key (v1; OAuth is the later path) plus
+// the opt-in 90-day activity backfill's progress.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS intervals_icu_connections (
+    user_id             TEXT PRIMARY KEY,
+    api_key             TEXT NOT NULL,
+    athlete_id          TEXT,
+    athlete_name        TEXT,
+    key_valid           INTEGER,
+    backfill_status     TEXT NOT NULL DEFAULT 'idle',
+    backfill_imported   INTEGER NOT NULL DEFAULT 0,
+    backfill_failed     INTEGER NOT NULL DEFAULT 0,
+    backfill_started_at TEXT,
+    backfill_finished_at TEXT,
+    backfill_error      TEXT,
+    last_sync_at        TEXT,
+    last_poll_error     TEXT,
+    poll_failures       INTEGER NOT NULL DEFAULT 0,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
+// Last-write marks for plan events on targets without an event-metadata slot
+// (IntervalsIcu has no extended properties). The mark records when we wrote a
+// sync key; anything newer on the provider counts as an athlete edit. This is
+// write metadata, never the plan itself (ADR-0002 still holds: no plan store).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS plan_sync_marks (
+    user_id    TEXT NOT NULL,
+    target     TEXT NOT NULL,
+    sync_key   TEXT NOT NULL,
+    written_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, target, sync_key)
+  )
+`);
+
 // User settings
 db.exec(`
   CREATE TABLE IF NOT EXISTS user_settings (
@@ -428,6 +465,49 @@ db.exec(`
     ON activities(user_id, wahoo_activity_id)
     WHERE wahoo_activity_id IS NOT NULL
 `);
+
+// Migration: add intervals_icu_activity_id to activities for duplicate
+// prevention when rides are imported from IntervalsIcu.
+try {
+	db.exec("ALTER TABLE activities ADD COLUMN intervals_icu_activity_id TEXT");
+} catch {
+	/* column already exists */
+}
+db.exec(`
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_activities_intervals_icu_id
+    ON activities(user_id, intervals_icu_activity_id)
+    WHERE intervals_icu_activity_id IS NOT NULL
+`);
+
+// Migration: IntervalsIcu poll/backfill bookkeeping on older databases (the
+// create-table above carries them for new ones).
+for (const column of [
+	"last_sync_at TEXT",
+	"last_poll_error TEXT",
+	"poll_failures INTEGER NOT NULL DEFAULT 0",
+]) {
+	try {
+		db.exec(`ALTER TABLE intervals_icu_connections ADD COLUMN ${column}`);
+	} catch {
+		/* column already exists */
+	}
+}
+
+// Migration: the training timezone is a property of the athlete, not of one
+// plan target (ADR-0005). Google's captured tz remains the fallback for rows
+// written before this column existed.
+try {
+	db.exec("ALTER TABLE user_settings ADD COLUMN training_timezone TEXT");
+} catch {
+	/* column already exists */
+}
+try {
+	db.exec(
+		"UPDATE user_settings SET training_timezone = (SELECT tz FROM google_tokens g WHERE g.user_id = user_settings.user_id) WHERE training_timezone IS NULL",
+	);
+} catch {
+	/* google_tokens may not exist yet on a very old database */
+}
 
 // Migration: add webhook_enabled to wahoo_tokens so the UI can show the
 // current webhook registration state without a live Wahoo API call (the

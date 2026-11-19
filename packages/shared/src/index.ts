@@ -56,6 +56,17 @@ export type {
 	CalendarSyncResult,
 	CalendarRemovalResult,
 	UpdateCalendarTimezoneBody,
+	PlanTargetId,
+	PlanTargetStatus,
+	PlanTargetSyncResult,
+	PlanSyncResult,
+	PlanTargetRemovalResult,
+	PlanRemovalResult,
+	IntervalsIcuBackfillStatus,
+	IntervalsIcuBackfill,
+	IntervalsIcuStatus,
+	ConnectIntervalsIcuBody,
+	TrainingTimezoneResponse,
 	PlanRefreshStatus,
 	PlanRefreshSettings,
 	PlanWorkout,
@@ -75,6 +86,28 @@ export {
 	GENERAL_THREAD_NAME,
 	PROFILE_CHANGE_SOURCE_LABELS,
 } from "./types.js";
+
+export type {
+	WorkoutTargetMetric,
+	WorkoutTarget,
+	WorkoutStepKind,
+	WorkoutStep,
+	WorkoutRepeat,
+	WorkoutStepItem,
+	PlannedSport,
+} from "./workoutPlan.js";
+
+export {
+	DEFAULT_PLANNED_SPORT,
+	SUPPORTED_PLANNED_SPORTS,
+	DEFAULT_START_TIME,
+	formatWorkoutTarget,
+	isWorkoutRepeat,
+	normalizeWorkoutSteps,
+	planTargetLabel,
+	renderWorkoutSteps,
+	totalWorkoutMinutes,
+} from "./workoutPlan.js";
 
 export {
 	AVAILABLE_MODELS,

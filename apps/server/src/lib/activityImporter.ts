@@ -7,11 +7,16 @@ import type { Database } from "bun:sqlite";
 import { handleNewActivityForWaxedChainReminder } from "./waxedChainReminders.js";
 import { getAthleteProfile, updateAthleteProfile } from "./athleteProfile.js";
 import { inferLocationFromActivities } from "./athleteStats.js";
+import { wallClockMs } from "./wallClock.js";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
 /** Origin of an imported activity. Drives duplicate detection column. */
-export type ActivitySource = "strava" | "wahoo" | "fit-upload";
+export type ActivitySource =
+	| "strava"
+	| "wahoo"
+	| "intervals-icu"
+	| "fit-upload";
 
 /**
  * Normalized payload produced by an import adapter (Strava, Wahoo) or by the
@@ -26,6 +31,8 @@ export interface ImportPayload {
 	summary: ActivitySummary;
 	laps: LapMarker[];
 	userId: string;
+	/** Training timezone, used to compare wall-clock starts for same-ride dedupe. */
+	timezone?: string | null;
 }
 
 export type ImportStatus = "imported" | "updated" | "skipped";
@@ -91,6 +98,7 @@ function maybeUpdateAthleteLocationDefault(userId: string): void {
 const columnBySource: Record<ActivitySource, string | null> = {
 	strava: "strava_activity_id",
 	wahoo: "wahoo_activity_id",
+	"intervals-icu": "intervals_icu_activity_id",
 	// FIT uploads have no external id — each upload is a fresh row, matching
 	// the historical behavior of POST /api/activities.
 	"fit-upload": null,
@@ -111,9 +119,77 @@ interface Statements {
 		Record<ActivitySource, ReturnType<Database["prepare"]>>
 	>;
 	insert: ReturnType<Database["prepare"]>;
+	/** Candidate rows for same-ride dedupe (intervals-icu imports only). */
+	sameRideCandidates: ReturnType<Database["prepare"]>;
+	stampIntervalsId: ReturnType<Database["prepare"]>;
 }
 
 const statementCache = new WeakMap<Database, Statements>();
+
+/** True when (userId, source, sourceActivityId) is already stored. */
+export function isActivityImported(
+	db: Database,
+	source: ActivitySource,
+	sourceActivityId: string,
+	userId: string,
+): boolean {
+	const stmt = getStatements(db).checkExisting[source];
+	if (!stmt) return false;
+	return stmt.get(userId, sourceActivityId) != null;
+}
+
+/**
+ * Find an already-stored ride that is the same ride as this intervals.icu
+ * import: same wall-clock start (within two minutes, in the training timezone)
+ * and a similar duration. That is how a ride first imported from Strava or a
+ * FIT upload gets the intervals.icu id stamped onto its existing row instead of
+ * becoming a duplicate.
+ */
+function findSameRide(
+	stmts: Statements,
+	userId: string,
+	payload: ImportPayload,
+): string | null {
+	const first = payload.records[0];
+	if (!first) return null;
+	const start = Date.parse(first.timestamp);
+	if (!Number.isFinite(start)) return null;
+	const timezone = payload.timezone ?? "UTC";
+	const startWall = wallClockMs(new Date(start), timezone);
+	const duration = payload.summary.totalTimerTime;
+	const rows = stmts.sameRideCandidates.all(userId, payload.summary.date) as {
+		id: string;
+		summary: string;
+		records: string;
+	}[];
+
+	for (const row of rows) {
+		let storedRecords: { timestamp?: string }[];
+		let storedSummary: { totalTimerTime?: number };
+		try {
+			storedRecords = JSON.parse(row.records);
+			storedSummary = JSON.parse(row.summary);
+		} catch {
+			continue;
+		}
+		const storedFirst = storedRecords[0]?.timestamp;
+		if (!storedFirst) continue;
+		const storedStart = Date.parse(storedFirst);
+		if (!Number.isFinite(storedStart)) continue;
+		const storedWall = wallClockMs(new Date(storedStart), timezone);
+		if (Math.abs(storedWall - startWall) > 2 * 60_000) continue;
+
+		const storedDuration = Number(storedSummary.totalTimerTime);
+		const tolerance = Math.max(120, duration * 0.03);
+		if (
+			!Number.isFinite(storedDuration) ||
+			Math.abs(storedDuration - duration) > tolerance
+		)
+			continue;
+		return row.id;
+	}
+	return null;
+}
 
 function getStatements(db: Database): Statements {
 	let cached = statementCache.get(db);
@@ -126,6 +202,9 @@ function getStatements(db: Database): Statements {
 			),
 			wahoo: db.prepare<{ id: string }, [string, string]>(
 				"SELECT id FROM activities WHERE user_id = ? AND wahoo_activity_id = ?",
+			),
+			"intervals-icu": db.prepare<{ id: string }, [string, string]>(
+				"SELECT id FROM activities WHERE user_id = ? AND intervals_icu_activity_id = ?",
 			),
 		},
 		fetchExisting: {
@@ -141,6 +220,12 @@ function getStatements(db: Database): Statements {
 			>(
 				"SELECT id, summary, records, laps FROM activities WHERE user_id = ? AND wahoo_activity_id = ?",
 			),
+			"intervals-icu": db.prepare<
+				{ id: string; summary: string; records: string; laps: string },
+				[string, string]
+			>(
+				"SELECT id, summary, records, laps FROM activities WHERE user_id = ? AND intervals_icu_activity_id = ?",
+			),
 		},
 		deleteExisting: {
 			strava: db.prepare(
@@ -149,12 +234,30 @@ function getStatements(db: Database): Statements {
 			wahoo: db.prepare(
 				"DELETE FROM activities WHERE user_id = ? AND wahoo_activity_id = ?",
 			),
+			"intervals-icu": db.prepare(
+				"DELETE FROM activities WHERE user_id = ? AND intervals_icu_activity_id = ?",
+			),
 		},
 		insert: db.prepare(
 			`INSERT INTO activities
           (id, date, summary, records, laps, intervals, user_id,
-           strava_activity_id, wahoo_activity_id)
-         VALUES (?, ?, ?, ?, ?, '[]', ?, ?, ?)`,
+           strava_activity_id, wahoo_activity_id, intervals_icu_activity_id)
+         VALUES (?, ?, ?, ?, ?, '[]', ?, ?, ?, ?)`,
+		),
+		sameRideCandidates: db.prepare<
+			{
+				id: string;
+				summary: string;
+				records: string;
+			},
+			[string, string]
+		>(
+			`SELECT id, summary, records FROM activities
+			  WHERE user_id = ? AND substr(date, 1, 10) = ?
+			    AND intervals_icu_activity_id IS NULL`,
+		),
+		stampIntervalsId: db.prepare(
+			"UPDATE activities SET intervals_icu_activity_id = ? WHERE id = ?",
 		),
 	};
 	statementCache.set(db, cached);
@@ -206,6 +309,17 @@ export async function importActivity(
 			} | null)
 		: null;
 
+	if (source === "intervals-icu" && !existing) {
+		const sameRideId = findSameRide(stmts, userId, payload);
+		if (sameRideId) {
+			stmts.stampIntervalsId.run(sourceActivityId, sameRideId);
+			console.log(
+				`[activityImporter] Stamped intervals.icu id ${sourceActivityId} on existing activity ${sameRideId}`,
+			);
+			return { status: "skipped", id: sameRideId };
+		}
+	}
+
 	// Idempotent re-import: if the existing row's content is byte-identical to
 	// the new payload, skip the delete+insert entirely. Avoids unnecessary row
 	// churn (and side-effect re-firing) when a webhook fires twice for the
@@ -229,6 +343,7 @@ export async function importActivity(
 	const id = crypto.randomUUID();
 	const stravaId = source === "strava" ? sourceActivityId : null;
 	const wahooId = source === "wahoo" ? sourceActivityId : null;
+	const intervalsIcuId = source === "intervals-icu" ? sourceActivityId : null;
 
 	const tx = db.transaction(() => {
 		if (existing && deleteStmt) {
@@ -243,6 +358,7 @@ export async function importActivity(
 			userId,
 			stravaId,
 			wahooId,
+			intervalsIcuId,
 		);
 	});
 	tx();

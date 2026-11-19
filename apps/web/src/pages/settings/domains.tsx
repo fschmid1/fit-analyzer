@@ -29,9 +29,15 @@ export const SETTINGS_DOMAINS: SettingsDomain[] = [
 		group: "Integrations",
 	},
 	{
+		id: "intervalsIcu",
+		name: "intervals.icu",
+		blurb: "Coach-planned workouts and completed ride import.",
+		group: "Integrations",
+	},
+	{
 		id: "calendar",
 		name: "Training calendar",
-		blurb: "Coach-scheduled workouts on a Google calendar.",
+		blurb: "The same plan, projected onto a Google calendar.",
 		group: "Integrations",
 	},
 	{

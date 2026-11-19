@@ -8,7 +8,12 @@ import {
 	Settings2,
 } from "lucide-react";
 import type { PlanWorkout, TrainingPlanResponse } from "@fit-analyzer/shared";
-import { planWeekFor } from "@fit-analyzer/shared";
+import {
+	planTargetLabel,
+	planWeekFor,
+	renderWorkoutSteps,
+	totalWorkoutMinutes,
+} from "@fit-analyzer/shared";
 import { fetchTrainingPlan, refreshTrainingPlan } from "../lib/api";
 import { AnimatedButton } from "../components/AnimatedButton";
 import { Link } from "react-router-dom";
@@ -39,6 +44,8 @@ function formatDay(date: string): string {
 }
 
 function WorkoutRow({ workout }: { workout: PlanWorkout }) {
+	const structure =
+		workout.steps.length > 0 ? renderWorkoutSteps(workout.steps) : null;
 	return (
 		<li className="flex items-start gap-3 py-2.5 border-b border-[rgba(139,92,246,0.08)] last:border-0">
 			<span className="w-16 shrink-0 text-xs font-mono text-[#c4b5fd] pt-0.5">
@@ -55,8 +62,25 @@ function WorkoutRow({ workout }: { workout: PlanWorkout }) {
 				</p>
 				<p className="text-xs text-[#94a3b8] mt-0.5">
 					{workout.durationMinutes} min
-					{workout.description ? ` · ${workout.description}` : ""}
+					{workout.steps.length > 0
+						? ` · ${totalWorkoutMinutes(workout.steps)} min structured · ${workout.sport}`
+						: ""}
 				</p>
+				{workout.description && (
+					<p className="text-xs text-[#94a3b8] mt-1 whitespace-pre-line">
+						{workout.description}
+					</p>
+				)}
+				{structure && (
+					<details className="mt-1.5">
+						<summary className="text-[11px] text-[#c4b5fd] cursor-pointer select-none">
+							{workout.steps.length} steps
+						</summary>
+						<pre className="mt-1 text-[11px] leading-relaxed text-[#94a3b8] whitespace-pre-wrap font-mono">
+							{structure}
+						</pre>
+					</details>
+				)}
 			</div>
 		</li>
 	);
@@ -120,8 +144,14 @@ export function TrainingPlanPage() {
 					<div>
 						<h2 className="text-2xl font-bold text-[#f1f5f9]">Training plan</h2>
 						<p className="text-sm text-[#94a3b8]">
-							The coach's planned workouts, straight from your Training calendar
+							The coach's planned workouts, read from{" "}
+							{plan?.primary
+								? planTargetLabel(plan.primary)
+								: "your plan target"}
 							{plan?.timezone ? ` (${plan.timezone})` : ""}.
+							{plan && plan.targets.filter((t) => t.connected).length > 1
+								? " Every connected target receives the same plan."
+								: ""}
 						</p>
 					</div>
 					<AnimatedButton
@@ -155,8 +185,8 @@ export function TrainingPlanPage() {
 					<div className="flex flex-col items-center gap-3 text-center py-16">
 						<CalendarDays className="w-12 h-12 text-[#8b5cf6]/30" />
 						<p className="text-sm text-[#94a3b8] max-w-sm">
-							Connect your Training calendar and the coach's planned workouts
-							will show up here.
+							Connect intervals.icu or your Training calendar in Settings and
+							the coach's planned workouts will show up here.
 						</p>
 						<Link
 							to="/settings"

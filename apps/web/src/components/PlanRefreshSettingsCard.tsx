@@ -9,6 +9,7 @@ import {
 import type { PlanRefreshSettings } from "@fit-analyzer/shared";
 import {
 	fetchGoogleCalendarStatus,
+	fetchIntervalsIcuStatus,
 	updateNtfyTopic,
 	updatePlanRefreshSettings,
 } from "../lib/api";
@@ -38,9 +39,7 @@ export function PlanRefreshSettingsCard() {
 	const [enabled, setEnabled] = useState(false);
 	const [ntfyTopic, setNtfyTopic] = useState("");
 	const [topicSaving, setTopicSaving] = useState(false);
-	const [calendarConnected, setCalendarConnected] = useState<boolean | null>(
-		null,
-	);
+	const [targetConnected, setTargetConnected] = useState<boolean | null>(null);
 	const [notification, setNotification] = useState<{
 		type: "success" | "error";
 		message: string;
@@ -54,9 +53,20 @@ export function PlanRefreshSettingsCard() {
 	}, [data]);
 
 	useEffect(() => {
-		fetchGoogleCalendarStatus()
-			.then((s) => setCalendarConnected(s.connected))
-			.catch(() => setCalendarConnected(false));
+		// A plan target is either intervals.icu or the Training calendar; the
+		// weekly refresh works with whichever is connected (ADR-0005).
+		Promise.allSettled([
+			fetchIntervalsIcuStatus(),
+			fetchGoogleCalendarStatus(),
+		]).then(([icu, google]) => {
+			const icuConnected =
+				icu.status === "fulfilled" &&
+				icu.value.connected &&
+				icu.value.keyValid !== false;
+			const googleConnected =
+				google.status === "fulfilled" && google.value.connected;
+			setTargetConnected(icuConnected || googleConnected);
+		});
 	}, []);
 
 	useEffect(() => {
@@ -106,9 +116,9 @@ export function PlanRefreshSettingsCard() {
 		}
 	};
 
-	const canEnable = calendarConnected === true;
+	const canEnable = targetConnected === true;
 	const toggleDisabled =
-		loading || calendarConnected === null || (!enabled && !canEnable);
+		loading || targetConnected === null || (!enabled && !canEnable);
 
 	return (
 		<div className="flex flex-col gap-4">
@@ -145,8 +155,8 @@ export function PlanRefreshSettingsCard() {
 									Enable weekly refresh
 								</p>
 								<p className="text-xs text-[#94a3b8] mt-0.5">
-									{calendarConnected === false
-										? "Connect a Training calendar first."
+									{targetConnected === false
+										? "Connect intervals.icu or a Training calendar first."
 										: "Runs automatically each Sunday evening in your training timezone."}
 								</p>
 							</div>

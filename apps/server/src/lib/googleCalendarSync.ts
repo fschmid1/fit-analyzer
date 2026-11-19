@@ -1,9 +1,19 @@
-import type {
-	CalendarSyncRow,
-	PlanWorkout,
-	PlannedWorkout,
+import {
+	DEFAULT_PLANNED_SPORT,
+	renderWorkoutSteps,
+	type CalendarSyncRow,
+	type PlanWorkout,
+	type PlannedWorkout,
 } from "@fit-analyzer/shared";
 import type { GoogleEvent } from "./googleCalendarClient.js";
+import {
+	PLAN_DATE_RE,
+	normalizePlanStartTime,
+	planSyncKey,
+	planSyncRow,
+	validatePlanWorkouts,
+} from "./planSyncCore.js";
+import { wallClockMinute } from "./wallClock.js";
 
 /**
  * Pure Plan-sync mechanics: sync-key derivation, Google event payloads, and
@@ -17,9 +27,6 @@ import type { GoogleEvent } from "./googleCalendarClient.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Fallback start time when the coach gives no start (afternoon default). */
-export const DEFAULT_START_TIME = "17:00";
-
 /** Private extended property that marks an event as app-owned. */
 export const SYNC_KEY_PROP = "fitAnalyzerSyncKey";
 
@@ -31,9 +38,6 @@ export const SYNC_STAMP_PROP = "fitAnalyzerSyncStamp";
 
 /** Google Calendar event colorId used for app-owned planned workouts. */
 export const PLANNED_WORKOUT_COLOR_ID = "7"; // Peacock — visually distinct.
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /** A Google `updated` timestamp must beat our stamp by this much to count
  * as a user edit. The stamp is taken BEFORE our write, so Google's `updated`
@@ -94,8 +98,14 @@ export type SyncRow = CalendarSyncRow;
 
 /** A plan-sync action produced by merging a plan into existing events. */
 export type SyncAction =
-	| { kind: "create"; key: string; event: CalendarEventBody }
-	| { kind: "update"; key: string; eventId: string; event: CalendarEventBody }
+	| { kind: "create"; key: string; row: SyncRow; event: CalendarEventBody }
+	| {
+			kind: "update";
+			key: string;
+			row: SyncRow;
+			eventId: string;
+			event: CalendarEventBody;
+	  }
 	| { kind: "remove"; event: CalendarEventSnapshot }
 	| { kind: "skipEdited"; event: CalendarEventSnapshot }
 	| { kind: "skipStarted"; event: CalendarEventSnapshot };
@@ -113,6 +123,8 @@ export interface MergeResult {
 	deletedRows: SyncRow[];
 	/** App events not deleted because the user edited them. */
 	skippedEdits: number;
+	/** Projection only: edits that were overwritten, for the coach's report. */
+	overwritten: SyncRow[];
 	errors: string[];
 }
 
@@ -132,7 +144,7 @@ export function toPlanWorkout(
 	if (!startWall) return null;
 	if (startWall <= wallClockMinute(now, timezone)) return null;
 	const date = startWall.slice(0, 10);
-	if (!DATE_RE.test(date)) return null;
+	if (!PLAN_DATE_RE.test(date)) return null;
 	const focus = eventFocus(ev);
 	if (!focus) return null;
 	return {
@@ -143,6 +155,9 @@ export function toPlanWorkout(
 		focus,
 		description: ev.description ?? null,
 		edited: userEdited(ev),
+		sport: DEFAULT_PLANNED_SPORT,
+		steps: [],
+		target: "google",
 	};
 }
 
@@ -164,11 +179,7 @@ function eventDurationMinutes(ev: CalendarEventSnapshot): number {
  * Deterministic so repeated syncs recognise their own events; a plan revision
  * that moves a workout to another day yields a new key (delete + create).
  */
-export function syncKey(workout: PlannedWorkout): string {
-	return `${workout.date}T${normalizeTime(workout.startTime)}|${workout.focus
-		.trim()
-		.toLowerCase()}`;
-}
+export const syncKey = planSyncKey;
 
 /** Event title — the focus, prefixed so app events are recognisable at a glance. */
 export function eventTitle(workout: PlannedWorkout): string {
@@ -181,14 +192,14 @@ export function buildEvent(
 	timezone: string,
 	nowMs: number,
 ): CalendarEventBody {
-	const start = normalizeTime(workout.startTime);
+	const start = normalizePlanStartTime(workout.startTime);
 	const durationMin =
 		typeof workout.durationMinutes === "number" && workout.durationMinutes > 0
 			? workout.durationMinutes
 			: 60;
 	return {
 		summary: eventTitle(workout),
-		description: workout.description ?? null,
+		description: buildEventDescription(workout),
 		start: { dateTime: `${workout.date}T${start}:00`, timeZone: timezone },
 		end: {
 			dateTime: `${addMinutes(workout.date, start, durationMin)}:00`,
@@ -213,6 +224,15 @@ export function eventFocus(ev: CalendarEventSnapshot): string {
 	);
 }
 
+/** The event body: the coach's prose, then the rendered structure. */
+function buildEventDescription(workout: PlannedWorkout): string | null {
+	const parts: string[] = [];
+	if (workout.description?.trim()) parts.push(workout.description.trim());
+	const steps = workout.steps ?? [];
+	if (steps.length > 0) parts.push(renderWorkoutSteps(steps));
+	return parts.length > 0 ? parts.join("\n\n") : null;
+}
+
 // ─── Merge ────────────────────────────────────────────────────────────────────
 
 /**
@@ -231,7 +251,12 @@ export function mergePlan(
 	existing: CalendarEventSnapshot[],
 	timezone: string,
 	nowMs: number,
+	options: { respectEdits?: boolean } = {},
 ): { actions: SyncAction[]; result: MergeResult } {
+	const respectEdits = options.respectEdits !== false;
+	// A projection is always re-asserted: the primary target owns the plan, so
+	// an edit made on the projection is overwritten on the next sync. Started
+	// events remain untouchable either way.
 	const nowWall = wallClockMinute(new Date(nowMs), timezone);
 
 	const actions: SyncAction[] = [];
@@ -244,6 +269,7 @@ export function mergePlan(
 		deleted: 0,
 		deletedRows: [],
 		skippedEdits: 0,
+		overwritten: [],
 		errors: [],
 	};
 
@@ -261,47 +287,16 @@ export function mergePlan(
 		}
 	}
 
-	// Plan side
-	const seenKeys = new Set<string>();
-	for (const workout of plan) {
-		const focus = (workout.focus ?? "").trim();
-		if (!DATE_RE.test(workout.date)) {
-			result.errors.push(
-				`Invalid date "${workout.date}" for "${focus || "workout"}"`,
-			);
-			continue;
-		}
-		if (!focus) {
-			result.errors.push(`Missing focus for workout on ${workout.date}`);
-			continue;
-		}
-		if (
-			typeof workout.durationMinutes !== "number" ||
-			!(workout.durationMinutes > 0)
-		) {
-			result.errors.push(`Invalid duration for "${focus}" on ${workout.date}`);
-			continue;
-		}
-		if (workout.startTime != null && !TIME_RE.test(workout.startTime)) {
-			result.errors.push(
-				`Invalid startTime "${workout.startTime}" for "${focus}" on ${workout.date}`,
-			);
-			continue;
-		}
+	// Plan side: validation, keys and the started rule are shared with the
+	// IntervalsIcu target, so both accept exactly the same plan.
+	const { valid, errors } = validatePlanWorkouts(plan);
+	result.errors.push(...errors);
+	const seenKeys = new Set(valid.map((v) => v.key));
 
-		const key = syncKey(workout);
-		if (seenKeys.has(key)) {
-			result.errors.push(
-				`Duplicate workout "${focus}" on ${workout.date} at ${normalizeTime(workout.startTime)}`,
-			);
-			continue;
-		}
-		seenKeys.add(key);
-
-		const startWall = `${workout.date}T${normalizeTime(workout.startTime)}`;
+	for (const { workout, key, startWall } of valid) {
 		if (startWall <= nowWall) {
 			// Already started or past — not an error, just nothing to schedule.
-			result.notScheduled.push(row(workout));
+			result.notScheduled.push(planSyncRow(workout));
 			continue;
 		}
 
@@ -310,28 +305,34 @@ export function mergePlan(
 			actions.push({
 				kind: "create",
 				key,
+				row: planSyncRow(workout),
 				event: buildEvent(workout, timezone, nowMs),
 			});
-			result.created.push(row(workout));
+			result.created.push(planSyncRow(workout));
 			continue;
 		}
 
-		if (userEdited(existingEvent)) {
+		if (respectEdits && userEdited(existingEvent)) {
 			actions.push({ kind: "skipEdited", event: existingEvent });
-			result.skipped.push(row(workout));
+			result.skipped.push(planSyncRow(workout));
 			continue;
 		}
 
 		// Update in place — only if the payload actually changed.
 		const next = buildEvent(workout, timezone, nowMs);
 		if (eventsDiffer(existingEvent, next)) {
+			// A projection re-asserts the plan, and reports the overwrite.
+			if (!respectEdits && userEdited(existingEvent)) {
+				result.overwritten.push(planSyncRow(workout));
+			}
 			actions.push({
 				kind: "update",
 				key,
+				row: planSyncRow(workout),
 				eventId: existingEvent.id,
 				event: next,
 			});
-			result.updated.push(row(workout));
+			result.updated.push(planSyncRow(workout));
 		}
 	}
 
@@ -357,7 +358,7 @@ export function mergePlan(
 			result.deletedRows.push(rowOfEvent(ev));
 			continue;
 		}
-		if (userEdited(ev)) {
+		if (respectEdits && userEdited(ev)) {
 			actions.push({ kind: "skipEdited", event: ev });
 			result.skippedEdits += 1;
 			continue;
@@ -373,7 +374,7 @@ export function mergePlan(
 // ─── Removal ──────────────────────────────────────────────────────────────────
 
 /**
- * Pick app-owned future events for remove_workouts_from_calendar.
+ * Pick app-owned future events for remove_planned_workouts.
  * Filters are ANDed; null filters are ignored. Started events and events the
  * user edited are never removed.
  */
@@ -386,9 +387,16 @@ export function filterRemovals(
 	},
 	timezone: string,
 	nowMs: number,
-): { remove: CalendarEventSnapshot[]; skippedEdits: number } {
+	options: { respectEdits?: boolean } = {},
+): {
+	remove: CalendarEventSnapshot[];
+	skippedEdits: number;
+	overwritten: SyncRow[];
+} {
+	const respectEdits = options.respectEdits !== false;
 	const nowWall = wallClockMinute(new Date(nowMs), timezone);
 	const remove: CalendarEventSnapshot[] = [];
+	const overwritten: SyncRow[] = [];
 	let skippedEdits = 0;
 	for (const ev of existing) {
 		const key = ev.extendedProperties?.private?.[SYNC_KEY_PROP];
@@ -403,20 +411,19 @@ export function filterRemovals(
 			!ev.summary?.toLowerCase().includes(filters.focus.toLowerCase())
 		)
 			continue;
-		if (userEdited(ev)) {
+		if (respectEdits && userEdited(ev)) {
 			skippedEdits += 1;
 			continue;
 		}
+		if (!respectEdits && userEdited(ev)) {
+			overwritten.push(rowOfEvent(ev));
+		}
 		remove.push(ev);
 	}
-	return { remove, skippedEdits };
+	return { remove, skippedEdits, overwritten };
 }
 
 // ─── Wall-clock helpers ───────────────────────────────────────────────────────
-
-function normalizeTime(startTime: string | null | undefined): string {
-	return startTime && TIME_RE.test(startTime) ? startTime : DEFAULT_START_TIME;
-}
 
 /** Wall-clock "YYYY-MM-DDTHH:MM" where an event starts, or null if absent. */
 function eventWallStart(ev: CalendarEventSnapshot): string | null {
@@ -432,38 +439,14 @@ function isFutureEvent(ev: CalendarEventSnapshot, nowWall: string): boolean {
 	return startWall != null && startWall > nowWall;
 }
 
-/** Current wall-clock minute "YYYY-MM-DDTHH:MM" in the training timezone. */
-export function wallClockMinute(now: Date, timezone: string): string {
-	const fmt = new Intl.DateTimeFormat("en-GB", {
-		timeZone: timezone,
-		year: "numeric",
-		month: "2-digit",
-		day: "2-digit",
-		hour: "2-digit",
-		minute: "2-digit",
-		hourCycle: "h23",
-	});
-	const get = (type: Intl.DateTimeFormatPartTypes): string =>
-		fmt.formatToParts(now).find((p) => p.type === type)?.value ?? "";
-	return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
-}
-
 function addMinutes(date: string, start: string, minutes: number): string {
 	// Pure wall-clock arithmetic via a UTC anchor (same field layout).
 	const base = Date.parse(`${date}T${start}:00Z`);
 	return new Date(base + minutes * 60_000).toISOString().slice(0, 16);
 }
 
-function row(w: PlannedWorkout): SyncRow {
-	return {
-		date: w.date,
-		startTime: normalizeTime(w.startTime),
-		focus: w.focus,
-	};
-}
-
 /** Display row for an existing event (used for removals). */
-function rowOfEvent(ev: CalendarEventSnapshot): SyncRow {
+export function rowOfEvent(ev: CalendarEventSnapshot): SyncRow {
 	const startWall = eventWallStart(ev) ?? "";
 	return {
 		date: startWall.slice(0, 10),

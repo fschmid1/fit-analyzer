@@ -6,7 +6,9 @@ import {
 	type CoachModelSettings,
 	type CoachVerbosity,
 	type CompareSettings,
+	type ConnectIntervalsIcuBody,
 	type GoogleCalendarStatus,
+	type IntervalsIcuStatus,
 	type HealthData,
 	type HealthHistoryEntry,
 	type HeatmapResponse,
@@ -757,7 +759,7 @@ export async function disconnectGoogleCalendar(): Promise<void> {
 }
 
 export async function updateCalendarTimezone(timezone: string): Promise<void> {
-	const res = await fetch(`${API_BASE}/google/timezone`, {
+	const res = await fetch(`${API_BASE}/me/training-timezone`, {
 		method: "PATCH",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ timezone } satisfies UpdateCalendarTimezoneBody),
@@ -770,10 +772,92 @@ export async function updateCalendarTimezone(timezone: string): Promise<void> {
 	}
 }
 
+/** The athlete's training timezone, shared by every plan target. */
+export async function fetchTrainingTimezone(): Promise<string | null> {
+	const res = await fetch(`${API_BASE}/me/training-timezone`, {
+		cache: "no-store",
+	});
+	if (!res.ok) return null;
+	const data = (await res.json()) as { timezone: string | null };
+	return data.timezone;
+}
+
+// ─── IntervalsIcu ────────────────────────────────────────────────────────────
+
+export async function fetchIntervalsIcuStatus(): Promise<IntervalsIcuStatus> {
+	const res = await fetch(`${API_BASE}/intervals-icu/status`, {
+		cache: "no-store",
+	});
+	if (!res.ok)
+		return {
+			connected: false,
+			athleteId: null,
+			athleteName: null,
+			keyValid: null,
+			lastSyncAt: null,
+			backfill: {
+				status: "idle",
+				imported: 0,
+				failed: 0,
+				startedAt: null,
+				finishedAt: null,
+				error: null,
+			},
+		};
+	return res.json();
+}
+
+export async function connectIntervalsIcu(
+	input: Omit<ConnectIntervalsIcuBody, "timezone"> & { timezone?: string },
+): Promise<IntervalsIcuStatus> {
+	const res = await fetch(`${API_BASE}/intervals-icu/connect`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({
+			apiKey: input.apiKey,
+			timezone:
+				input.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+			backfill: input.backfill,
+		} satisfies ConnectIntervalsIcuBody),
+	});
+	const data = await res.json().catch(() => ({ error: "Failed to connect" }));
+	if (!res.ok) {
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to connect intervals.icu",
+		);
+	}
+	return data as IntervalsIcuStatus;
+}
+
+export async function disconnectIntervalsIcu(): Promise<void> {
+	await fetch(`${API_BASE}/intervals-icu/disconnect`, { method: "DELETE" });
+}
+
+export async function syncIntervalsIcuNow(): Promise<{
+	imported: number;
+	updated: number;
+	skipped: number;
+	failed: number;
+	errors: string[];
+}> {
+	const res = await fetch(`${API_BASE}/intervals-icu/sync`, { method: "POST" });
+	const data = await res.json().catch(() => ({ error: "Sync failed" }));
+	if (!res.ok) {
+		throw new Error((data as { error?: string }).error ?? "Sync failed");
+	}
+	return data as {
+		imported: number;
+		updated: number;
+		skipped: number;
+		failed: number;
+		errors: string[];
+	};
+}
+
 // ─── Training plan ────────────────────────────────────────────────────────────
 
 export async function fetchTrainingPlan(): Promise<TrainingPlanResponse> {
-	const res = await fetch(`${API_BASE}/google/plan`, { cache: "no-store" });
+	const res = await fetch(`${API_BASE}/plan`, { cache: "no-store" });
 	if (!res.ok) {
 		const data = await res.json().catch(() => ({ error: "Failed" }));
 		throw new Error(
@@ -787,7 +871,7 @@ export async function refreshTrainingPlan(): Promise<{
 	weekKey: string;
 	plan: TrainingPlanResponse;
 }> {
-	const res = await fetch(`${API_BASE}/google/plan/refresh`, {
+	const res = await fetch(`${API_BASE}/plan/refresh`, {
 		method: "POST",
 	});
 	const data = await res

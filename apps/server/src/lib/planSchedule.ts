@@ -1,5 +1,5 @@
 import { addDays, mondayOf, planWeekFor } from "@fit-analyzer/shared";
-import { wallClockMinute } from "./googleCalendarSync.js";
+import { wallClockMinute } from "./wallClock.js";
 
 /**
  * Pure Plan-week scheduling math — no I/O, no db. Kept separate from

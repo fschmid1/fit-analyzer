@@ -55,7 +55,8 @@ export function HeadUnitVariant({
 }: {
 	renderDomain: (id: SettingsDomainId, dense?: boolean) => React.ReactNode;
 }) {
-	const { strava, wahoo, calendar, hae, flash } = useIntegrationsStatus();
+	const { strava, wahoo, intervalsIcu, calendar, hae, flash } =
+		useIntegrationsStatus();
 	const { data } = useSettings();
 	const [active, setActive] = useState<DomainId>("profile");
 	const [notification, showNotification] = useAutoNotification();
@@ -78,6 +79,23 @@ export function HeadUnitVariant({
 			state: ledFrom(wahoo?.connected ?? null),
 			detail: wahoo?.connected
 				? `User #${wahoo.wahooUserId ?? "?"}`
+				: "Not connected",
+		},
+		{
+			id: "intervalsIcu",
+			name: "intervals.icu",
+			state: ledFrom(
+				intervalsIcu
+					? intervalsIcu.connected && intervalsIcu.keyValid !== false
+					: null,
+				intervalsIcu?.keyValid === false,
+			),
+			detail: intervalsIcu?.connected
+				? intervalsIcu.athleteName
+					? intervalsIcu.athleteName
+					: intervalsIcu.keyValid === false
+						? "Key rejected"
+						: "Connected"
 				: "Not connected",
 		},
 		{
@@ -154,7 +172,14 @@ export function HeadUnitVariant({
 	const groups: { title: string; ids: DomainId[] }[] = [
 		{
 			title: "Integrations",
-			ids: ["strava", "wahoo", "calendar", "openwearables", "hae"],
+			ids: [
+				"strava",
+				"wahoo",
+				"intervalsIcu",
+				"calendar",
+				"openwearables",
+				"hae",
+			],
 		},
 		{
 			title: "Coach",

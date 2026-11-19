@@ -1,5 +1,9 @@
 import type { ModelMessage } from "@tanstack/ai";
-import type { TrainerMessage, UIToolCall } from "@fit-analyzer/shared";
+import type {
+	PlanSyncResult,
+	TrainerMessage,
+	UIToolCall,
+} from "@fit-analyzer/shared";
 import { GENERAL_ACTIVITY_ID, GENERAL_THREAD_NAME } from "@fit-analyzer/shared";
 import { getProviderConfig, resolveThreadModel } from "./providerConfig.js";
 import { getToolDefinitions } from "./tools/registry.js";
@@ -10,7 +14,7 @@ import {
 } from "./trainerLoopAccumulator.js";
 import { messageRepo } from "./messageRepo.js";
 import { threadRepo } from "./threadRepo.js";
-import { hasTrainingCalendar } from "./calendarGuidance.js";
+import { hasPlanTarget } from "./planGuidance.js";
 import { buildCoachSystemPrompt } from "./coachSystemPrompt.js";
 import { planWeekFor } from "@fit-analyzer/shared";
 
@@ -25,7 +29,7 @@ import { planWeekFor } from "@fit-analyzer/shared";
  */
 
 const REFRESH_INSTRUCTION_HEADER = "Weekly plan refresh (scheduled).";
-const ADD_WORKOUTS_TOOL = "add_workouts_to_calendar";
+const SYNC_PLAN_TOOL = "sync_training_plan";
 
 /** How many assistant messages of the general thread to replay as context. */
 const CONTEXT_MESSAGE_LIMIT = 12;
@@ -68,17 +72,9 @@ function historyToModelMessages(messages: TrainerMessage[]): ModelMessage[] {
 	return modelMessages;
 }
 
-function syncDisplay(tc: UIToolCall): {
-	created?: unknown[];
-	updated?: unknown[];
-	errors?: string[];
-} | null {
-	if (tc.name !== ADD_WORKOUTS_TOOL || !tc.result) return null;
-	return tc.result.display as {
-		created?: unknown[];
-		updated?: unknown[];
-		errors?: string[];
-	} | null;
+function syncDisplay(tc: UIToolCall): PlanSyncResult | null {
+	if (tc.name !== SYNC_PLAN_TOOL || !tc.result) return null;
+	return tc.result.display as PlanSyncResult | null;
 }
 
 /** A Plan refresh outcome derived purely from the tool calls and reply text. */
@@ -91,28 +87,28 @@ export type RefreshOutcome =
  * assistant text — no I/O, so the caller can persist only on success and tests
  * can pin the semantics.
  *
- * A refresh succeeds only when it actually wrote to the calendar: the coach
- * must have called add_workouts_to_calendar, the call must not have errored, and
- * the sync's per-event `errors` (which the handler swallows into the display)
- * must be empty. An unchanged plan is still a success — it is an idempotent
- * no-op write, and `scheduledCount === 0` lets the caller stay silent.
+ * A refresh succeeds only when it actually wrote to the plan: the coach must
+ * have called sync_training_plan, the call must not have errored, and the
+ * sync's per-target `errors` (which the handler swallows into the display) must
+ * be empty. An unchanged plan is still a success — it is an idempotent no-op
+ * write, and `scheduledCount === 0` lets the caller stay silent.
  */
 export function evaluateRefreshOutcome(
 	toolCalls: UIToolCall[],
 	text: string,
 ): RefreshOutcome {
 	const syncError = toolCalls.find(
-		(t) => t.name === ADD_WORKOUTS_TOOL && t.status === "error",
+		(t) => t.name === SYNC_PLAN_TOOL && t.status === "error",
 	);
 	if (syncError) {
 		return {
 			ok: false,
-			error: syncError.result?.error ?? "Calendar sync failed",
+			error: syncError.result?.error ?? "Plan sync failed",
 		};
 	}
 
-	if (!toolCalls.some((t) => t.name === ADD_WORKOUTS_TOOL)) {
-		return { ok: false, error: "Plan refresh did not write to the calendar" };
+	if (!toolCalls.some((t) => t.name === SYNC_PLAN_TOOL)) {
+		return { ok: false, error: "Plan refresh did not write to the plan" };
 	}
 
 	let scheduledCount = 0;
@@ -120,12 +116,20 @@ export function evaluateRefreshOutcome(
 	for (const tc of toolCalls) {
 		const display = syncDisplay(tc);
 		if (!display) continue;
-		scheduledCount +=
-			(display.created?.length ?? 0) + (display.updated?.length ?? 0);
-		errors.push(...(display.errors ?? []));
+		// One plan, fanned out: count the primary target's writes once.
+		const primary =
+			display.targets.find((t) => t.target === display.primary) ??
+			display.targets[0];
+		if (primary) {
+			scheduledCount +=
+				(primary.created?.length ?? 0) + (primary.updated?.length ?? 0);
+		}
+		for (const t of display.targets) {
+			errors.push(...(t.errors ?? []).map((e) => `${t.target}: ${e}`));
+		}
 	}
 	if (errors.length > 0) {
-		return { ok: false, error: `Calendar sync failed: ${errors.join(" | ")}` };
+		return { ok: false, error: `Plan sync failed: ${errors.join(" | ")}` };
 	}
 
 	if (!text.trim()) {
@@ -162,8 +166,8 @@ export async function runPlanRefresh(
 			return fail(`${providerConfig.apiKeyEnvName} is not configured`);
 		}
 
-		if (!hasTrainingCalendar(userId)) {
-			return fail("Google Calendar not connected");
+		if (!hasPlanTarget(userId)) {
+			return fail("No plan target is connected");
 		}
 
 		const systemPrompt = await buildCoachSystemPrompt(userId);
@@ -177,9 +181,9 @@ export async function runPlanRefresh(
 				role: "user",
 				content: [
 					REFRESH_INSTRUCTION_HEADER,
-					`It is time for the weekly plan refresh. Make the upcoming Plan week (${week.start} to ${week.end}) fully populated on the Training calendar.`,
+					`It is time for the weekly plan refresh. Make the upcoming Plan week (${week.start} to ${week.end}) fully populated in the athlete's plan.`,
 					"Review the athlete's recent activities, health, and the conversation above; revise workouts only where warranted, and keep the rest of the forward plan as it is.",
-					"Then ALWAYS call add_workouts_to_calendar with the COMPLETE forward plan — an unchanged plan is a valid, idempotent outcome.",
+					"Then ALWAYS call sync_training_plan with the COMPLETE forward plan — an unchanged plan is a valid, idempotent outcome.",
 					"Finish with a summary message for the athlete in your reply shape: what the week ahead holds and anything they should know.",
 				].join(" "),
 			},

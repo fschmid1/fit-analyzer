@@ -51,7 +51,8 @@ function makeTestDb(): Database {
       analysis TEXT,
       analysis_tool_calls TEXT,
       strava_activity_id TEXT,
-      wahoo_activity_id TEXT
+      wahoo_activity_id TEXT,
+      intervals_icu_activity_id TEXT
     );
     CREATE UNIQUE INDEX idx_activities_strava_id
       ON activities(user_id, strava_activity_id)
@@ -159,7 +160,7 @@ function recordingSideEffects(): {
 function readRow(db: Database, id: string) {
 	return db
 		.prepare(
-			"SELECT id, date, summary, records, laps, user_id, strava_activity_id, wahoo_activity_id FROM activities WHERE id = ?",
+			"SELECT id, date, summary, records, laps, user_id, strava_activity_id, wahoo_activity_id, intervals_icu_activity_id FROM activities WHERE id = ?",
 		)
 		.get(id) as {
 		id: string;
@@ -170,6 +171,7 @@ function readRow(db: Database, id: string) {
 		user_id: string;
 		strava_activity_id: string | null;
 		wahoo_activity_id: string | null;
+		intervals_icu_activity_id: string | null;
 	};
 }
 
@@ -282,6 +284,70 @@ describe("importActivity", () => {
 		expect(readRow(db, aId).strava_activity_id).toBeNull();
 		expect(readRow(db, aId).wahoo_activity_id).toBeNull();
 		expect(readRow(db, bId).strava_activity_id).toBeNull();
+	});
+
+	it("stamps the intervals.icu id on an existing same ride instead of duplicating", async () => {
+		const db = makeTestDb();
+		const fx = recordingSideEffects();
+
+		const stravaRow = await importActivity(
+			db,
+			makePayload({ source: "strava", sourceActivityId: "strava-123" }),
+			{ sideEffects: fx.sideEffects },
+		);
+		const stravaId = expectId(stravaRow);
+
+		// Same wall-clock start (within a minute) and the same duration, compared
+		// in a non-UTC training timezone so the offset is actually applied.
+		const icuPayload = makePayload({
+			source: "intervals-icu",
+			sourceActivityId: "i-999",
+			timezone: "Europe/Zurich",
+			records: [recordAt(30), recordAt(31), recordAt(32)],
+		});
+		const result = await importActivity(db, icuPayload, {
+			sideEffects: fx.sideEffects,
+		});
+
+		expect(result.status).toBe("skipped");
+		expect(result.id).toBe(stravaId);
+		expect(readRow(db, stravaId).intervals_icu_activity_id).toBe("i-999");
+		// No second row was inserted.
+		expect(
+			(
+				db
+					.prepare("SELECT COUNT(*) as c FROM activities WHERE user_id = ?")
+					.get("user-1") as { c: number }
+			).c,
+		).toBe(1);
+	});
+
+	it("does not merge intervals.icu rides that start at a different time", async () => {
+		const db = makeTestDb();
+		const fx = recordingSideEffects();
+
+		const stravaRow = await importActivity(
+			db,
+			makePayload({ source: "strava", sourceActivityId: "strava-123" }),
+			{ sideEffects: fx.sideEffects },
+		);
+
+		const icuPayload = makePayload({
+			source: "intervals-icu",
+			sourceActivityId: "i-999",
+			timezone: "UTC",
+			records: [recordAt(10 * 60), recordAt(10 * 60 + 1)],
+			summary: { ...makeSummary(), totalTimerTime: 601 },
+		});
+		const result = await importActivity(db, icuPayload, {
+			sideEffects: fx.sideEffects,
+		});
+
+		expect(result.status).toBe("imported");
+		expect(result.id).not.toBe(stravaRow.id);
+		expect(
+			readRow(db, expectId(stravaRow)).intervals_icu_activity_id,
+		).toBeNull();
 	});
 
 	it("does not collide across sources that happen to share a sourceActivityId", async () => {
@@ -423,7 +489,8 @@ describe("importActivity", () => {
         user_id TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         strava_activity_id TEXT,
-        wahoo_activity_id TEXT
+        wahoo_activity_id TEXT,
+        intervals_icu_activity_id TEXT
       );
     `);
 		// Copy the original row into the new table (without laps).
@@ -868,17 +935,7 @@ describe("buildSummary", () => {
 				elapsedSeconds: 2,
 			},
 		];
-		const timeArr = [0, 1, 2];
-		const wattsArr = [0, 200, 400];
-		const cadenceArr = [0, 80, 90];
-
-		const summary = buildSummary(
-			activity,
-			records,
-			timeArr,
-			wattsArr,
-			cadenceArr,
-		);
+		const summary = buildSummary(activity, records);
 
 		expect(summary.date).toBe("2025-03-15");
 		expect(summary.totalTimerTime).toBe(600);
@@ -905,7 +962,7 @@ describe("buildSummary", () => {
 		const records: StoredRecord[] = [
 			{ ...makePayload().records[0], power: 0, heartRate: 0, cadence: 0 },
 		];
-		const summary = buildSummary(activity, records, [0], [0], [0]);
+		const summary = buildSummary(activity, records);
 		expect(summary.avgPower).toBeNull();
 		expect(summary.avgHeartRate).toBeNull();
 		expect(summary.avgCadence).toBeNull();

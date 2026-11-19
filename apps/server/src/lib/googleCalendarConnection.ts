@@ -6,6 +6,10 @@ import {
 	type StoredToken,
 	OAuth2Flow,
 } from "./oauth2.js";
+import {
+	getTrainingTimezone,
+	setTrainingTimezone,
+} from "./trainingTimezone.js";
 
 /**
  * Calendar connection domain module: the Google OAuth provider + token store,
@@ -158,18 +162,26 @@ export async function getCalendarContext(userId: string): Promise<{
 	timezone: string;
 }> {
 	const connection = getGoogleConnection(userId);
-	if (!connection?.calendarId || !connection.tz) {
+	if (!connection?.calendarId) {
 		throw new Error("Google Calendar not connected");
+	}
+	const timezone = getTrainingTimezone(userId);
+	if (!timezone) {
+		throw new Error("Training timezone is not set");
 	}
 	const accessToken = await googleFlow.getValidToken(userId);
 	return {
 		accessToken,
 		calendarId: connection.calendarId,
-		timezone: connection.tz,
+		timezone,
 	};
 }
 
-/** Record (or clear) the connection's calendar id + training timezone. */
+/**
+ * Record (or clear) the connection's calendar id + training timezone. The
+ * timezone is the athlete's, not the connection's (ADR-0005), so it is also
+ * written to user_settings; google_tokens.tz stays in step for older readers.
+ */
 export function setConnectionMetadata(
 	userId: string,
 	calendarId: string | null,
@@ -178,14 +190,5 @@ export function setConnectionMetadata(
 	db.prepare(
 		"UPDATE google_tokens SET calendar_id = ?, tz = ?, updated_at = datetime('now') WHERE user_id = ?",
 	).run(calendarId, tz, userId);
-}
-
-/** Best-effort IANA timezone check — Intl throws on unknown zones. */
-export function isValidTimezone(tz: string): boolean {
-	try {
-		new Intl.DateTimeFormat("en-GB", { timeZone: tz });
-		return true;
-	} catch {
-		return false;
-	}
+	if (tz) setTrainingTimezone(userId, tz);
 }

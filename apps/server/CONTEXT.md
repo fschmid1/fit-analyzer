@@ -61,8 +61,16 @@ The per-user authorization that lets the server act on the user's Google Calenda
 _Avoid_: google login, google account link
 
 **Plan sync**:
-The whole-plan upsert that makes the training calendar match the plan the coach emits: creates, updates in place, and deletes the app's future planned-workout events. Never touches events that have already started or that the user has edited in Google since the last sync.
+The whole-plan upsert that makes every plan target match the plan the coach emits: creates, updates in place, and deletes the app's future planned-workout events. On the primary target it never touches events that have already started or that the athlete edited since the last sync; on a projection it re-asserts the coach's plan.
 _Avoid_: calendar import, one-way export
+
+**Primary plan target**:
+The plan target the coach reads back and whose athlete edits are honoured: the IntervalsIcu calendar when connected, otherwise the Training calendar. When it is disconnected, the next connected target becomes primary.
+_Avoid_: source of truth, default calendar
+
+**Projection**:
+A plan target that receives the plan but is not read back. Re-asserted on every Plan sync; an athlete edit there is reported and then overwritten.
+_Avoid_: mirror, replica, export
 
 **Sync key**:
 The deterministic key the server computes for each planned workout and stamps into the calendar event, so Plan sync can recognise its own events across runs without duplicating them.

@@ -1,3 +1,4 @@
+import type { PlannedSport, WorkoutStepItem } from "./workoutPlan.js";
 import type { ZoneOverride } from "./zones.js";
 
 // --- Core activity types ---
@@ -529,6 +530,10 @@ export interface PlannedWorkout {
 	focus: string;
 	/** Optional longer notes shown in the event body. */
 	description: string | null;
+	/** Sport the workout prescribes; v1 supports cycling only. */
+	sport?: PlannedSport | null;
+	/** Structured steps. Empty or absent means a prose-only workout. */
+	steps?: WorkoutStepItem[] | null;
 }
 
 /** One row in a Plan sync result, shown in the tool display. */
@@ -546,6 +551,8 @@ export interface CalendarSyncResult {
 	skipped: CalendarSyncRow[];
 	/** Plan workouts not scheduled because their start time already passed. */
 	notScheduled?: CalendarSyncRow[];
+	/** Projection only: athlete edits overwritten by re-asserting the plan. */
+	overwritten?: CalendarSyncRow[];
 	/** App events deleted because the new plan no longer contains them. */
 	deleted: number;
 	/** The deleted events themselves, for display. */
@@ -571,6 +578,93 @@ export interface UpdateCalendarTimezoneBody {
 	timezone: string;
 }
 
+// --- Plan targets (ADR-0005) ---
+
+/** A destination that holds the coach's plan. */
+export type PlanTargetId = "google" | "intervalsIcu";
+
+/** Connection + role of one plan target, for Settings and the plan page. */
+export interface PlanTargetStatus {
+	target: PlanTargetId;
+	connected: boolean;
+	/** The target the coach reads back and whose athlete edits are honoured. */
+	primary: boolean;
+	/** Calendar id, athlete id, or null when unknown. */
+	detail: string | null;
+}
+
+/** Per-target outcome of one Plan sync. */
+export interface PlanTargetSyncResult extends CalendarSyncResult {
+	target: PlanTargetId;
+}
+
+/** Display payload for the sync_training_plan tool: one entry per target. */
+export interface PlanSyncResult {
+	targets: PlanTargetSyncResult[];
+	/** The target that owns the plan; its outcome is the one that counts. */
+	primary: PlanTargetId | null;
+	/** Aggregate problems across targets, for the coach's reply. */
+	errors: string[];
+}
+
+/** Per-target outcome of one removal. */
+export interface PlanTargetRemovalResult {
+	target: PlanTargetId;
+	removed: CalendarSyncRow[];
+	skipped: number;
+	/** Projection only: athlete edits the removal overwrote, for the report. */
+	overwritten: CalendarSyncRow[];
+}
+
+/** Display payload for the remove_planned_workouts tool. */
+export interface PlanRemovalResult {
+	targets: PlanTargetRemovalResult[];
+	filters: {
+		fromDate: string | null;
+		toDate: string | null;
+		focus: string | null;
+	};
+}
+
+// --- IntervalsIcu connection ---
+
+export type IntervalsIcuBackfillStatus = "idle" | "running" | "done" | "error";
+
+/** Progress of the opt-in 90-day activity backfill. */
+export interface IntervalsIcuBackfill {
+	status: IntervalsIcuBackfillStatus;
+	imported: number;
+	failed: number;
+	startedAt: string | null;
+	finishedAt: string | null;
+	error: string | null;
+}
+
+/** Connection status for the IntervalsIcu settings card. */
+export interface IntervalsIcuStatus {
+	connected: boolean;
+	athleteId: string | null;
+	athleteName: string | null;
+	/** True when the stored key last worked; null when untested. */
+	keyValid: boolean | null;
+	backfill: IntervalsIcuBackfill;
+	/** Last successful activity sync (ISO), for the settings card. */
+	lastSyncAt: string | null;
+}
+
+/** POST body for connecting IntervalsIcu with a personal API key. */
+export interface ConnectIntervalsIcuBody {
+	apiKey: string;
+	timezone: string;
+	/** Opt in to importing the last 90 days of rides. */
+	backfill: boolean;
+}
+
+/** The athlete's training timezone, shared by every plan target. */
+export interface TrainingTimezoneResponse {
+	timezone: string | null;
+}
+
 /** Outcome of the most recent Plan refresh for the user. */
 export type PlanRefreshStatus = "never" | "success" | "error";
 
@@ -588,7 +682,7 @@ export interface PlanRefreshSettings {
 	lastError: string | null;
 }
 
-/** One upcoming planned workout projected from the training calendar. */
+/** One upcoming planned workout projected from the primary plan target. */
 export interface PlanWorkout {
 	id: string;
 	/** YYYY-MM-DD in the training timezone. */
@@ -601,17 +695,27 @@ export interface PlanWorkout {
 	focus: string;
 	/** Optional session notes from the event body. */
 	description: string | null;
-	/** True when the athlete edited the event in Google after the last sync. */
+	/** True when the athlete edited the event after the last sync. */
 	edited: boolean;
+	/** Sport the workout prescribes. */
+	sport: PlannedSport;
+	/** Structured steps, empty for a prose-only workout. */
+	steps: WorkoutStepItem[];
+	/** Which plan target this workout was read from. */
+	target: PlanTargetId;
 }
 
-/** Response body for GET /api/google/plan. */
+/** Response body for GET /api/plan. */
 export interface TrainingPlanResponse {
 	connected: boolean;
 	timezone: string | null;
 	workouts: PlanWorkout[];
 	/** Wall-clock "today" (YYYY-MM-DD) in the training timezone. */
 	today: string | null;
+	/** The target the plan was read from. */
+	primary: PlanTargetId | null;
+	/** Every connected plan target, primary flagged. */
+	targets: PlanTargetStatus[];
 }
 
 // --- Athlete profile types ---

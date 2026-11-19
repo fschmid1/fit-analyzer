@@ -7,10 +7,15 @@ import {
 	useRef,
 	useState,
 } from "react";
-import type { GoogleCalendarStatus, HealthSource } from "@fit-analyzer/shared";
+import type {
+	GoogleCalendarStatus,
+	HealthSource,
+	IntervalsIcuStatus,
+} from "@fit-analyzer/shared";
 import {
 	fetchGoogleCalendarStatus,
 	fetchHaeStatus,
+	fetchIntervalsIcuStatus,
 	fetchStravaStatus,
 	fetchWahooStatus,
 	type StravaStatus,
@@ -32,6 +37,7 @@ export interface FlashMessage {
 export type SettingsDomainId =
 	| "strava"
 	| "wahoo"
+	| "intervalsIcu"
 	| "calendar"
 	| "openwearables"
 	| "hae"
@@ -49,11 +55,13 @@ interface IntegrationsStatusValue {
 	ready: boolean;
 	strava: StravaStatus | null;
 	wahoo: WahooStatus | null;
+	intervalsIcu: IntervalsIcuStatus | null;
 	calendar: GoogleCalendarStatus | null;
 	hae: HaeStatusInfo | null;
 	flash: FlashMessage | null;
 	updateStrava: (next: StravaStatus) => void;
 	updateWahoo: (next: WahooStatus) => void;
+	updateIntervalsIcu: (next: IntervalsIcuStatus) => void;
 	updateCalendar: (next: GoogleCalendarStatus) => void;
 	updateHae: (next: HaeStatusInfo) => void;
 	setFlash: (message: FlashMessage | null) => void;
@@ -78,12 +86,16 @@ export function IntegrationsStatusProvider({
 	const [ready, setReady] = useState(false);
 	const [strava, setStrava] = useState<StravaStatus | null>(null);
 	const [wahoo, setWahoo] = useState<WahooStatus | null>(null);
+	const [intervalsIcu, setIntervalsIcu] = useState<IntervalsIcuStatus | null>(
+		null,
+	);
 	const [calendar, setCalendar] = useState<GoogleCalendarStatus | null>(null);
 	const [hae, setHae] = useState<HaeStatusInfo | null>(null);
 	const [flash, setFlash] = useState<FlashMessage | null>(null);
 
 	const stravaRef = useRef(setStrava);
 	const wahooRef = useRef(setWahoo);
+	const intervalsIcuRef = useRef(setIntervalsIcu);
 	const haeRef = useRef(setHae);
 	const calendarRef = useRef(setCalendar);
 
@@ -92,6 +104,9 @@ export function IntegrationsStatusProvider({
 	}, []);
 	const updateWahoo = useCallback((next: WahooStatus) => {
 		wahooRef.current(next);
+	}, []);
+	const updateIntervalsIcu = useCallback((next: IntervalsIcuStatus) => {
+		intervalsIcuRef.current(next);
 	}, []);
 	const updateCalendar = useCallback((next: GoogleCalendarStatus) => {
 		calendarRef.current(next);
@@ -137,6 +152,7 @@ export function IntegrationsStatusProvider({
 		Promise.allSettled([
 			fetchStravaStatus().then(updateStrava),
 			fetchWahooStatus().then(updateWahoo),
+			fetchIntervalsIcuStatus().then(updateIntervalsIcu),
 			fetchGoogleCalendarStatus().then(updateCalendar),
 			fetchHaeStatus().then((s) =>
 				updateHae({
@@ -146,7 +162,13 @@ export function IntegrationsStatusProvider({
 				}),
 			),
 		]).finally(() => setReady(true));
-	}, [updateStrava, updateWahoo, updateCalendar, updateHae]);
+	}, [
+		updateStrava,
+		updateWahoo,
+		updateIntervalsIcu,
+		updateCalendar,
+		updateHae,
+	]);
 
 	// Auto-dismiss flash messages.
 	useEffect(() => {
@@ -160,11 +182,13 @@ export function IntegrationsStatusProvider({
 			ready,
 			strava,
 			wahoo,
+			intervalsIcu,
 			calendar,
 			hae,
 			flash,
 			updateStrava,
 			updateWahoo,
+			updateIntervalsIcu,
 			updateCalendar,
 			updateHae,
 			setFlash: setFlashMessage,
@@ -173,11 +197,13 @@ export function IntegrationsStatusProvider({
 			ready,
 			strava,
 			wahoo,
+			intervalsIcu,
 			calendar,
 			hae,
 			flash,
 			updateStrava,
 			updateWahoo,
+			updateIntervalsIcu,
 			updateCalendar,
 			updateHae,
 			setFlashMessage,

@@ -12,11 +12,14 @@ import { strava } from "./routes/strava.js";
 import { trainer } from "./routes/trainer.js";
 import { wahoo } from "./routes/wahoo.js";
 import { google } from "./routes/google.js";
+import { intervalsIcu } from "./routes/intervalsIcu.js";
+import { plan } from "./routes/plan.js";
 import { initTools } from "./lib/tools/init.js";
 import {
 	runPlanRefreshTick,
 	startPlanRefreshScheduler,
 } from "./lib/planRefreshScheduler.js";
+import { startIntervalsIcuPoller } from "./lib/intervalsIcuImporter.js";
 
 initTools();
 
@@ -26,6 +29,10 @@ startPlanRefreshScheduler();
 void runPlanRefreshTick().catch((err) => {
 	console.error("[plan-refresh] Startup catch-up failed:", err);
 });
+
+// IntervalsIcu activity import (ADR-0005): a five-minute poll, independent of
+// the hourly plan refresh. Rides reach the app the same way Strava's do.
+startIntervalsIcuPoller();
 
 const app = new Hono();
 
@@ -41,6 +48,8 @@ app.route("/api/heatmap", heatmap);
 app.route("/api/me", me);
 app.route("/api/strava", strava);
 app.route("/api/google", google);
+app.route("/api/intervals-icu", intervalsIcu);
+app.route("/api/plan", plan);
 app.route("/api/trainer", trainer);
 app.route("/api/wahoo", wahoo);
 

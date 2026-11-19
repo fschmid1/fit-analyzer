@@ -3,6 +3,7 @@ import { CoachModelSettings } from "../components/CoachModelSettings";
 import { CoachVerbositySettings } from "../components/CoachVerbositySettings";
 import { GoogleCalendarConnect } from "../components/GoogleCalendarConnect";
 import { HealthAutoExportSettings } from "../components/HealthAutoExportSettings";
+import { IntervalsIcuConnect } from "../components/IntervalsIcuConnect";
 import { OpenwearablesSettings } from "../components/OpenwearablesSettings";
 import { PlanRefreshSettingsCard } from "../components/PlanRefreshSettingsCard";
 import { ProfileChangelogCard } from "../components/ProfileChangelogCard";
@@ -28,6 +29,8 @@ function DomainBody({
 			return <StravaConnect onSynced={onSynced} />;
 		case "wahoo":
 			return <WahooConnect onSynced={onSynced} />;
+		case "intervalsIcu":
+			return <IntervalsIcuConnect />;
 		case "calendar":
 			return <GoogleCalendarConnect />;
 		case "openwearables":

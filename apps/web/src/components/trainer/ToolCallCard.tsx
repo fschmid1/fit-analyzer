@@ -112,13 +112,13 @@ const TOOL_META: Record<string, ToolMeta> = {
 		icon: Target,
 		accent: "rgba(52, 211, 153, 0.7)", // emerald
 	},
-	add_workouts_to_calendar: {
-		label: "Planned Workouts → Calendar",
+	sync_training_plan: {
+		label: "Training Plan Sync",
 		icon: CalendarPlus,
 		accent: "rgba(52, 211, 153, 0.7)", // emerald
 	},
-	remove_workouts_from_calendar: {
-		label: "Clear Calendar Workouts",
+	remove_planned_workouts: {
+		label: "Remove Planned Workouts",
 		icon: CalendarX,
 		accent: "rgba(248, 113, 113, 0.7)", // red
 	},

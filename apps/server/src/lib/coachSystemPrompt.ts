@@ -1,4 +1,4 @@
-import { buildCalendarGuidance } from "./calendarGuidance.js";
+import { buildPlanGuidance } from "./planGuidance.js";
 import { getCoachVerbositySettings } from "./coachSettings.js";
 import { buildReplyShapeGuidance } from "./replyShapeGuidance.js";
 import {
@@ -16,13 +16,13 @@ import {
  * It appends buildReplyShapeGuidance itself.
  */
 export async function buildCoachSystemPrompt(userId: string): Promise<string> {
-	const [calendarGuidance, verbosity] = await Promise.all([
-		buildCalendarGuidance(userId),
+	const [planGuidance, verbosity] = await Promise.all([
+		buildPlanGuidance(userId),
 		getCoachVerbositySettings(userId),
 	]);
 
 	return [
-		`${BASE_SYSTEM_PROMPT}${calendarGuidance}`,
+		`${BASE_SYSTEM_PROMPT}${planGuidance}`,
 		buildReplyShapeGuidance(verbosity),
 		buildCurrentTimeText(new Date()),
 	].join("\n\n");

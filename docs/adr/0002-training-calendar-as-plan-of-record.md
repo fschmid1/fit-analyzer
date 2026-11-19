@@ -1,5 +1,7 @@
 # Training plan lives in Google Calendar, not in the database
 
+> **Amended by [ADR-0005](0005-one-plan-many-targets.md).** The "target is the store, no plan table" decision still holds, but Google Calendar is no longer the only plan target: when intervals.icu is connected it is primary and the Training calendar becomes a projection. The training timezone also moved from the Calendar connection to athlete-level settings.
+
 The coach's training plans have no structured home — plans are chat prose. To give the user their plan on a calendar we decided the **calendar is the plan**: no `training_plans`/`planned_workouts` tables, no plan editor. The coach pushes a whole plan via a tool that idempotently syncs (create/update/delete) a dedicated Google Calendar ("Training") which the app creates on connect, substituting the app's brand of plan-of-record for a plan entity. Sync keys are derived server-side (date + start time + kind, stamped into event extended properties — model-supplied keys rejected as corruptingly unstable) so re-syncs update in place, delete plan-absent future events, skip events the user edited in Google, and never touch started events. Tokens ride the existing `OAuth2Flow` (`google_tokens` table, Strava pattern); scope is broad `calendar` so the app can create its own calendar.
 
 ## Considered Options

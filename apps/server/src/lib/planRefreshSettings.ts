@@ -11,9 +11,10 @@ import { duePlanWeek, isRefreshDue } from "./planSchedule.js";
  *
  * The Refresh watermark (`plan_refresh_week`/`_at`) is the only plan-adjacent
  * state the app keeps: it records when a refresh happened, never what the plan
- * contains — the training calendar remains the plan. Candidate users are those
- * with a Google Calendar connection AND the opt-in flag; there is no user
- * registry table, so `google_tokens` is the authoritative candidate source.
+ * contains — the plan targets remain the plan. Candidate users are those with
+ * at least one connected plan target (intervals.icu or Google Calendar), the
+ * opt-in flag, and a training timezone (ADR-0005); the connection tables are
+ * the authoritative candidate source, since there is no user registry.
  */
 
 /** A user due for a scheduled Plan refresh, with the week to refresh. */
@@ -42,12 +43,17 @@ const getRowStmt = db.prepare<RefreshRow, [string]>(
 );
 
 const getCandidateStmt = db.prepare<{ user_id: string; tz: string }, []>(
-	`SELECT g.user_id as user_id, g.tz as tz
-	   FROM google_tokens g
-	   JOIN user_settings s ON s.user_id = g.user_id
-	  WHERE g.calendar_id IS NOT NULL
-	    AND g.tz IS NOT NULL
-	    AND s.plan_refresh_enabled = 1`,
+	`SELECT s.user_id AS user_id,
+	        COALESCE(s.training_timezone, g.tz) AS tz
+	   FROM user_settings s
+	   LEFT JOIN google_tokens g ON g.user_id = s.user_id
+	   LEFT JOIN intervals_icu_connections i ON i.user_id = s.user_id
+	  WHERE s.plan_refresh_enabled = 1
+	    AND (
+	          g.calendar_id IS NOT NULL
+	          OR (i.api_key IS NOT NULL AND i.key_valid IS NOT 0)
+	    )
+	    AND COALESCE(s.training_timezone, g.tz) IS NOT NULL`,
 );
 
 const upsertEnabledStmt = db.prepare(
@@ -116,8 +122,9 @@ export {
 } from "./planSchedule.js";
 
 /**
- * All users with a connected Training calendar, the weekly refresh enabled, and
- * a due week newer than their watermark. Each entry carries the week to write.
+ * All users with at least one connected plan target, the weekly refresh
+ * enabled, and a due week newer than their watermark. Each entry carries the
+ * week to write.
  */
 export function listDueRefreshes(now: Date): DueRefresh[] {
 	return getCandidateStmt.all().flatMap((row) => {

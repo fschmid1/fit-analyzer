@@ -44,6 +44,9 @@ describe("toPlanWorkout", () => {
 			focus: "Threshold intervals",
 			description: "3x10 min",
 			edited: false,
+			sport: "Ride",
+			steps: [],
+			target: "google",
 		});
 	});
 

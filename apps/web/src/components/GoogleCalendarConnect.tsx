@@ -10,23 +10,23 @@ import {
 	fetchGoogleCalendarStatus,
 	disconnectGoogleCalendar,
 	connectGoogleCalendar,
-	updateCalendarTimezone,
 } from "../lib/api";
 import type { GoogleCalendarStatus } from "@fit-analyzer/shared";
 import { AnimatedButton } from "./AnimatedButton";
 import { ConnectCard } from "./ConnectCard";
 import { SettingsBanner } from "../pages/settings/settingsShared";
+import { TrainingTimezoneField } from "./TrainingTimezoneField";
 
 /**
- * Calendar connection card. Connect captures the browser timezone, the
- * callback creates the dedicated Training calendar, and the coach schedules
- * from there — no manual sync buttons.
+ * Training calendar connection card. Connect captures the browser timezone and
+ * the callback creates the dedicated Training calendar. This is a Plan target:
+ * the plan of record on its own, or a projection of the intervals.icu plan when
+ * both are connected (ADR-0005).
  */
 export function GoogleCalendarConnect() {
 	const [status, setStatus] = useState<GoogleCalendarStatus | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [disconnecting, setDisconnecting] = useState(false);
-	const [tzSaving, setTzSaving] = useState(false);
 	const [notification, setNotification] = useState<{
 		type: "success" | "error";
 		message: string;
@@ -90,25 +90,6 @@ export function GoogleCalendarConnect() {
 		}
 	};
 
-	const handleTimezoneChange = async (timezone: string) => {
-		const previous = status?.timezone ?? null;
-		if (previous === timezone) return;
-		// Optimistic update; revert on failure.
-		if (status) setStatus({ ...status, timezone });
-		setTzSaving(true);
-		try {
-			await updateCalendarTimezone(timezone);
-		} catch (err) {
-			if (status) setStatus({ ...status, timezone: previous });
-			setNotification({
-				type: "error",
-				message: (err as Error).message ?? "Failed to update timezone.",
-			});
-		} finally {
-			setTzSaving(false);
-		}
-	};
-
 	return (
 		<ConnectCard
 			title="Google Calendar"
@@ -155,37 +136,13 @@ export function GoogleCalendarConnect() {
 						<div className="flex items-center gap-2 text-xs text-[#94a3b8]">
 							<CalendarDays className="w-3.5 h-3.5 shrink-0" />
 							<span>
-								Planned workouts land on your Training calendar — events the
-								coach adds are yours to move or edit.
+								Planned workouts land on your Training calendar. If
+								intervals.icu is also connected it is the plan of record, and
+								this calendar is refreshed from it.
 							</span>
 						</div>
 
-						<div className="flex flex-col gap-1.5">
-							<label
-								htmlFor="calendar-timezone"
-								className="text-xs font-medium text-[#f1f5f9]"
-							>
-								Training timezone
-							</label>
-							<div className="flex items-center gap-2">
-								<input
-									id="calendar-timezone"
-									list="iana-timezones"
-									value={status.timezone ?? ""}
-									onChange={(e) => handleTimezoneChange(e.target.value)}
-									spellCheck={false}
-									className="flex-1 px-3 py-2 text-xs bg-[#0f0b1a] border border-[rgba(139,92,246,0.2)] text-[#f1f5f9] rounded-xl focus:outline-none focus:border-[rgba(139,92,246,0.5)]"
-								/>
-								{tzSaving && (
-									<Loader2 className="w-3.5 h-3.5 text-[#8b5cf6] animate-spin shrink-0" />
-								)}
-							</div>
-							<datalist id="iana-timezones">
-								{Intl.supportedValuesOf("timeZone").map((tz) => (
-									<option key={tz} value={tz} />
-								))}
-							</datalist>
-						</div>
+						<TrainingTimezoneField />
 
 						{status.calendarUrl && (
 							<a

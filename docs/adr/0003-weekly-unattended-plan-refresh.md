@@ -1,5 +1,7 @@
 # Weekly unattended plan refresh
 
+> **Amended by [ADR-0005](0005-one-plan-many-targets.md).** The tool is now `sync_training_plan` and the refresh writes to whichever plan target is connected (intervals.icu primary, Training calendar projection). The schedule, watermark and notification behaviour described here are unchanged.
+
 The coach's plan is the Google Calendar (ADR-0002) and was only ever written when the athlete happened to chat. We decided the server refreshes the forward plan on a schedule, with no user present: an hourly tick (the only reason to run sub-daily is per-timezone and DST correctness) runs each opted-in user's refresh when their local clock crosses Sunday 18:00, so the upcoming Mon–Sun Plan week is populated before it starts. Every refresh is an unattended model call that reads the current forward plan back off the calendar, ensures the next week is filled, revises only where recent activity, health, or feedback warrants, and always calls `add_workouts_to_calendar` with the complete forward plan — an idempotent Plan sync, so an unchanged plan is a no-op write. A per-user Refresh watermark makes ticks idempotent and self-heals missed runs: any tick, or startup, where the stored watermark is behind runs a catch-up, and a failed sync leaves the watermark unadvanced so the next tick retries. The refresh reads the user's newest general trainer thread for feedback context and appends the plan narrative there, and a notification fires when a new plan lands (or once when retries are exhausted) rather than silently.
 
 ## Considered Options
