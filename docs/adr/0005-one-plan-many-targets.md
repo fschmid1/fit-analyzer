@@ -66,8 +66,9 @@ one imported from Strava or a FIT upload.
   re-downloading their data through a third party.
 - A **five-minute poll** covers completed activities; "Sync now" runs the same
   importer on demand.
-- Connecting offers an opt-in **90-day backfill**, run as a background job with
-  progress shown in Settings.
+- Connecting offers an opt-in **history import** (90 days by default, up to
+  10 years), run as a background job with progress shown in Settings. A
+  connected athlete can start a longer import at any time.
 - **Same-ride dedupe**: when a ride is already stored from Strava or a FIT
   upload, the intervals.icu id is stamped onto the existing row instead of
   creating a duplicate. Match is same wall-clock start (±2 min, in the training

@@ -68,6 +68,7 @@ export type {
 	IntervalsIcuBackfill,
 	IntervalsIcuStatus,
 	ConnectIntervalsIcuBody,
+	StartIntervalsIcuBackfillBody,
 	TrainingTimezoneResponse,
 	PlanRefreshStatus,
 	PlanRefreshSettings,

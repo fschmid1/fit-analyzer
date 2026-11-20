@@ -7,6 +7,7 @@ import {
 	markIntervalsIcuPollFailure,
 	markIntervalsIcuPollSuccess,
 	recordIntervalsIcuBackfillProgress,
+	resetInterruptedBackfills,
 	finishIntervalsIcuBackfill,
 	startIntervalsIcuBackfill,
 } from "./intervalsIcuConnection.js";
@@ -23,22 +24,25 @@ import { getNtfyTopic } from "./notificationSettings.js";
 import { sendNtfy } from "./ntfy.js";
 
 /**
- * IntervalsIcu activity import: a five-minute poll plus the opt-in 90-day
- * backfill, both through the same importer (ADR-0005).
+ * IntervalsIcu activity import: a five-minute poll plus an opt-in history
+ * import (90 days by default, up to 10 years), both through the same importer
+ * (ADR-0005).
  *
  * Rides become Activities, imported from raw per-second streams. Every other
  * completed activity becomes a summary-only Cross-training session for the
  * coach. Strava-sourced activities of either kind are skipped: intervals.icu
  * serves only a stub for them, and Strava's terms forbid re-downloading their
  * data through a third party. Import is idempotent: a ride already stored for
- * this user is never re-fetched, a session already stored is never rewritten,
- * and a ride that arrived earlier from Strava or a FIT upload gets the
- * intervals.icu id stamped onto its existing row (see activityImporter).
+ * this user is never re-fetched, a session is upserted only when its summary
+ * changes, and a ride that arrived earlier from Strava or a FIT upload gets
+ * the intervals.icu id stamped onto its existing row (see activityImporter).
  */
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000;
 const POLL_OVERLAP_DAYS = 3;
-const BACKFILL_DAYS = 90;
+export const DEFAULT_BACKFILL_DAYS = 90;
+/** Longest history window a user can request (10 years). */
+export const MAX_BACKFILL_DAYS = 3650;
 const BACKFILL_CHUNK_DAYS = 14;
 /** After this many consecutive failed polls the athlete is notified, once. */
 const MAX_POLL_FAILURES = 3;
@@ -178,21 +182,36 @@ export async function syncIntervalsIcuActivities(
 // ─── Backfill ─────────────────────────────────────────────────────────────────
 
 const backfillRunning = new Set<string>();
+const backfillCancelled = new Set<string>();
 
-/** Start the opt-in 90-day backfill as a background job, once per user. */
-export function startBackfillInBackground(userId: string): void {
-	if (backfillRunning.has(userId)) return;
+/** Ask a running history import to stop after its current chunk. */
+export function cancelIntervalsIcuBackfill(userId: string): void {
+	if (backfillRunning.has(userId)) backfillCancelled.add(userId);
+}
+
+/** Start a history import as a background job. False when one is running. */
+export function startBackfillInBackground(
+	userId: string,
+	days: number = DEFAULT_BACKFILL_DAYS,
+): boolean {
+	if (backfillRunning.has(userId)) return false;
 	backfillRunning.add(userId);
-	startIntervalsIcuBackfill(userId);
-	void runBackfill(userId)
+	backfillCancelled.delete(userId);
+	const windowDays = Math.min(MAX_BACKFILL_DAYS, Math.max(1, Math.floor(days)));
+	startIntervalsIcuBackfill(userId, windowDays);
+	void runBackfill(userId, windowDays)
 		.catch((err) => {
 			console.error(`[intervals-icu] Backfill failed for ${userId}:`, err);
 			finishIntervalsIcuBackfill(userId, (err as Error).message);
 		})
-		.finally(() => backfillRunning.delete(userId));
+		.finally(() => {
+			backfillRunning.delete(userId);
+			backfillCancelled.delete(userId);
+		});
+	return true;
 }
 
-async function runBackfill(userId: string): Promise<void> {
+async function runBackfill(userId: string, days: number): Promise<void> {
 	const connection = getIntervalsIcuConnection(userId);
 	if (!connection?.api_key) throw new Error("intervals.icu is not connected");
 	const timezone = getTrainingTimezone(userId);
@@ -202,7 +221,13 @@ async function runBackfill(userId: string): Promise<void> {
 	let failed = 0;
 	const errors: string[] = [];
 
-	for (let offset = BACKFILL_DAYS; offset > 0; offset -= BACKFILL_CHUNK_DAYS) {
+	for (let offset = days; offset > 0; offset -= BACKFILL_CHUNK_DAYS) {
+		if (backfillCancelled.has(userId)) {
+			console.log(
+				`[intervals-icu] History import for ${userId} cancelled by disconnect`,
+			);
+			break;
+		}
 		const chunkStart = Math.max(0, offset - BACKFILL_CHUNK_DAYS);
 		const oldest = shiftDate(now, -offset);
 		const newest = shiftDate(now, -chunkStart);
@@ -230,7 +255,7 @@ async function runBackfill(userId: string): Promise<void> {
 	}
 
 	console.log(
-		`[intervals-icu] Backfill for ${userId}: ${imported} imported, ${failed} failed`,
+		`[intervals-icu] History import for ${userId} (last ${days} days): ${imported} imported, ${failed} failed`,
 	);
 	finishIntervalsIcuBackfill(
 		userId,
@@ -313,6 +338,9 @@ export async function runIntervalsIcuPollerTick(): Promise<void> {
 /** Start the five-minute activity poller (idempotent). */
 export function startIntervalsIcuPoller(): void {
 	if (timer) return;
+	// A history import is an in-memory job; one left "running" by a restart
+	// can never finish, so report it instead of showing it forever.
+	resetInterruptedBackfills();
 	timer = setInterval(() => {
 		void runIntervalsIcuPollerTick().catch((err) => {
 			console.error("[intervals-icu] Poller tick failed:", err);

@@ -6,7 +6,7 @@ import { db } from "../db.js";
 
 /**
  * IntervalsIcu connection: the per-user personal API key plus the opt-in
- * 90-day activity backfill's progress.
+ * history import (backfill) progress.
  *
  * v1 authenticates with a personal API key (HTTP Basic, username `API_KEY`),
  * which intervals.icu explicitly blesses for an athlete's own data. OAuth is
@@ -23,6 +23,7 @@ export interface IntervalsIcuConnectionRow {
 	backfill_status: string;
 	backfill_imported: number;
 	backfill_failed: number;
+	backfill_days: number | null;
 	backfill_started_at: string | null;
 	backfill_finished_at: string | null;
 	backfill_error: string | null;
@@ -33,7 +34,7 @@ export interface IntervalsIcuConnectionRow {
 
 const getRowStmt = db.prepare<IntervalsIcuConnectionRow, [string]>(
 	`SELECT user_id, api_key, athlete_id, athlete_name, key_valid,
-	        backfill_status, backfill_imported, backfill_failed,
+	        backfill_status, backfill_imported, backfill_failed, backfill_days,
 	        backfill_started_at, backfill_finished_at, backfill_error,
 	        last_sync_at, last_poll_error, poll_failures
 	   FROM intervals_icu_connections WHERE user_id = ?`,
@@ -62,7 +63,8 @@ const deleteStmt = db.prepare(
 
 const startBackfillStmt = db.prepare(
 	`UPDATE intervals_icu_connections
-	    SET backfill_status = 'running', backfill_imported = 0, backfill_failed = 0,
+	    SET backfill_status = 'running', backfill_days = ?,
+	        backfill_imported = 0, backfill_failed = 0,
 	        backfill_started_at = datetime('now'), backfill_finished_at = NULL,
 	        backfill_error = NULL
 	  WHERE user_id = ?`,
@@ -119,6 +121,7 @@ function toBackfill(
 				: "idle",
 		imported: row?.backfill_imported ?? 0,
 		failed: row?.backfill_failed ?? 0,
+		days: row?.backfill_days ?? null,
 		startedAt: row?.backfill_started_at ?? null,
 		finishedAt: row?.backfill_finished_at ?? null,
 		error: row?.backfill_error ?? null,
@@ -178,8 +181,23 @@ export function markIntervalsIcuPollFailure(
 	).run(error, revoked ? 1 : 0, userId);
 }
 
-export function startIntervalsIcuBackfill(userId: string): void {
-	startBackfillStmt.run(userId);
+export function startIntervalsIcuBackfill(userId: string, days: number): void {
+	startBackfillStmt.run(days, userId);
+}
+
+/**
+ * Mark any backfill left "running" by a previous process as interrupted. The
+ * job itself is in-memory, so a restart cannot resume it; without this the
+ * Settings card would show an import running forever.
+ */
+export function resetInterruptedBackfills(): void {
+	db.prepare(
+		`UPDATE intervals_icu_connections
+		    SET backfill_status = 'error',
+		        backfill_error = 'Interrupted by a server restart',
+		        backfill_finished_at = datetime('now')
+		  WHERE backfill_status = 'running'`,
+	).run();
 }
 
 export function recordIntervalsIcuBackfillProgress(

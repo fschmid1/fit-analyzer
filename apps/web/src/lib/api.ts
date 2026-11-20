@@ -22,6 +22,7 @@ import {
 	type PlanRefreshSettings,
 	type ProfileChangeEntry,
 	type StravaClubEvent,
+	type StartIntervalsIcuBackfillBody,
 	type StoredRecord,
 	type ToolStreamChunk,
 	type TrainerAttachment,
@@ -810,6 +811,7 @@ export async function fetchIntervalsIcuStatus(): Promise<IntervalsIcuStatus> {
 				status: "idle",
 				imported: 0,
 				failed: 0,
+				days: null,
 				startedAt: null,
 				finishedAt: null,
 				error: null,
@@ -828,13 +830,37 @@ export async function connectIntervalsIcu(
 			apiKey: input.apiKey,
 			timezone:
 				input.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
-			backfill: input.backfill,
+			backfillDays: input.backfillDays ?? null,
 		} satisfies ConnectIntervalsIcuBody),
 	});
 	const data = await res.json().catch(() => ({ error: "Failed to connect" }));
 	if (!res.ok) {
 		throw new Error(
 			(data as { error?: string }).error ?? "Failed to connect intervals.icu",
+		);
+	}
+	return data as IntervalsIcuStatus;
+}
+
+/**
+ * Start a background history import for the chosen number of days. The
+ * request returns the connection status with `backfill.status = "running"`;
+ * poll `fetchIntervalsIcuStatus` for progress.
+ */
+export async function startIntervalsIcuBackfill(
+	days: number,
+): Promise<IntervalsIcuStatus> {
+	const res = await fetch(`${API_BASE}/intervals-icu/backfill`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ days } satisfies StartIntervalsIcuBackfillBody),
+	});
+	const data = await res
+		.json()
+		.catch(() => ({ error: "Failed to start history import" }));
+	if (!res.ok) {
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to start history import",
 		);
 	}
 	return data as IntervalsIcuStatus;

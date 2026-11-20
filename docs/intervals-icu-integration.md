@@ -35,8 +35,8 @@ except the target's own events and `plan_sync_marks`.
 | `lib/trainingPlan.ts` | Read-back projection, prompt formatting, read-only context |
 | `lib/intervalsIcuClient.ts` | Athlete, events, bulk upsert/delete, activities, streams |
 | `lib/intervalsIcuPlanSync.ts` | `workout_doc`, ICU merge, edit detection |
-| `lib/intervalsIcuConnection.ts` | Key storage, poll/backfill bookkeeping |
-| `lib/intervalsIcuImporter.ts` | Five-minute poll, opt-in backfill, notifications |
+| `lib/intervalsIcuConnection.ts` | Key storage, poll/history-import bookkeeping |
+| `lib/intervalsIcuImporter.ts` | Five-minute poll, configurable history import, notifications |
 | `lib/intervalsIcuImportAdapter.ts` | Ride → records/summary, ride filter |
 | `lib/intervalsIcuSessionAdapter.ts` | Non-ride activity → cross-training summary |
 | `lib/crossTrainingSessionRepo.ts` | Summary-only session storage and reads |
@@ -79,7 +79,7 @@ records `plan_sync_marks(user_id, target, sync_key, written_at)` and compares
 ```
 poll (5 min) ───┐
 Sync now ───────┼─► listIntervalsIcuActivities(range)
-backfill (90 d) ┘        │
+history import ─┘        │
                          ▼
               Strava-sourced? ──yes──► skip (stub + terms)
                          │no
@@ -109,8 +109,9 @@ backfill (90 d) ┘        │
   existing row and nothing is inserted.
 - Sessions upsert by `(user, source, source activity id)`: a re-seen session is
   skipped unless the provider changed it.
-- The backfill runs in 14-day chunks, records progress after each chunk, and
-  never blocks a poll (the poller skips a user while a backfill runs).
+- The history import runs in 14-day chunks, records progress after each chunk,
+  and never blocks a poll (the poller skips a user while an import runs). The
+  window is chosen by the athlete: 90 days by default, up to 10 years.
 
 ## Failure semantics
 
@@ -121,7 +122,7 @@ backfill (90 d) ┘        │
 | Activity list fails | The poll counts as failed |
 | `401`/`403` | `key_valid = 0`; poller stops for that user; Settings shows "Key rejected"; the target is treated as disconnected for plan sync |
 | 3 consecutive failed polls | One ntfy notification, once per streak; success resets the streak |
-| Backfill chunk fails | Recorded, backfill continues, final status `error` with first message |
+| History-import chunk fails | Recorded, the import continues, final status `error` with first message |
 | Sync write fails | Per-target error in the tool card; other target still runs; only writes the API confirmed are reported as created/updated |
 | Weekly refresh write fails | Watermark stays unadvanced, so the next hourly tick retries (capped per week) |
 | Started workout | Never touched on any target |
@@ -131,9 +132,10 @@ backfill (90 d) ┘        │
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/intervals-icu/status` | Connection, key state, backfill progress, last sync |
-| `POST /api/intervals-icu/connect` | Verify + store key, set timezone, optional backfill |
+| `GET /api/intervals-icu/status` | Connection, key state, history-import progress, last sync |
+| `POST /api/intervals-icu/connect` | Verify + store key, set timezone, optional history import |
 | `DELETE /api/intervals-icu/disconnect` | Forget key, clear marks, leave events |
+| `POST /api/intervals-icu/backfill` | Start a background import for a chosen window |
 | `POST /api/intervals-icu/sync` | Import the last 90 days now |
 | `GET /api/sessions` | Cross-training sessions, newest first |
 | `GET /api/plan` | Forward plan from the primary target |

@@ -324,6 +324,7 @@ db.exec(`
     backfill_status     TEXT NOT NULL DEFAULT 'idle',
     backfill_imported   INTEGER NOT NULL DEFAULT 0,
     backfill_failed     INTEGER NOT NULL DEFAULT 0,
+    backfill_days       INTEGER,
     backfill_started_at TEXT,
     backfill_finished_at TEXT,
     backfill_error      TEXT,
@@ -525,6 +526,7 @@ for (const column of [
 	"last_sync_at TEXT",
 	"last_poll_error TEXT",
 	"poll_failures INTEGER NOT NULL DEFAULT 0",
+	"backfill_days INTEGER",
 ]) {
 	try {
 		db.exec(`ALTER TABLE intervals_icu_connections ADD COLUMN ${column}`);

@@ -673,11 +673,13 @@ export interface PlanRemovalResult {
 
 export type IntervalsIcuBackfillStatus = "idle" | "running" | "done" | "error";
 
-/** Progress of the opt-in 90-day activity backfill. */
+/** Progress of an opt-in history import (backfill). */
 export interface IntervalsIcuBackfill {
 	status: IntervalsIcuBackfillStatus;
 	imported: number;
 	failed: number;
+	/** Requested window in days; null when the run predates this field. */
+	days: number | null;
 	startedAt: string | null;
 	finishedAt: string | null;
 	error: string | null;
@@ -699,8 +701,17 @@ export interface IntervalsIcuStatus {
 export interface ConnectIntervalsIcuBody {
 	apiKey: string;
 	timezone: string;
-	/** Opt in to importing the last 90 days of rides. */
-	backfill: boolean;
+	/**
+	 * Days of history to import after connecting. Null or 0 imports nothing;
+	 * the run happens in the background with progress in Settings.
+	 */
+	backfillDays?: number | null;
+}
+
+/** POST body for importing a chosen history window on an existing connection. */
+export interface StartIntervalsIcuBackfillBody {
+	/** Days back from today, e.g. 90, 365 or 1825. */
+	days: number;
 }
 
 /** The athlete's training timezone, shared by every plan target. */
