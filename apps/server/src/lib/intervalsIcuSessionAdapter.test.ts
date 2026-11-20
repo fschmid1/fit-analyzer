@@ -28,6 +28,8 @@ describe("intervals.icu cross-training filter", () => {
 			maxHeartRate: 148,
 			trainingLoad: 41.8,
 			kgLifted: 3250.4,
+			description: null,
+			tags: [],
 			source: "intervals-icu",
 			sourceActivityId: "i42",
 		});
@@ -45,6 +47,20 @@ describe("intervals.icu cross-training filter", () => {
 		expect(result.session.name).toBe("Run");
 		expect(result.session.distanceKm).toBe(5.2);
 		expect(result.session.startTime).toBe("07:00");
+	});
+
+	it("keeps the athlete's notes and tags", () => {
+		const result = intervalsIcuSessionFromActivity({
+			id: "i44",
+			type: "WeightTraining",
+			start_date_local: "2026-11-16T18:00:00",
+			name: "Leg day",
+			description: "  Squats 5x5 @ 100kg\nRDL 3x8  ",
+			tags: ["legs", " squat ", ""],
+		});
+		if ("skipped" in result) throw new Error("expected a session");
+		expect(result.session.description).toBe("Squats 5x5 @ 100kg\nRDL 3x8");
+		expect(result.session.tags).toEqual(["legs", "squat"]);
 	});
 
 	it("skips rides, Strava relays and activities without a date", () => {

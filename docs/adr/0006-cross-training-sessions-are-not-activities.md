@@ -21,9 +21,9 @@ Keep the two kinds of recorded training separate:
   by the app (unchanged).
 - **Cross-training session**: any other completed activity from intervals.icu
   (strength, run, swim, row, yoga, …), stored **summary-only** in
-  `cross_training_sessions`: date, sport, name, moving/elapsed time, distance, average
-  and max heart rate, intervals.icu training load, and kilograms lifted where
-  the provider reports it.
+  `cross_training_sessions`: date, sport, name, moving/elapsed time, distance,
+  average and max heart rate, intervals.icu training load, kilograms lifted
+  where the provider reports it, plus the athlete's own notes and tags.
 
 Consequences of that split:
 
@@ -34,8 +34,9 @@ Consequences of that split:
   no upload, edit or delete path, and disconnecting leaves them in place like
   imported rides.
 - The coach gets a **Cross-Training Sessions** block in its athlete context:
-  the last sessions plus 7- and 28-day duration/load aggregates. The block says
-  explicitly that these are summaries, never to be analysed like a ride.
+  the last sessions (with their notes and tags) plus 7- and 28-day
+  duration/load aggregates. The block says explicitly that these are summaries,
+  never to be analysed like a ride.
 - `training_load` adds the sessions' intervals.icu load to the same daily
   buckets as ride TSS. The scale is comparable and omitting them would
   understate fatigue. If the athlete has no FTP but does have session load, the

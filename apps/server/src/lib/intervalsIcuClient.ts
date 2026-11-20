@@ -69,6 +69,10 @@ export interface IntervalsIcuActivity {
 	/** Total kilograms lifted, reported for strength sessions. */
 	kg_lifted?: number | null;
 	icu_rpe?: number | null;
+	/** Free-text notes the athlete attached to the activity. */
+	description?: string | null;
+	/** Athlete tags, e.g. "legs" or "push". */
+	tags?: string[] | null;
 	total_elevation_gain?: number | null;
 	device_name?: string | null;
 	device_watts?: boolean | null;

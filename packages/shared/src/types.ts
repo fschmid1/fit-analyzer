@@ -152,6 +152,10 @@ export interface CrossTrainingSession {
 	trainingLoad: number | null;
 	/** Total kilograms lifted, reported for strength sessions. */
 	kgLifted: number | null;
+	/** Free-text notes the athlete attached on intervals.icu, when present. */
+	description: string | null;
+	/** Athlete tags on intervals.icu (e.g. "legs", "push"), when present. */
+	tags: string[];
 	/** Where the session was imported from, e.g. "intervals-icu". */
 	source: string;
 	createdAt: string;

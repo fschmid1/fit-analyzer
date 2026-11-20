@@ -80,6 +80,8 @@ db.exec(`
     max_heart_rate     INTEGER,
     training_load      REAL,
     kg_lifted          REAL,
+    description        TEXT,
+    tags               TEXT NOT NULL DEFAULT '[]',
     source             TEXT NOT NULL,
     source_activity_id TEXT NOT NULL,
     created_at         TEXT NOT NULL DEFAULT (datetime('now'))
@@ -89,6 +91,16 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_cross_training_sessions_user_date
     ON cross_training_sessions(user_id, date);
 `);
+
+// Migration: session notes and tags. The create-table above carries them for
+// new databases; existing ones predate them.
+for (const column of ["description TEXT", "tags TEXT NOT NULL DEFAULT '[]'"]) {
+	try {
+		db.exec(`ALTER TABLE cross_training_sessions ADD COLUMN ${column}`);
+	} catch {
+		/* column already exists */
+	}
+}
 
 // Trainer chat history tables
 db.exec(`

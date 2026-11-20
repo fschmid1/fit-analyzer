@@ -29,7 +29,7 @@ A recorded ride: the FIT-derived summary, records, laps and intervals the app st
 _Avoid_: session, workout (that word belongs to a Planned workout)
 
 **Cross-training session**:
-A completed non-ride training session — strength, run, swim, yoga — imported from intervals.icu as a summary: date, sport, duration, heart rate, training load, kilograms lifted. The coach reads it as load and scheduling context and never analyses it like an **Activity**, which is a recorded ride. Distinct from a **Planned workout**, which is prescribed.
+A completed non-ride training session — strength, run, swim, yoga — imported from intervals.icu as a summary: date, sport, duration, heart rate, training load, kilograms lifted, notes and tags. The coach reads it as load and scheduling context and never analyses it like an **Activity**, which is a recorded ride. Distinct from a **Planned workout**, which is prescribed.
 _Avoid_: activity, workout, gym log, session (bare "session" is ambiguous)
 
 ### Trainer chat

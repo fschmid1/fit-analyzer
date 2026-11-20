@@ -23,6 +23,8 @@ function sessionInput(
 		maxHeartRate: 148,
 		trainingLoad: 42,
 		kgLifted: 3250,
+		description: null,
+		tags: [],
 		source: "intervals-icu",
 		sourceActivityId: "i42",
 		...overrides,
@@ -47,6 +49,22 @@ describe("crossTrainingSessionRepo", () => {
 		expect(sessions).toHaveLength(1);
 		expect(sessions[0].id).toBe(first.id);
 		expect(sessions[0].name).toBe("Upper body");
+	});
+
+	it("stores notes and tags and refreshes them", () => {
+		const repo = createCrossTrainingSessionRepo(createTestDb());
+		repo.upsert(
+			sessionInput({
+				description: "Squats 5x5",
+				tags: ["legs", "squat"],
+			}),
+		);
+		expect(repo.list(USER)[0].description).toBe("Squats 5x5");
+		expect(repo.list(USER)[0].tags).toEqual(["legs", "squat"]);
+		expect(
+			repo.upsert(sessionInput({ description: "Squats 5x5", tags: ["legs"] })),
+		).toBe("updated");
+		expect(repo.list(USER)[0].tags).toEqual(["legs"]);
 	});
 
 	it("lists newest first and filters by date window", () => {

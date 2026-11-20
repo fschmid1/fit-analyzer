@@ -99,7 +99,8 @@ backfill (90 d) ┘        │
   `velocity_smooth`, `grade_smooth`, `latlng`, `distance` are requested;
   everything else is derived locally.
 - **Every other completed activity** becomes a Cross-training session: the
-  summary intervals.icu reports, no streams. `cross_training_sessions` is a separate
+  summary intervals.icu reports (including the athlete's notes and tags), no
+  streams. `cross_training_sessions` is a separate
   table on purpose (ADR-0006); rides keep their single meaning.
 - `date` comes from `start_date_local`; the dedupe start comes from
   `records[0].timestamp`.

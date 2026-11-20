@@ -65,34 +65,61 @@ function sportLabel(sport: string): string {
 	return SPORT_LABELS[sport] ?? sport;
 }
 
-function SportIcon({ sport }: { sport: string }) {
-	const className = "w-4 h-4 text-[#a78bfa]";
+const SPORT_COLORS: Record<string, string> = {
+	WeightTraining: "#f59e0b",
+	Crossfit: "#f59e0b",
+	Run: "#22c55e",
+	Walk: "#22c55e",
+	Hike: "#22c55e",
+	Swim: "#38bdf8",
+	Rowing: "#38bdf8",
+	Yoga: "#a78bfa",
+};
+
+function sportColor(sport: string): string {
+	return SPORT_COLORS[sport] ?? "#a78bfa";
+}
+
+function SportIcon({ sport, color }: { sport: string; color: string }) {
 	if (sport === "WeightTraining" || sport === "Crossfit")
-		return <Dumbbell className={className} />;
+		return <Dumbbell className="w-4 h-4" style={{ color }} />;
 	if (sport === "Run" || sport === "Walk" || sport === "Hike")
-		return <Footprints className={className} />;
+		return <Footprints className="w-4 h-4" style={{ color }} />;
 	if (sport === "Swim" || sport === "Rowing")
-		return <Waves className={className} />;
-	return <Activity className={className} />;
+		return <Waves className="w-4 h-4" style={{ color }} />;
+	return <Activity className="w-4 h-4" style={{ color }} />;
 }
 
 /** One imported non-ride session. Read-only: intervals.icu owns the data. */
 function SessionRow({ session }: { session: CrossTrainingSession }) {
+	const sport = sportLabel(session.sport);
+	const color = sportColor(session.sport);
+	// A generic name ("Weight Training") adds nothing over the sport label;
+	// a real title ("Leg day") stays the headline.
+	const showName =
+		session.name.trim() !== "" &&
+		session.name.toLowerCase() !== sport.toLowerCase() &&
+		session.name.toLowerCase() !== session.sport.toLowerCase();
+	const tags = session.tags ?? [];
+
 	return (
-		<div className="flex items-center gap-3 rounded-xl border border-[rgba(139,92,246,0.1)] bg-[#1a1533]/70 p-3.5">
-			<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#8b5cf6]/15">
-				<SportIcon sport={session.sport} />
+		<div className="flex items-start gap-3 rounded-xl border border-[rgba(139,92,246,0.1)] bg-[#1a1533]/70 p-3.5">
+			<div
+				className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+				style={{ backgroundColor: `${color}1f` }}
+			>
+				<SportIcon sport={session.sport} color={color} />
 			</div>
 			<div className="min-w-0 flex-1">
-				<div className="flex items-baseline gap-2">
-					<p className="truncate text-sm font-medium text-[#f1f5f9]">
-						{session.name}
-					</p>
-					<span className="shrink-0 rounded-md border border-[#8b5cf6]/10 bg-[#8b5cf6]/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[#c4b5fd]">
-						{sportLabel(session.sport)}
-					</span>
-				</div>
+				<p className="truncate text-sm font-semibold text-[#f1f5f9]">
+					{showName ? session.name : sport}
+				</p>
 				<p className="mt-0.5 text-xs text-[#94a3b8]">
+					{showName && (
+						<>
+							<span style={{ color }}>{sport}</span> ·{" "}
+						</>
+					)}
 					{formatDate(session.date)}
 					{session.startTime ? ` · ${session.startTime}` : ""}
 				</p>
@@ -126,6 +153,26 @@ function SessionRow({ session }: { session: CrossTrainingSession }) {
 						</span>
 					)}
 				</div>
+				{tags.length > 0 && (
+					<div className="mt-1.5 flex flex-wrap gap-1">
+						{tags.map((tag) => (
+							<span
+								key={tag}
+								className="rounded-md border border-[rgba(139,92,246,0.12)] bg-[#8b5cf6]/10 px-1.5 py-0.5 text-[10px] text-[#c4b5fd]"
+							>
+								#{tag}
+							</span>
+						))}
+					</div>
+				)}
+				{session.description && (
+					<p
+						className="mt-1.5 line-clamp-2 whitespace-pre-line text-xs text-[#94a3b8]"
+						title={session.description}
+					>
+						{session.description}
+					</p>
+				)}
 			</div>
 		</div>
 	);

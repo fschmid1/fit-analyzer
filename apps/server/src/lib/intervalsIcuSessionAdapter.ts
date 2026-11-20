@@ -81,6 +81,17 @@ export function intervalsIcuSessionFromActivity(
 		typeof activity.distance === "number" && activity.distance > 0
 			? Math.round((activity.distance / 1000) * 10) / 10
 			: null;
+	const tags = Array.isArray(activity.tags)
+		? [
+				...new Set(
+					activity.tags
+						.map((tag) =>
+							typeof tag === "string" ? tag.trim().replace(/^#/, "") : "",
+						)
+						.filter((tag) => tag.length > 0),
+				),
+			].slice(0, 12)
+		: [];
 
 	return {
 		session: {
@@ -101,6 +112,8 @@ export function intervalsIcuSessionFromActivity(
 					: null,
 			trainingLoad: round1(activity.icu_training_load),
 			kgLifted: round1(activity.kg_lifted),
+			description: activity.description?.trim() || null,
+			tags,
 			source: "intervals-icu",
 			sourceActivityId: activity.id,
 		},

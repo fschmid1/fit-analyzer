@@ -75,6 +75,8 @@ export function createTestDb(): Database {
 			max_heart_rate     INTEGER,
 			training_load      REAL,
 			kg_lifted          REAL,
+			description        TEXT,
+			tags               TEXT NOT NULL DEFAULT '[]',
 			source             TEXT NOT NULL,
 			source_activity_id TEXT NOT NULL,
 			created_at         TEXT NOT NULL DEFAULT (datetime('now'))

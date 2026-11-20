@@ -27,6 +27,8 @@ export interface CrossTrainingSessionInput {
 	maxHeartRate: number | null;
 	trainingLoad: number | null;
 	kgLifted: number | null;
+	description: string | null;
+	tags: string[];
 	source: "intervals-icu";
 	sourceActivityId: string;
 }
@@ -50,6 +52,8 @@ interface SessionRow {
 	max_heart_rate: number | null;
 	training_load: number | null;
 	kg_lifted: number | null;
+	description: string | null;
+	tags: string;
 	source: string;
 	source_activity_id: string;
 	created_at: string;
@@ -58,8 +62,21 @@ interface SessionRow {
 const SELECT_COLUMNS = `
   id, user_id, date, start_time, sport, name, duration_seconds,
   elapsed_seconds, distance_meters, avg_heart_rate, max_heart_rate,
-  training_load, kg_lifted, source, source_activity_id, created_at
+  training_load, kg_lifted, description, tags, source, source_activity_id,
+  created_at
 `;
+
+function parseTags(raw: string | null): string[] {
+	if (!raw) return [];
+	try {
+		const parsed: unknown = JSON.parse(raw);
+		return Array.isArray(parsed)
+			? parsed.filter((tag): tag is string => typeof tag === "string")
+			: [];
+	} catch {
+		return [];
+	}
+}
 
 function rowToSession(row: SessionRow): CrossTrainingSession {
 	return {
@@ -78,6 +95,8 @@ function rowToSession(row: SessionRow): CrossTrainingSession {
 		maxHeartRate: row.max_heart_rate,
 		trainingLoad: row.training_load,
 		kgLifted: row.kg_lifted,
+		description: row.description,
+		tags: parseTags(row.tags),
 		source: row.source,
 		createdAt: row.created_at,
 	};
@@ -100,7 +119,9 @@ function sameSession(
 		row.avg_heart_rate === input.avgHeartRate &&
 		row.max_heart_rate === input.maxHeartRate &&
 		row.training_load === input.trainingLoad &&
-		row.kg_lifted === input.kgLifted
+		row.kg_lifted === input.kgLifted &&
+		row.description === input.description &&
+		row.tags === JSON.stringify(input.tags)
 	);
 }
 
@@ -117,8 +138,8 @@ export function createCrossTrainingSessionRepo(database: Database) {
 		`INSERT INTO cross_training_sessions
        (id, user_id, date, start_time, sport, name, duration_seconds,
         elapsed_seconds, distance_meters, avg_heart_rate, max_heart_rate,
-        training_load, kg_lifted, source, source_activity_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        training_load, kg_lifted, description, tags, source, source_activity_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(user_id, source, source_activity_id) DO UPDATE SET
        date = excluded.date,
        start_time = excluded.start_time,
@@ -130,7 +151,9 @@ export function createCrossTrainingSessionRepo(database: Database) {
        avg_heart_rate = excluded.avg_heart_rate,
        max_heart_rate = excluded.max_heart_rate,
        training_load = excluded.training_load,
-       kg_lifted = excluded.kg_lifted`,
+       kg_lifted = excluded.kg_lifted,
+       description = excluded.description,
+       tags = excluded.tags`,
 	);
 
 	const listStmt = database.prepare<SessionRow, [string, number]>(
@@ -184,6 +207,8 @@ export function createCrossTrainingSessionRepo(database: Database) {
 				input.maxHeartRate,
 				input.trainingLoad,
 				input.kgLifted,
+				input.description,
+				JSON.stringify(input.tags),
 				input.source,
 				input.sourceActivityId,
 			);

@@ -46,6 +46,12 @@ function aggregateSessions(
 	return `${window.length} session(s), ${formatSessionDuration(seconds)}${loadText}`;
 }
 
+/** Collapse whitespace and cap free text so one session stays one prompt line. */
+function oneLine(text: string, max: number): string {
+	const flat = text.replace(/\s+/g, " ").trim();
+	return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
 /** Prompt section for the sessions, or "" when there are none. */
 export function formatCrossTrainingSessions(
 	sessions: CrossTrainingSession[],
@@ -65,7 +71,9 @@ export function formatCrossTrainingSessions(
 			);
 		const start = s.startTime ? ` ${s.startTime}` : "";
 		const quotedName = s.name && s.name !== s.sport ? ` "${s.name}"` : "";
-		return `- ${s.date}${start} ${s.sport}${quotedName}: ${details.join(", ")}`;
+		const tags = s.tags.length > 0 ? ` [${s.tags.join(", ")}]` : "";
+		const notes = s.description ? ` — ${oneLine(s.description, 160)}` : "";
+		return `- ${s.date}${start} ${s.sport}${quotedName}${tags}: ${details.join(", ")}${notes}`;
 	});
 
 	const aggregates = [
@@ -84,7 +92,7 @@ export function formatCrossTrainingSessions(
 	return [
 		"",
 		"## Cross-Training Sessions",
-		"Completed non-ride sessions imported from intervals.icu as summaries (no per-second data). Use them to judge total load, recovery and scheduling; never analyse one like a ride.",
+		"Completed non-ride sessions imported from intervals.icu as summaries (no per-second data). Notes and tags are the athlete's own intervals.icu text. Use them to judge total load, recovery and scheduling; never analyse one like a ride.",
 		...lines,
 		...aggregateLines,
 		"",
