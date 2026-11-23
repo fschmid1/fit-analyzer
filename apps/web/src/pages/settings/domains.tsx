@@ -77,6 +77,12 @@ export const SETTINGS_DOMAINS: SettingsDomain[] = [
 		group: "Coach",
 	},
 	{
+		id: "coachInstructions",
+		name: "Coach instructions",
+		blurb: "Your own standing instructions appended to the coach's prompt.",
+		group: "Coach",
+	},
+	{
 		id: "planRefresh",
 		name: "Weekly plan refresh",
 		blurb: "Refresh the training plan every week and notify you.",

@@ -153,6 +153,12 @@ export function HeadUnitVariant({
 				: COACH_VERBOSITY_LABELS[DEFAULT_COACH_VERBOSITY],
 		},
 		{
+			id: "coachInstructions",
+			name: "Coach instructions",
+			state: "ok",
+			detail: data?.coachInstructions ? "Custom instructions set" : "None set",
+		},
+		{
 			id: "planRefresh",
 			name: "Weekly plan refresh",
 			state: ledFrom(data?.planRefresh.enabled ?? null),
@@ -183,7 +189,14 @@ export function HeadUnitVariant({
 		},
 		{
 			title: "Coach",
-			ids: ["profile", "zones", "coachModel", "coachVerbosity", "planRefresh"],
+			ids: [
+				"profile",
+				"zones",
+				"coachModel",
+				"coachVerbosity",
+				"coachInstructions",
+				"planRefresh",
+			],
 		},
 		{ title: "Maintenance", ids: ["waxed", "changelog"] },
 	];

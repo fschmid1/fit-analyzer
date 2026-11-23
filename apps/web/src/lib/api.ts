@@ -51,6 +51,7 @@ export interface UserSettingsResponse {
 	waxedChainReminder: WaxedChainReminderSettings;
 	coachModel: CoachModelSettings;
 	coachVerbosity: CoachVerbosity;
+	coachInstructions: string;
 	favoriteModels: string[];
 	openwearables: OpenwearablesSettings;
 	compare: CompareSettings;
@@ -191,6 +192,28 @@ export async function updateCoachVerbosity(input: {
 	}
 
 	return (data as UserSettingsResponse).coachVerbosity;
+}
+
+export async function updateCoachInstructions(input: {
+	instructions: string;
+}): Promise<string> {
+	const res = await fetch(`${API_BASE}/me/settings`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ coachInstructions: input.instructions }),
+	});
+
+	const data = await res
+		.json()
+		.catch(() => ({ error: "Failed to update settings" }));
+
+	if (!res.ok) {
+		throw new Error(
+			(data as { error?: string }).error ?? "Failed to update settings",
+		);
+	}
+
+	return (data as UserSettingsResponse).coachInstructions;
 }
 
 export async function updateFavoriteModels(

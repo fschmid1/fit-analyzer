@@ -3,16 +3,18 @@ import {
 	AVAILABLE_MODELS,
 	DEFAULT_COACH_VERBOSITY,
 	isCoachVerbosity,
+	normalizeCoachInstructions,
 } from "@fit-analyzer/shared";
 import { db } from "../db.js";
 import { isOllamaModelKnown } from "./ollamaModelCache.js";
 
 /**
- * The coach settings: which model plays the coach, and how verbose its replies
- * are (ADR-0004). Both live on the same `user_settings` row, so this module
- * owns that row for coach concerns and reads it once per lookup.
+ * The coach settings: which model plays the coach, how verbose its replies are
+ * (ADR-0004), and the athlete's own free-form instructions. All live on the
+ * same `user_settings` row, so this module owns that row for coach concerns
+ * and reads it once per lookup.
  *
- * Verbosity is per-user only — unlike the model, it has no per-thread override.
+ * These are per-user only — unlike the model, none has a per-thread override.
  */
 
 const DEFAULT_COACH_MODEL = "moonshotai/kimi-k2.6";
@@ -20,10 +22,11 @@ const DEFAULT_COACH_MODEL = "moonshotai/kimi-k2.6";
 interface UserSettingsRow {
 	coach_model: string | null;
 	coach_verbosity: string | null;
+	coach_instructions: string | null;
 }
 
 const getSettingsStmt = db.prepare<UserSettingsRow, [string]>(
-	"SELECT coach_model, coach_verbosity FROM user_settings WHERE user_id = ?",
+	"SELECT coach_model, coach_verbosity, coach_instructions FROM user_settings WHERE user_id = ?",
 );
 
 const upsertModelStmt = db.prepare(
@@ -34,6 +37,11 @@ const upsertModelStmt = db.prepare(
 const upsertVerbosityStmt = db.prepare(
 	`INSERT INTO user_settings (user_id, coach_verbosity) VALUES (?, ?)
    ON CONFLICT(user_id) DO UPDATE SET coach_verbosity = excluded.coach_verbosity`,
+);
+
+const upsertInstructionsStmt = db.prepare(
+	`INSERT INTO user_settings (user_id, coach_instructions) VALUES (?, ?)
+   ON CONFLICT(user_id) DO UPDATE SET coach_instructions = excluded.coach_instructions`,
 );
 
 async function sanitizeCoachModel(
@@ -79,5 +87,20 @@ export function updateCoachVerbositySettings(
 ): CoachVerbosity {
 	const next = sanitizeCoachVerbosity(verbosity);
 	upsertVerbosityStmt.run(userId, next);
+	return next;
+}
+
+/** The athlete's own standing instructions, or an empty string when unset. */
+export function getCoachInstructionsSettings(userId: string): string {
+	const row = getSettingsStmt.get(userId) ?? null;
+	return normalizeCoachInstructions(row?.coach_instructions);
+}
+
+export function updateCoachInstructionsSettings(
+	userId: string,
+	instructions: unknown,
+): string {
+	const next = normalizeCoachInstructions(instructions);
+	upsertInstructionsStmt.run(userId, next);
 	return next;
 }

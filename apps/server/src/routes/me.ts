@@ -7,12 +7,17 @@ import type {
 	ProfileChangeEntry,
 } from "@fit-analyzer/shared";
 import {
+	MAX_COACH_INSTRUCTIONS_LENGTH,
+	isCoachInstructionsWithinLimit,
 	isZoneOverrideArray,
+	normalizeCoachInstructions,
 	normalizeZoneOverrides,
 } from "@fit-analyzer/shared";
 import {
+	getCoachInstructionsSettings,
 	getCoachModelSettings,
 	getCoachVerbositySettings,
+	updateCoachInstructionsSettings,
 	updateCoachModelSettings,
 	updateCoachVerbositySettings,
 } from "../lib/coachSettings.js";
@@ -259,6 +264,7 @@ me.get("/settings", async (c) => {
 		waxedChainReminder: getWaxedChainReminderSettings(userId),
 		coachModel: await getCoachModelSettings(userId),
 		coachVerbosity: getCoachVerbositySettings(userId),
+		coachInstructions: getCoachInstructionsSettings(userId),
 		favoriteModels: getFavoriteModels(userId),
 		openwearables: { owUserId: getOwUserId(userId) },
 		compare: getCompareSettings(userId),
@@ -290,6 +296,7 @@ me.patch("/settings", async (c) => {
 			Partial<UpdateAthleteProfileBody> & {
 				coachModel?: string;
 				coachVerbosity?: string;
+				coachInstructions?: string;
 				favoriteModels?: string[];
 				owUserId?: string;
 				compareThreadIds?: string[];
@@ -300,6 +307,30 @@ me.patch("/settings", async (c) => {
 			}
 	>();
 
+	// Validate the free-form instructions before any field is written, so a
+	// rejected request leaves the rest of the settings untouched.
+	if (
+		body.coachInstructions !== undefined &&
+		typeof body.coachInstructions !== "string"
+	) {
+		return c.json({ error: "coachInstructions must be a string" }, 400);
+	}
+	const instructions =
+		body.coachInstructions !== undefined
+			? normalizeCoachInstructions(body.coachInstructions)
+			: undefined;
+	if (
+		instructions !== undefined &&
+		!isCoachInstructionsWithinLimit(instructions)
+	) {
+		return c.json(
+			{
+				error: `coachInstructions must be ${MAX_COACH_INSTRUCTIONS_LENGTH} characters or fewer`,
+			},
+			400,
+		);
+	}
+
 	if (typeof body.coachModel === "string" && body.coachModel.trim()) {
 		await updateCoachModelSettings(userId, {
 			coachModel: body.coachModel.trim(),
@@ -308,6 +339,10 @@ me.patch("/settings", async (c) => {
 
 	if (body.coachVerbosity !== undefined) {
 		updateCoachVerbositySettings(userId, body.coachVerbosity);
+	}
+
+	if (instructions !== undefined) {
+		updateCoachInstructionsSettings(userId, instructions);
 	}
 
 	if (Array.isArray(body.favoriteModels)) {
@@ -455,6 +490,7 @@ me.patch("/settings", async (c) => {
 		waxedChainReminder: getWaxedChainReminderSettings(userId),
 		coachModel: await getCoachModelSettings(userId),
 		coachVerbosity: getCoachVerbositySettings(userId),
+		coachInstructions: getCoachInstructionsSettings(userId),
 		favoriteModels: getFavoriteModels(userId),
 		openwearables: { owUserId: getOwUserId(userId) },
 		compare: getCompareSettings(userId),

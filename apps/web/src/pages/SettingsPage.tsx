@@ -1,4 +1,5 @@
 import { AthleteProfileSettings } from "../components/AthleteProfileSettings";
+import { CoachInstructionsSettings } from "../components/CoachInstructionsSettings";
 import { CoachModelSettings } from "../components/CoachModelSettings";
 import { CoachVerbositySettings } from "../components/CoachVerbositySettings";
 import { GoogleCalendarConnect } from "../components/GoogleCalendarConnect";
@@ -45,6 +46,8 @@ function DomainBody({
 			return <CoachModelSettings />;
 		case "coachVerbosity":
 			return <CoachVerbositySettings />;
+		case "coachInstructions":
+			return <CoachInstructionsSettings />;
 		case "planRefresh":
 			return <PlanRefreshSettingsCard />;
 		case "waxed":

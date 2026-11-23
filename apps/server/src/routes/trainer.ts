@@ -13,6 +13,7 @@ import type { ModelMessage } from "@tanstack/ai";
 import { Hono } from "hono";
 import { db } from "../db.js";
 import {
+	getCoachInstructionsSettings,
 	getCoachModelSettings,
 	getCoachVerbositySettings,
 } from "../lib/coachSettings.js";
@@ -55,6 +56,7 @@ import {
 } from "../lib/trainerLoopAccumulator.js";
 import { createTrainerToolLoop } from "../lib/trainerToolLoop.js";
 import { buildCoachSystemPrompt } from "../lib/coachSystemPrompt.js";
+import { buildCoachInstructionsGuidance } from "../lib/coachInstructionsGuidance.js";
 import { buildReplyShapeGuidance } from "../lib/replyShapeGuidance.js";
 
 type TrainerChatRequestBody = {
@@ -226,11 +228,15 @@ trainer.post("/analyze/:activityId", async (c) => {
 	}
 
 	// The report keeps its own fixed sections, but shape and length still belong
-	// to the athlete's Verbosity (ADR-0004) — one source of truth for both
-	// coach surfaces.
-	const systemPrompt = `${ANALYSIS_SYSTEM_PROMPT}\n\n${buildReplyShapeGuidance(
-		getCoachVerbositySettings(userId),
-	)}`;
+	// to the athlete's Verbosity (ADR-0004), and their own instructions apply to
+	// it too — one source of truth for both coach surfaces.
+	const systemPrompt = [
+		ANALYSIS_SYSTEM_PROMPT,
+		buildReplyShapeGuidance(getCoachVerbositySettings(userId)),
+		buildCoachInstructionsGuidance(getCoachInstructionsSettings(userId)),
+	]
+		.filter(Boolean)
+		.join("\n\n");
 	const rideContext = formatRideContext(activityId, activity);
 	const messages: ModelMessage[] = [
 		{

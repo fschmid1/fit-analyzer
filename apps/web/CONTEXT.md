@@ -18,6 +18,10 @@ _Avoid_: tool output, tool result box, widget
 The athlete's chosen level of detail for every coach reply — Concise, Standard or Detailed. It scales the reply shape (bullets, rationale, extra sections) and never changes an activity analysis's fixed sections.
 _Avoid_: length, brevity, tone, detail level
 
+**Coach instructions**:
+The athlete's own free-form standing instructions, appended to every coach system prompt and subordinate to the built-in rules. Empty by default and capped at 2000 characters.
+_Avoid_: system prompt, custom prompt (the athlete adds to the prompt, never replaces it)
+
 ### Athlete and activity
 
 **Athlete**:

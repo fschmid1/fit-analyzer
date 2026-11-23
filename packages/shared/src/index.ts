@@ -135,6 +135,13 @@ export {
 export type { CoachVerbosity } from "./coachVerbosity.js";
 
 export {
+	DEFAULT_COACH_INSTRUCTIONS,
+	MAX_COACH_INSTRUCTIONS_LENGTH,
+	isCoachInstructionsWithinLimit,
+	normalizeCoachInstructions,
+} from "./coachInstructions.js";
+
+export {
 	buildPowerBySecond,
 	buildCadenceBySecond,
 	buildMetricBySecond,

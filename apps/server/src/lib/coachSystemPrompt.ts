@@ -1,5 +1,9 @@
 import { buildPlanGuidance } from "./planGuidance.js";
-import { getCoachVerbositySettings } from "./coachSettings.js";
+import {
+	getCoachInstructionsSettings,
+	getCoachVerbositySettings,
+} from "./coachSettings.js";
+import { buildCoachInstructionsGuidance } from "./coachInstructionsGuidance.js";
 import { buildReplyShapeGuidance } from "./replyShapeGuidance.js";
 import {
 	BASE_SYSTEM_PROMPT,
@@ -8,22 +12,27 @@ import {
 
 /**
  * The coach system prompt: the static base, the calendar/plan block, the
- * athlete's reply shape, and the current-time line. One builder for interactive
- * chat and the unattended weekly Plan refresh, so the two cannot drift.
+ * athlete's reply shape, the athlete's own instructions, and the current-time
+ * line. One builder for interactive chat and the unattended weekly Plan
+ * refresh, so the two cannot drift.
  *
  * The analysis prompt (/analyze/:activityId) deliberately does not use this —
  * it has its own section contract and, per apps/server ADR-0001, no timestamp.
- * It appends buildReplyShapeGuidance itself.
+ * It appends buildReplyShapeGuidance and buildCoachInstructionsGuidance itself.
  */
 export async function buildCoachSystemPrompt(userId: string): Promise<string> {
-	const [planGuidance, verbosity] = await Promise.all([
+	const [planGuidance, verbosity, instructions] = await Promise.all([
 		buildPlanGuidance(userId),
 		getCoachVerbositySettings(userId),
+		getCoachInstructionsSettings(userId),
 	]);
 
 	return [
 		`${BASE_SYSTEM_PROMPT}${planGuidance}`,
 		buildReplyShapeGuidance(verbosity),
+		buildCoachInstructionsGuidance(instructions),
 		buildCurrentTimeText(new Date()),
-	].join("\n\n");
+	]
+		.filter(Boolean)
+		.join("\n\n");
 }
